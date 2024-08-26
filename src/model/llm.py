@@ -76,4 +76,3 @@ image_payload = create_image_payload(data_path="data/receipts")
 
 receipts_info = analyze_receipts(image_payload)
 
-x = 3
