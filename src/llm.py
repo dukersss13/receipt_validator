@@ -2,8 +2,9 @@ import os
 import mimetypes
 
 from openai import OpenAI
-from helper.helper_functions import encode_image
-from helper.utils import setup_openai
+
+from helper_functions import encode_image
+from utils import setup_openai
 
 
 setup_openai()
@@ -71,8 +72,3 @@ def analyze_receipts(image_payload: list[dict]) -> str:
     )
 
     return response.choices[0].message.content
-
-image_payload = create_image_payload(data_path="data/receipts")
-
-receipts_info = analyze_receipts(image_payload)
-
