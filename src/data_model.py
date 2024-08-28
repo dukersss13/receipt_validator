@@ -1,6 +1,43 @@
 import numpy as np
 import pandas as pd
-from llm import analyze_receipts, create_image_payload
+import os
+import mimetypes
+
+from helper_functions import encode_image
+from llm import analyze_receipts
+
+
+def create_image_payload(data_path: str) -> list[dict]:
+    """
+    Create image payload
+
+    :param data_path: data path
+    :return: payload for encoded images
+    """
+    image_payload = []
+
+    # Loop through all files in the given directory
+    for file_name in os.listdir(data_path):
+        # Get the file's MIME type
+        mime_type, _ = mimetypes.guess_type(file_name)
+        
+        # Process only files that are images
+        if mime_type and mime_type.startswith('image/'):
+            # Read the file and encode it to base64
+            image_path = os.path.join(data_path, file_name)
+            encoded_string = encode_image(image_path)
+
+            # Create the dictionary in the specified format
+            image_dict = {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{mime_type};base64,{encoded_string}",
+                },
+            }
+            # Append the dictionary to the list
+            image_payload.append(image_dict)
+    
+    return image_payload
 
 
 image_payload = create_image_payload(data_path="data/receipts")
@@ -8,27 +45,11 @@ receipts_info = analyze_receipts(image_payload)
 receipts_list = eval(receipts_info)
 receipts_vec = np.asarray(receipts_list)
 
-df_bank = pd.DataFrame({"business_name": ["Taco Bell", "Cider Cellar", "Mogu mogu - Costa Mesa"],
-                        "total": [24.39, 4.50, 57.0]})
-df_receipts = pd.DataFrame(receipts_vec, columns=["business_name", "total"])
+df_receipts = pd.DataFrame(receipts_vec, columns=["business_name", "total", "date"])
 df_receipts["business_name"] = df_receipts["business_name"].astype(str)
 df_receipts["total"] = df_receipts["total"].astype(float)
 
+bank_statement = pd.DataFrame({"business_name": ["Taco Bell", "Cider Cellar", "Mogu mogu - Costa Mesa"],
+                               "total": [24.39, 4.50, 57.0],
+                               "date": receipts_vec[:, -1].astype(str)})
 
-from fuzzywuzzy import process, fuzz
-
-def match_business_names(transaction_name, receipts_names, threshold=80):
-    match, score = process.extractOne(transaction_name, receipts_names, scorer=fuzz.partial_ratio)
-    return match if score >= threshold else None
-
-# Add a new column in df_bank for the best match from df_receipts
-df_bank["matched_name"] = df_bank["business_name"].apply(lambda x: match_business_names(x, df_receipts["business_name"].values))
-
-# Merge based on matched names and totals
-matched_df = pd.merge(df_bank, df_receipts, left_on=["matched_name", "total"], 
-                      right_on=["business_name", "total"], how="inner", suffixes=("_bank", "_receipt"))
-
-# Identify unmatched rows in df_bank
-unmatched = df_bank[~df_bank["business_name"].isin(matched_df["business_name_bank"])]
-
-# Extract DATES & match with totals
