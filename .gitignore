@@ -1,8 +1,6 @@
 # Secrets
-secrets/openai_api_key
-secrets/google_cse
-secrets/google_api_key
-secrets/tavily_api_key
+secrets/*
+!secrets/
 
 # Data
 data/bank_statement/*
