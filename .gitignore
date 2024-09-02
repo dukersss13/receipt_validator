@@ -3,8 +3,8 @@ secrets/*
 !secrets/
 
 # Data
-data/bank_statement/*
-data/receipts/*
+data/transactions/*
+data/proofs/*
 
-!data/bank_statement/
-!data/receipts/
+!data/transactions/
+!data/proofs/
