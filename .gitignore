@@ -3,6 +3,7 @@ __pycache__/
 # Secrets
 secrets/*
 !secrets/
+!secrets/.gitkeep
 
 # Data
 data/bank_statement/*
