@@ -10,5 +10,5 @@ secrets/*
 data/bank_statement/*
 data/receipts/*
 
-!data/bank_statement/
-!data/receipts/
+!data/bank_statement/.gitkeep
+!data/receipts/.gitkeep
