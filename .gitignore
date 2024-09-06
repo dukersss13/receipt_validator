@@ -12,3 +12,6 @@ data/receipts/*
 
 !data/bank_statement/.gitkeep
 !data/receipts/.gitkeep
+
+# Virtual environment
+venv/
