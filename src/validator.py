@@ -47,7 +47,7 @@ class Validator:
         """
         Find any discrepancy in the list of transactions
         """
-        merged_df["delta"] = abs(merged_df["total_receipt"] - merged_df["total_bank"])
+        merged_df["delta"] = merged_df["total_receipt"] - merged_df["total_bank"]
 
         # Identify discrepancies
         discrepancies = merged_df[merged_df["delta"] > 0.01]

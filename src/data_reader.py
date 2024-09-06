@@ -26,7 +26,7 @@ class DataReader:
         self.transactions_data_path = data_path["transactions"]
         self.proofs_data_path = data_path["proofs"]
 
-    def read_data(self, data_type: DataType):
+    def load_data(self, data_type: DataType):
         """
         Read (preprocess) data given data type
 
@@ -43,7 +43,8 @@ class DataReader:
         data_list = eval(data)
         data_vec = np.asarray(data_list)
 
-        data_df = pd.DataFrame(data_vec, columns=["business_name", "total", "data"])
+        data_df = pd.DataFrame(data_vec, columns=["business_name", "total", "date"])
+        data_df["total"] = data_df["total"].astype(float)
 
         return data_df
 
