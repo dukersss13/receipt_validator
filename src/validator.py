@@ -32,7 +32,7 @@ class Validator:
 
         # Merge based on matched names and totals
         merged_df = self.transactions.merge(self.proofs, left_on=["matched_name", "matched_date"], 
-                                right_on=["business_name", "date"], how="inner", suffixes=("_bank", "_receipt"))
+                                right_on=["business_name", "date"], how="inner", suffixes=("_transaction", "_proof"))
 
         merged_df = merged_df.drop(columns=["matched_name", "matched_date"])
 
@@ -47,17 +47,21 @@ class Validator:
         """
         Find any discrepancy in the list of transactions
         """
-        merged_df["delta"] = merged_df["total_receipt"] - merged_df["total_bank"]
+        merged_df["delta"] = merged_df["total_transaction"] - merged_df["total_proof"]
 
         # Identify discrepancies
-        discrepancies = merged_df[merged_df["delta"] > 0.01]
+        # If delta > 0.0, then transaction > proof. Elif delta < 0.0, transaction < proof.
+        # Else, we're good.
+        discrepancies = merged_df[merged_df["delta"] != 0.0]
 
         return discrepancies
 
     def find_unmatched_transactions(self, merged_df: pd.DataFrame) -> pd.DataFrame:
         """
         Identify any transaction that had no match
+
+        TODO: Do unmatched alerts both ways
         """
-        unmatched = self.transactions[~self.transactions["business_name"].isin(merged_df["business_name_bank"])]
+        unmatched = self.transactions[~self.transactions["business_name"].isin(merged_df["business_name_transaction"])]
 
         return unmatched
