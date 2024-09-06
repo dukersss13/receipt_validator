@@ -3,4 +3,3 @@ pandas
 fuzzywuzzy
 pyhocon
 openai
-mimetypes
