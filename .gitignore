@@ -12,3 +12,5 @@ data/proofs/*
 
 !data/transactions/.gitkeep
 !data/proofs/.gitkeep
+
+venv/
