@@ -7,8 +7,8 @@ secrets/*
 !secrets/.gitkeep
 
 # Data
-data/bank_statement/*
-data/receipts/*
+data/transactions/*
+data/proofs/*
 
-!data/bank_statement/.gitkeep
-!data/receipts/.gitkeep
+!data/transactions/.gitkeep
+!data/proofs/.gitkeep
