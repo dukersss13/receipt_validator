@@ -3,3 +3,4 @@ pandas
 fuzzywuzzy
 pyhocon
 openai
+pytest
