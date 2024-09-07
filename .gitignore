@@ -1,5 +1,8 @@
+# Misc
 __pycache__/
 .DS_Store
+venv/
+pyrightconfig.json
 
 # Secrets
 secrets/*
@@ -12,5 +15,3 @@ data/proofs/*
 
 !data/transactions/.gitkeep
 !data/proofs/.gitkeep
-
-venv/
