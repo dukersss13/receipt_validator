@@ -1,50 +1,50 @@
 {
-    "name": "Python 3.10 Development",
-    "build": {
-        "dockerfile": "Dockerfile",
-        "context": "..",
-        "args": {
-            "GITHUB_NAME": "${localEnv:GITHUB_NAME}",
-            "GITHUB_EMAIL": "${localEnv:GITHUB_EMAIL}"
-        }
-    },
-    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
-    "workspaceFolder": "/workspace",
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "ms-python.python",
-                "ms-python.vscode-pylance",
-                "ms-python.pylint",
-                "ms-python.black-formatter",
-                "vscodevim.vim",
-                "eamodio.gitlens",
-                "ms-azuretools.vscode-docker",
-                "visualstudioexptteam.vscodeintellicode",
-                "mhutchie.git-graph"
-            ],
-            "settings": {
-                "python.linting.enabled": true,
-                "python.linting.pylintEnabled": true,
-                "python.formatting.provider": "black",
-                "editor.formatOnSave": true,
-                "editor.codeActionsOnSave": {
-                    "source.organizeImports": true
-                },
-                "gitlens.mode.active": "zen",
-                "gitlens.hovers.currentLine.over": "line",
-                "gitlens.codeLens.enabled": false,
-                "gitlens.statusBar.enabled": false,
-                "git.autofetch": true,
-                "git.enableSmartCommit": true,
-                "git.confirmSync": false
-            }
-        }
-    },
-    "forwardPorts": [3000],
-    "remoteUser": "vscode",
-    "features": {
-        "git": "latest",
-        "github-cli": "latest"
+  "name": "Python 3.10 Development",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "..",
+    "args": {
+      "GITHUB_NAME": "${localEnv:GITHUB_NAME}",
+      "GITHUB_EMAIL": "${localEnv:GITHUB_EMAIL}"
     }
+  },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "workspaceFolder": "/workspace",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.pylint",
+        "ms-python.black-formatter",
+        "vscodevim.vim",
+        "eamodio.gitlens",
+        "ms-azuretools.vscode-docker",
+        "visualstudioexptteam.vscodeintellicode",
+        "mhutchie.git-graph"
+      ],
+      "settings": {
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": true,
+        "python.formatting.provider": "black",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.organizeImports": true
+        },
+        "gitlens.mode.active": "zen",
+        "gitlens.hovers.currentLine.over": "line",
+        "gitlens.codeLens.enabled": false,
+        "gitlens.statusBar.enabled": false,
+        "git.autofetch": true,
+        "git.enableSmartCommit": true,
+        "git.confirmSync": false
+      }
+    }
+  },
+  "forwardPorts": [3000],
+  "remoteUser": "vscode",
+  "features": {
+    "git": "latest",
+    "github-cli": "latest"
+  }
 }
