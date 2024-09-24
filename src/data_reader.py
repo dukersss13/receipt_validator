@@ -98,7 +98,7 @@ class DataReader:
                 {
                 "type": "text",
                 "text": """Tell me the business names, totals and transaction dates. 
-                        Answer should be formatted like: [(name1, total1, date1), (name2, total2, date2), etc...].
+                        Answer should be formatted like: [('name1', 'total1', 'date1'), ('name2', 'total2', 'date2'), etc...].
                         Only give me the list, nothing else.""",
                 },
                 *image_payload
