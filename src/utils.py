@@ -1,4 +1,5 @@
 import os
+import pandas as pd
 
 
 def load_secret_file(name: str) -> str:
@@ -55,3 +56,6 @@ def load_tavily_api_key():
 def setup_tavily_search():
     api_key = load_tavily_api_key()
     os.environ["TAVILY_API_KEY"] = api_key
+
+def load_empty_dataframe(columns=['business_name', 'total', 'date']):
+    return pd.DataFrame([], columns=columns)

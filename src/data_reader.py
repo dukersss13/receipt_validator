@@ -21,10 +21,14 @@ class DataType(Enum):
 
 
 class DataReader:
-    def __init__(self, config_path: str= "config.conf"):
+    def __init__(self, transactions: list[str] | None = [], proofs: list[str] | None = [], config_path: str= "config.conf"):
         data_path = ConfigFactory.parse_file(config_path).get("data_path")
         self.transactions_data_path = data_path["transactions"]
         self.proofs_data_path = data_path["proofs"]
+
+        if transactions and proofs and len(transactions) and len(proofs):
+            self.transactions_data_path = transactions
+            self.proofs_data_path = proofs
 
     def load_data(self, data_type: DataType):
         """
@@ -39,7 +43,11 @@ class DataReader:
             data_path = self.proofs_data_path
 
         payload = DataReader.create_image_payload(data_path)
+        import time
+        start = time.time()
         data = DataReader.read_data(payload)
+        end = time.time()
+        print(f'Time to read {data_type.value}: {end - start}s')
         data_list = eval(data)
         data_vec = np.asarray(data_list)
 
@@ -49,7 +57,7 @@ class DataReader:
         return data_df
 
     @staticmethod
-    def create_image_payload(data_path: str) -> list[dict]:
+    def create_image_payload(data_path: str | list[str]) -> list[dict]:
         """
         Create image payload
 
@@ -57,16 +65,18 @@ class DataReader:
         :return: payload for encoded images
         """
         image_payload = []
+        is_dir = isinstance(data_path, str)
+        files = os.listdir(data_path) if is_dir else data_path
 
         # Loop through all files in the given directory
-        for file_name in os.listdir(data_path):
+        for file_name in files:
             # Get the file's MIME type
             mime_type, _ = mimetypes.guess_type(file_name)
             
             # Process only files that are images
             if mime_type and mime_type.startswith('image/'):
                 # Read the file and encode it to base64
-                image_path = os.path.join(data_path, file_name)
+                image_path = os.path.join(data_path, file_name) if is_dir else file_name
                 encoded_string = DataReader.encode_image(image_path)
 
                 # Create the dictionary in the specified format
@@ -78,7 +88,7 @@ class DataReader:
                 }
                 # Append the dictionary to the list
                 image_payload.append(image_dict)
-        
+
         return image_payload
 
     @staticmethod
@@ -99,13 +109,14 @@ class DataReader:
                 "type": "text",
                 "text": """Tell me the business names, totals and transaction dates. 
                         Answer should be formatted like: [('name1', 'total1', 'date1'), ('name2', 'total2', 'date2'), etc...].
-                        Only give me the list, nothing else.""",
+                        Only give me the list, nothing else.
+                        Give the total amount as numeric. No need to include the currency denomination.""",
                 },
                 *image_payload
             ],
             }
         ],
-        max_tokens=300,
+        max_tokens=1000,
         )
 
         return response.choices[0].message.content
