@@ -9,7 +9,7 @@ def validate(state, transactions, proofs) -> tuple:
     print('Total transactions uploaded:', len(transactions if transactions else []))
     print('Total proofs uploaded:', len(proofs if proofs else []))
     dr = DataReader(transactions=transactions, proofs=proofs)
-    
+
     if transactions:
         transactions_data = dr.load_data(DataType.TRANSACTIONS)
     else:
@@ -32,7 +32,7 @@ def validate(state, transactions, proofs) -> tuple:
 
     if len(unmatched_transactions) > 0:
         note += 'Upload more proofs\n'
-    
+
     state['discrepancies'] = pd.concat([state['discrepancies'], discrepancies], ignore_index=True).drop_duplicates()
     state['unmatched_transactions'] = pd.concat([state['unmatched_transactions'], unmatched_transactions], ignore_index=True).drop_duplicates()
     state['unmatched_proofs'] = pd.concat([state['unmatched_proofs'], unmatched_proofs], ignore_index=True).drop_duplicates()
@@ -43,8 +43,8 @@ def validate(state, transactions, proofs) -> tuple:
         state['discrepancies'],
         state['unmatched_transactions'],
         state['unmatched_proofs'],
-        note, 
-        transactions, 
+        note,
+        transactions,
         proofs,
         state
     )
