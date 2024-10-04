@@ -2,6 +2,7 @@ import os
 import base64
 import numpy as np
 import pandas as pd
+from time import time
 import mimetypes
 
 from openai import OpenAI
@@ -21,7 +22,14 @@ class DataType(Enum):
 
 
 class DataReader:
-    def __init__(self, transactions: list[str] | None = [], proofs: list[str] | None = [], config_path: str= "config.conf"):
+    """
+    Data Reader class ingests transactions and proofs images
+    prior to the validation process.
+    """
+    def __init__(self, transactions: list[str] | None = [], 
+                 proofs: list[str] | None = [],
+                 config_path: str= "config.conf"):
+
         data_path = ConfigFactory.parse_file(config_path).get("data_path")
         self.transactions_data_path = data_path["transactions"]
         self.proofs_data_path = data_path["proofs"]
@@ -43,18 +51,27 @@ class DataReader:
             data_path = self.proofs_data_path
 
         payload = DataReader.create_image_payload(data_path)
-        import time
-        start = time.time()
+        start = time()
         data = DataReader.read_data(payload)
-        end = time.time()
-        print(f'Time to read {data_type.value}: {end - start}s')
+        end = time()
+        print(f'Time to read {data_type.name}: {round(end - start, 3)}s')
+
         data_list = eval(data)
         data_vec = np.asarray(data_list)
-
-        data_df = pd.DataFrame(data_vec, columns=["business_name", "total", "date"])
-        data_df["total"] = data_df["total"].astype(float)
+        data_df = DataReader.preprocess_data(data_vec)
 
         return data_df
+
+    @staticmethod
+    def preprocess_data(data_vector: np.ndarray) -> pd.DataFrame:
+        """
+        Preprocess data post ingestion
+        """
+        data = pd.DataFrame(data_vector, columns=["business_name", "total", "date"])
+        data["business_name"] = data["business_name"].str.lower()
+        data["total"] = data["total"].astype(float)
+
+        return data
 
     @staticmethod
     def create_image_payload(data_path: str | list[str]) -> list[dict]:
@@ -109,8 +126,10 @@ class DataReader:
                 "type": "text",
                 "text": """Tell me the business names, totals and transaction dates. 
                         Answer should be formatted like: [('name1', 'total1', 'date1'), ('name2', 'total2', 'date2'), etc...].
-                        Only give me the list, nothing else.
-                        Give the total amount as numeric. No need to include the currency denomination.""",
+                        The business names should be strings.
+                        The dates should be formatted as mm-dd-yyyy.
+                        Give the total amount as numeric. No need to include the currency denomination.
+                        Only give me the list, nothing else.""",
                 },
                 *image_payload
             ],
