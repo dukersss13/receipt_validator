@@ -1,12 +1,14 @@
 import os
+import pandas as pd
 
 
 def load_secret_file(name: str) -> str:
     """
     Loads a secret file
     """
-    with open(name, "r", encoding='utf-8') as f:
+    with open(name, "r", encoding="utf-8") as f:
         return f.read().strip()
+
 
 def load_openai_key() -> str:
     """
@@ -47,7 +49,7 @@ def setup_google_search():
     os.environ["GOOGLE_API_KEY"] = api_key
 
 
-def load_tavily_api_key(): 
+def load_tavily_api_key():
     # Load Tavily Search API key
     return load_secret_file("secrets/tavily_api_key")
 

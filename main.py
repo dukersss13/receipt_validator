@@ -1,10 +1,6 @@
-from src.data_reader import DataReader, DataType
-from src.validator import Validator
+from src.interface import Interface
 
 
-dr = DataReader()
-transactions = dr.load_data(DataType.TRANSACTIONS)
-proofs = dr.load_data(DataType.PROOFS)
-
-validator = Validator(transactions, proofs)
-discrepancies, unmatched = validator.validate()
+if __name__ == "__main__":
+    interface = Interface()
+    interface.run_interface()

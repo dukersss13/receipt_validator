@@ -15,17 +15,18 @@
       "extensions": [
         "ms-python.python",
         "ms-python.vscode-pylance",
-        "ms-python.pylint",
         "ms-python.black-formatter",
         "vscodevim.vim",
         "eamodio.gitlens",
         "ms-azuretools.vscode-docker",
         "visualstudioexptteam.vscodeintellicode",
-        "mhutchie.git-graph"
+        "mhutchie.git-graph",
+        "njpwerner.autodocstring",
+        "Gruntfuggly.todo-tree"
       ],
       "settings": {
-        "python.linting.enabled": true,
-        "python.linting.pylintEnabled": true,
+        "python.linting.enabled": false,
+        "python.linting.pylintEnabled": false,
         "python.formatting.provider": "black",
         "editor.formatOnSave": true,
         "editor.codeActionsOnSave": {
