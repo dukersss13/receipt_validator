@@ -7,7 +7,7 @@ from src.validator import Validator
 
 class Interface:
     @staticmethod
-    def create_empty_df(columns=["business_name", "total", "date"]) -> pd.DataFrame:
+    def create_empty_df(columns=["Business Name", "Total", "Date"]) -> pd.DataFrame:
         # Create empty placeholder df
         return pd.DataFrame([], columns=columns)
 
@@ -39,8 +39,6 @@ class Interface:
 
         validator = Validator(transactions_data, proofs_data)
         discrepancies, unmatched_transactions, unmatched_proofs = validator.validate()
-        unmatched_transactions.columns = ["Business Name", "Total", "Date"]
-        unmatched_proofs.columns = ["Business Name", "Total", "Date"]
 
         # Clear current file uploads to prepare for next turn (if any)
         transactions = proofs = None
@@ -87,10 +85,10 @@ class Interface:
         Start the gradio UI interface
         """
         blue_theme = gr.themes.Default().set(
-            button_primary_background_fill="orange",
-            button_primary_background_fill_hover="rgb(255, 200, 150)",
+            button_primary_background_fill="rgb(255, 200, 130)",
+            # button_primary_background_fill_hover="rgb(255, 200, 150)",
             button_primary_text_color="white",
-            button_primary_border_color="orange")
+            button_primary_border_color="rgb(255, 165, 0)")
 
         with gr.Blocks(theme=blue_theme) as ui:
             state = gr.State(
