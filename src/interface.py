@@ -84,13 +84,19 @@ class Interface:
         """
         Start the gradio UI interface
         """
-        blue_theme = gr.themes.Default().set(
-            button_primary_background_fill="rgb(255, 200, 130)",
-            # button_primary_background_fill_hover="rgb(255, 200, 150)",
-            button_primary_text_color="white",
-            button_primary_border_color="rgb(255, 165, 0)")
+        custom_css = """
+        .gradio-button.primary {
+            background: linear-gradient(to bottom right, #FFE4B5, #FFDAB9) !important;  /* Light orange gradient */
+            color: orange !important;  /* Orange text */
+            border: 1px solid orange !important;  /* Orange border */
+        }
+        .gradio-button.primary:hover {
+            background: orange !important;  /* Solid orange on hover */
+            color: white !important;  /* White text on hover */
+        }
+        """
 
-        with gr.Blocks(theme=blue_theme) as ui:
+        with gr.Blocks(theme=custom_css) as ui:
             state = gr.State(
                 {
                     "unmatched_transactions": self.create_empty_df(),
