@@ -5,3 +5,4 @@ pyhocon
 openai
 pytest
 gradio
+faker
