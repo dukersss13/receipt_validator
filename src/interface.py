@@ -86,17 +86,17 @@ class Interface:
         """
         custom_css = """
         .gradio-button.primary {
-            background: linear-gradient(to bottom right, #FFE4B5, #FFDAB9) !important;  /* Light orange gradient */
-            color: orange !important;  /* Orange text */
-            border: 1px solid orange !important;  /* Orange border */
+            background: linear-gradient(to bottom right, #FFE4B5, #FFDAB9)
+            color: orange
+            border: 1px solid orange
         }
         .gradio-button.primary:hover {
-            background: orange !important;  /* Solid orange on hover */
-            color: white !important;  /* White text on hover */
+            background: orange
+            color: white
         }
         """
 
-        with gr.Blocks(theme=custom_css) as ui:
+        with gr.Blocks(css=custom_css) as ui:
             state = gr.State(
                 {
                     "unmatched_transactions": self.create_empty_df(),
