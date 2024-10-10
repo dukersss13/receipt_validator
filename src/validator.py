@@ -4,6 +4,9 @@ from time import time
 from fuzzywuzzy import process, fuzz
 
 
+pd.set_option('display.max_columns', None)  # This will show all columns
+
+
 class Validator:
     def __init__(self, transactions: pd.DataFrame, proofs: pd.DataFrame):
         self.transactions = transactions
@@ -63,10 +66,10 @@ class Validator:
                                                               self.match_business_names(x, self.proofs["date"].values))
 
         end = time()
-        print(f'Time taken to match {round(end - start, 3)}s')
+        print(f'Time taken to match {round(end - start, 2)}s')
         # Merge based on matched names and totals
-        merged_df = self.transactions.merge(self.proofs, left_on=["matched_name", "matched_date"], 
-                                right_on=["business_name", "date"], how="inner", suffixes=("_transaction", "_proof"))
+        merged_df = self.transactions.merge(self.proofs, on="date", left_on=["matched_name"], 
+                                right_on=["business_name"], how="inner", suffixes=("_transaction", "_proof"))
 
         merged_df = merged_df.drop(columns=["matched_name", "matched_date"])
 

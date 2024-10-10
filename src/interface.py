@@ -96,7 +96,7 @@ class Interface:
         }
         """
 
-        with gr.Blocks(theme=custom_css) as ui:
+        with gr.Blocks(css=custom_css) as ui:
             state = gr.State(
                 {
                     "unmatched_transactions": self.create_empty_df(),
