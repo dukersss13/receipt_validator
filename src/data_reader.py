@@ -54,7 +54,7 @@ class DataReader:
         start = time()
         data = DataReader.read_data(payload)
         end = time()
-        print(f'Time to read {data_type.name}: {round(end - start, 3)}s')
+        print(f'Time to read {data_type.name}: {round(end - start, 2)}s')
 
         data_list = eval(data)
         data_vec = np.asarray(data_list)
