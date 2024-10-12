@@ -33,10 +33,11 @@ def test_similar_transactions(similar_documents):
     # we have multiple transactions on the same date
     # from the same business
     transactions, proofs = similar_documents
+    proofs["total"] = [*proofs["total"].values[:-1], 100.0]
     validator = Validator(transactions, proofs)
 
     discrepancies, unmatched_transactions, unmatched_proofs = validator.validate()
 
-    assert not len(discrepancies)
+    assert len(discrepancies)
     assert not len(unmatched_transactions)
     assert not len(unmatched_proofs)
