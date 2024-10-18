@@ -1,7 +1,9 @@
 import gradio as gr
 import pandas as pd
+
 from src.data_reader import DataReader, DataType
 from src.validator import Validator
+from src.style.css import button_custom_css, type_writer_effect
 
 
 
@@ -38,17 +40,12 @@ class Interface:
             proofs_data = state["proofs"]
 
         validator = Validator(transactions_data, proofs_data)
-        discrepancies, unmatched_transactions, unmatched_proofs = validator.validate()
+        validation_results = validator.validate()
+        results = validator.analyze_results(validation_results)
+        discrepancies, unmatched_transactions, unmatched_proofs = validation_results
 
         # Clear current file uploads to prepare for next turn (if any)
         transactions = proofs = None
-
-        note = "Ran Validation\n"
-        if len(unmatched_proofs) > 0:
-            note += "Upload more transactions\n"
-
-        if len(unmatched_transactions) > 0:
-            note += "Upload more proofs\n"
 
         state["discrepancies"] = pd.concat(
             [state["discrepancies"], discrepancies], ignore_index=True
@@ -74,7 +71,7 @@ class Interface:
             state["discrepancies"],
             state["unmatched_transactions"],
             state["unmatched_proofs"],
-            note,
+            results,
             transactions,
             proofs,
             state,
@@ -84,19 +81,7 @@ class Interface:
         """
         Start the gradio UI interface
         """
-        custom_css = """
-        .gradio-button.primary {
-            background: linear-gradient(to bottom right, #FFE4B5, #FFDAB9)
-            color: orange
-            border: 1px solid orange
-        }
-        .gradio-button.primary:hover {
-            background: orange
-            color: white
-        }
-        """
-
-        with gr.Blocks(css=custom_css) as ui:
+        with gr.Blocks(css=button_custom_css) as ui:
             state = gr.State(
                 {
                     "unmatched_transactions": self.create_empty_df(),
@@ -114,7 +99,8 @@ class Interface:
             )
             run_btn = gr.Button(value="Validate", variant="primary")
 
-            note = gr.Text(value="", label="Note(s)")
+            results = gr.Textbox(value="", label="Results", render=True)
+            # results = gr.HTML("<div id='result_field'></div>", label="Results")
 
             discrepancies = gr.DataFrame(
                 state.value["discrepancies"],
@@ -141,7 +127,7 @@ class Interface:
                     discrepancies,
                     unmatched_transactions,
                     unmatched_proofs,
-                    note,
+                    results,
                     transactions_dir,
                     proofs_dir,
                     state,

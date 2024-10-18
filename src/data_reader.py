@@ -9,7 +9,7 @@ from openai import OpenAI
 from pyhocon import ConfigFactory
 from enum import Enum
 
-from src.utils import setup_openai
+from src.utils import setup_openai, GPT_MODEL
 
 
 setup_openai()
@@ -28,7 +28,7 @@ class DataReader:
     """
     def __init__(self, transactions: list[str] | None = [], 
                  proofs: list[str] | None = [],
-                 config_path: str= "config.conf"):
+                 config_path: str = "config.conf"):
 
         data_path = ConfigFactory.parse_file(config_path).get("data_path")
         self.transactions_data_path = data_path["transactions"]
@@ -74,6 +74,16 @@ class DataReader:
         return data
 
     @staticmethod
+    def encode_image(image_path: str):
+        """
+        Function to encode the image
+
+        :param image_path: path to image (online or offline)
+        """
+        with open(image_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode('utf-8')
+
+    @staticmethod
     def create_image_payload(data_path: str | list[str]) -> list[dict]:
         """
         Create image payload
@@ -117,7 +127,7 @@ class DataReader:
         :return: response from LLM
         """
         response = client.chat.completions.create(
-        model = "gpt-4o-mini",
+        model = GPT_MODEL,
         messages = [
             {
             "role": "user",
@@ -139,14 +149,4 @@ class DataReader:
         )
 
         return response.choices[0].message.content
-
-    @staticmethod
-    def encode_image(image_path: str):
-        """
-        Function to encode the image
-
-        :param image_path: path to image (online or offline)
-        """
-        with open(image_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode('utf-8')
         

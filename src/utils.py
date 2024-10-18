@@ -1,5 +1,6 @@
 import os
-import pandas as pd
+
+GPT_MODEL = "gpt-4o-mini"
 
 
 def load_secret_file(name: str) -> str:
