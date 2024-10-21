@@ -109,11 +109,11 @@ class Validator:
             You will be given 2 dataframes of unmatched transactions and unmatched proofs.
 
             If these dataframes are empty, say there are no unmatched transactions or proofs,
-            tell them great job. 
+            everything was validated, tell them great job keeping track of their spending. 
             ---------------------------
             Example:
-            "I have finished validating the given transactions and proofs. We have no
-            unmatched transactions or proofs, great job!"
+            "I have finished validating the given transactions and proofs.
+            Everything was validated, great job!"
             
             ---------------------------
             
