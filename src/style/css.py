@@ -21,17 +21,13 @@ def type_writer_effect(note_text, speed=200):
     '''
     return js_code
 
-
-button_custom_css = """
-.gradio-button.primary {
-    background: linear-gradient(to bottom right, #FFE4B5, #FFDAB9)
-    color: orange
-    border: 1px solid orange
-}
-.gradio-button.primary:hover {
-    background: orange
-    color: white
-}
+header_css = """
+    .header-text {
+        font-size: 42px;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 10px;
+    }
 """
 
-
+interface_theme = header_css

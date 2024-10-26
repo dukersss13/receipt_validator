@@ -64,7 +64,9 @@ class Validator:
         return unmatched
 
     def validate(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        # Add a new column in df_bank for the best match from df_receipts
+        """
+        Run the validation process
+        """
         start = time()
         self.transactions["matched_name"] = self.transactions["business_name"].apply(lambda x: \
                                                               self.match_business_names(x, self.proofs["business_name"].values))
@@ -172,13 +174,10 @@ class Validator:
         :return: _description_
         """
         _, unmatched_transactions, unmatched_proofs = validation_results
-        recommendations = Validator.analyze_unmatched_results(unmatched_transactions, unmatched_proofs)
-        # if "[" in recommendations:
-        #     splits = recommendations.split(":")
-        #     recommendations = pd.DataFrame(eval(splits[-1]),
-        #                         columns=["Transaction Business Name", "Total", "Date",
-        #                                 "Proof Business Name", "Total", "Date"])
-        #     recommendations = splits[0] + ":\n" + recommendations.to_string(index=False)
+        if unmatched_transactions.empty and unmatched_proofs.empty:
+            recommendations = ""
+        else:
+            recommendations = Validator.analyze_unmatched_results(unmatched_transactions, unmatched_proofs)
         
         return recommendations
 

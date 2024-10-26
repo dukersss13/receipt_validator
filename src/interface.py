@@ -3,7 +3,7 @@ import pandas as pd
 
 from src.data_reader import DataReader, DataType
 from src.validator import Validator
-from src.style.css import button_custom_css, type_writer_effect
+from src.style.css import interface_theme
 
 
 
@@ -81,7 +81,12 @@ class Interface:
         """
         Start the gradio UI interface
         """
-        with gr.Blocks(css=button_custom_css) as ui:
+        custom_theme = gr.themes.Base()
+
+        with gr.Blocks(css=interface_theme, theme=custom_theme) as ui:
+            # Header Text
+            gr.Markdown("# Receipt Validator", elem_classes=["header-text"])
+
             state = gr.State(
                 {
                     "unmatched_transactions": self.create_empty_df(),
@@ -91,13 +96,15 @@ class Interface:
                     "proofs": self.create_empty_df(),
                 }
             )
-            transactions_dir = gr.File(
-                label="Upload Transactions", file_count="multiple", file_types=["image"]
-            )
-            proofs_dir = gr.File(
-                label="Upload Proofs", file_count="multiple", file_types=["image"]
-            )
-            run_btn = gr.Button(value="Validate", variant="primary")
+            with gr.Row():
+                transactions_dir = gr.File(
+                    label="Upload Transactions", file_count="multiple", file_types=["image"]
+                )
+                proofs_dir = gr.File(
+                    label="Upload Proofs", file_count="multiple", file_types=["image"]
+                )
+
+            run_btn = gr.Button(value="Validate", variant="primary", elem_classes="custom_button")
 
             results = gr.Textbox(value="", label="Results", render=True)
             # results = gr.HTML("<div id='result_field'></div>", label="Results")
