@@ -98,29 +98,15 @@ class Validator:
     @staticmethod
     def analyze_unmatched_results(unmatched_transactions: pd.DataFrame,
                                   unmatched_proofs: pd.DataFrame) -> str:
-        """_summary_
-
-        :param unmatched_transactions: _description_
-        :param unmatched_proofs: _description_
-        :return: _description_
+        """
+        Use LLM to provide recommendations for unmatched results
         """
         unmatched_trans_txt = unmatched_transactions.to_string(index=False)
         unmatched_proofs_txt = unmatched_proofs.to_string(index=False)
         full_prompt = """
-            First, let the user know you are finished validating given transactions and proofs.
-            You will be given 2 dataframes of unmatched transactions and unmatched proofs.
-
-            If these dataframes are empty, say there are no unmatched transactions or proofs,
-            everything was validated, tell them great job keeping track of their spending. 
-            ---------------------------
-            Example:
-            "I have finished validating the given transactions and proofs.
-            Everything was validated, great job!"
-            
-            ---------------------------
-            
-            Else, your job is to analyze these unmatched transactions 
+            Your job is to analyze these unmatched transactions 
             and provide recommendations if there are potential matches that were not matched.
+            You can use a friendly tone.
     
             The columns for both dataframes are:
             - Business Name (str): name of the business
@@ -167,15 +153,14 @@ class Validator:
 
         return response.choices[0].message.content
 
-    def analyze_results(self, validation_results: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]) -> Union[str, pd.DataFrame]:
-        """_summary_
-
-        :param validation_results: _description_
-        :return: _description_
+    def analyze_results(self, validation_results: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]) -> str:
+        """
+        Analyze the results & provide recommendations 
+        for unmatched transactions & proofs
         """
         _, unmatched_transactions, unmatched_proofs = validation_results
         if unmatched_transactions.empty and unmatched_proofs.empty:
-            recommendations = ""
+            recommendations = "Everything was validated. Great job keeping track of your spending!"
         else:
             recommendations = Validator.analyze_unmatched_results(unmatched_transactions, unmatched_proofs)
         
