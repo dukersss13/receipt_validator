@@ -1,5 +1,10 @@
 import pytest
 from mock_documents import create_mock_documents
+
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from src.validator import Validator
 
 

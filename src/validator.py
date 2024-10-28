@@ -57,10 +57,10 @@ class Validator:
         """
         self.transactions["matched_name"] = self.transactions["business_name"].apply(lambda x: \
                                                               self.match_business_names(x, self.proofs["business_name"].values))
-        unmatched_transactions = self.transactions[self.transactions["matched_name"] == None]
+        unmatched_transactions = self.transactions[self.transactions["matched_name"].isnull()]
 
         if not unmatched_transactions.empty:
-            self.transactions = self.transactions[~unmatched_transactions.isin(self.transactions).all(axis=1)]
+            self.transactions = self.transactions[self.transactions['matched_name'].notnull()]
 
         unmatched_transactions = Validator.cleanup_results(unmatched_transactions.drop(columns=["matched_name"]))
 
@@ -73,9 +73,9 @@ class Validator:
         self.proofs["matched_name"] = self.proofs["business_name"].apply(lambda x: \
                                                   self.match_business_names(x, self.transactions["business_name"].values))
 
-        unmatched_proofs = self.proofs[self.proofs["matched_name"] == None]
+        unmatched_proofs = self.proofs[self.proofs["matched_name"].isnull()]
         if not unmatched_proofs.empty:
-            self.proofs = self.proofs[~unmatched_proofs.isin(self.proofs).all(axis=1)]
+            self.proofs = self.proofs[self.proofs['matched_name'].notnull()]
 
         unmatched_proofs = Validator.cleanup_results(unmatched_proofs.drop(columns=["matched_name"]))
 
