@@ -22,7 +22,9 @@
         "visualstudioexptteam.vscodeintellicode",
         "mhutchie.git-graph",
         "njpwerner.autodocstring",
-        "Gruntfuggly.todo-tree"
+        "Gruntfuggly.todo-tree",
+        "ms-toolsai.jupyter",
+        "ms-toolsai.datawrangler"
       ],
       "settings": {
         "python.linting.enabled": false,

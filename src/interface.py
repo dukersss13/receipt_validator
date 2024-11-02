@@ -41,7 +41,7 @@ class Interface:
 
         validator = Validator(transactions_data, proofs_data)
         validation_results = validator.validate()
-        results = validator.analyze_results(validation_results)
+        analysis, recommendations = validator.analyze_results(validation_results)
         discrepancies, unmatched_transactions, unmatched_proofs = validation_results
 
         # Clear current file uploads to prepare for next turn (if any)
@@ -71,7 +71,8 @@ class Interface:
             state["discrepancies"],
             state["unmatched_transactions"],
             state["unmatched_proofs"],
-            results,
+            analysis,
+            recommendations,
             transactions,
             proofs,
             state,
@@ -92,6 +93,7 @@ class Interface:
                     "unmatched_transactions": self.create_empty_df(),
                     "unmatched_proofs": self.create_empty_df(),
                     "discrepancies": self.create_empty_df(columns=[""]),
+                    "recommendations": self.create_empty_df(columns=[""]),
                     "transactions": self.create_empty_df(),
                     "proofs": self.create_empty_df(),
                 }
@@ -106,13 +108,19 @@ class Interface:
 
             run_btn = gr.Button(value="Validate", variant="primary", elem_classes="custom_button")
 
-            results = gr.Textbox(value="", label="Results", render=True)
-            # results = gr.HTML("<div id='result_field'></div>", label="Results")
+            analysis = gr.Textbox(value="", label="Results", render=True)
+
+            recommendations = gr.DataFrame(
+                state.value["recommendations"],
+                headers=["Transaction Business Name", "Transaction Total", "Transaction Date",
+                         "Proof Business Name", "Proof Total", "Proof Date", "Reason"],
+                label="Recommendations"
+            )
 
             discrepancies = gr.DataFrame(
                 state.value["discrepancies"],
-                headers=["Transaction Business Name", "Total Transaction", "Transaction Date",
-                         "Receipt Business Name", "Total on Receipt", "Receipt Date", "Delta"],
+                headers=["Transaction Business Name", "Transaction Total", "Transaction Date",
+                         "Proof Business Name", "Proof Total", "Proof Date", "Delta"],
                 label="Discrepancies"
             )
 
@@ -134,7 +142,8 @@ class Interface:
                     discrepancies,
                     unmatched_transactions,
                     unmatched_proofs,
-                    results,
+                    analysis,
+                    recommendations,
                     transactions_dir,
                     proofs_dir,
                     state,
