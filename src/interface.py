@@ -108,7 +108,7 @@ class Interface:
 
             run_btn = gr.Button(value="Validate", variant="primary", elem_classes="custom_button")
 
-            analysis = gr.Textbox(value="", label="Results", render=True)
+            results = gr.Textbox(value="", label="Results", render=True)
 
             recommendations = gr.DataFrame(
                 state.value["recommendations"],
@@ -142,7 +142,7 @@ class Interface:
                     discrepancies,
                     unmatched_transactions,
                     unmatched_proofs,
-                    analysis,
+                    results,
                     recommendations,
                     transactions_dir,
                     proofs_dir,

@@ -103,11 +103,11 @@ class Validator:
 
         discrepancies.columns = [
             "Transaction Business Name",
-            "Total Transaction",
+            "Transaction Total",
             "Transaction Date",
-            "Receipt Business Name",
-            "Total on Receipt",
-            "Receipt Date",
+            "Proof Business Name",
+            "Proof Total",
+            "Proof Date",
             "Delta",
         ]
 
@@ -141,25 +141,24 @@ class Validator:
             Example:
             unmatched_transactions:
              Business Name      Total        Date
-           Hironori Long Beach  143.62       2023-01-01
+            Ikkousha Irvine         143.62       2023-01-01
               Jones LLC         230.45       2023-02-15
               Smith Inc         312.67       2023-03-30
             
             unmatched_proofs:
              Business Name      Total        Date
-           Hironori Ramen      143.62       2023-01-01
+           Ikkousha Ramen      143.62       2023-01-01
               Taco Bell        230.45       2023-02-15
               AMC Movies       312.67       2023-03-30
     
             Recommendations Example:
 
             Transaction Business Name,Transaction Total,Transaction Date,Proof Business Name,Proof Total,Proof Date,Reason
-            Hironori Long Beach, 143.62, 2023-01-01, Hironori Ramen, 143.62, 2023-01-01, Same business, with matching
+            Ikkousha Long Beach, 143.62, 2023-01-01, Ikkousha Ramen, 143.62, 2023-01-01, Same business with matching
             dates and transaction totals.
             ---------------------------
             Only output the recommendations
         """
-
         # Send the prompt to ChatGPT
         response = client.chat.completions.create(
             model=GPT_MODEL,
