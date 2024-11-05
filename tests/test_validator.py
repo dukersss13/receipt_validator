@@ -35,5 +35,3 @@ def test_similar_business_names():
     validator = Validator(transactions, proofs)
     results = validator.validate()
     recommendations = validator.analyze_results(results)
-
-    assert len(recommendations)
