@@ -1,5 +1,6 @@
 import gradio as gr
 import pandas as pd
+from time import sleep
 
 from src.data_reader import DataReader, DataType
 from src.validator import Validator
@@ -14,34 +15,49 @@ class Interface:
         return pd.DataFrame([], columns=columns)
 
     def run_validation(
-        self, state, transactions: pd.DataFrame, proofs: pd.DataFrame
+        self, state, transactions: pd.DataFrame, proofs: pd.DataFrame,
+        progress=gr.Progress()
     ) -> tuple:
         """
-        Run the validation process
+        Run the validation process.
 
         :param state: Gradio State
         :param transactions: list of transactions
         :param proofs: list of proofs
 
-        :return the results
+        :return: the results
         """
+        progress(0.03, desc="Starting Validation")
         print("Total transactions uploaded:", len(transactions if transactions else []))
         print("Total proofs uploaded:", len(proofs if proofs else []))
+        
         self.data_reader = DataReader(transactions=transactions, proofs=proofs)
 
+        progress(0.138, desc="Initializing Data Reader")
+        sleep(1)
+        # Load Transactions
+        progress(0.242, desc="Loading Transactions")
         if transactions:
             transactions_data = self.data_reader.load_data(DataType.TRANSACTIONS)
         else:
             transactions_data = state["transactions"]
 
+        # Load Proofs
+        progress(0.333, desc="Loading Proofs")
         if proofs:
             proofs_data = self.data_reader.load_data(DataType.PROOFS)
         else:
             proofs_data = state["proofs"]
 
+        progress(0.413, desc="Initializing Validator")
         validator = Validator(transactions_data, proofs_data)
+        
+        progress(0.562, desc="Running Validation")
         validation_results = validator.validate()
+        
+        progress(0.778, desc="Analyzing Results & Providing Recommendations")
         analysis, recommendations = validator.analyze_results(validation_results)
+        
         discrepancies, unmatched_transactions, unmatched_proofs = validation_results
 
         # Clear current file uploads to prepare for next turn (if any)
@@ -66,6 +82,8 @@ class Interface:
         state["proofs"] = pd.concat(
             [state["proofs"], proofs_data], ignore_index=True
         ).drop_duplicates()
+
+        progress(1.0, desc="Returning Results")
 
         return (
             state["discrepancies"],

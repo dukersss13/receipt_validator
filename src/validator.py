@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from time import time
 from io import StringIO
+import gradio as gr
 
 from fuzzywuzzy import process, fuzz
 from openai import OpenAI
@@ -135,7 +136,7 @@ class Validator:
             - Total (float): total amount of the transaction
             - Date (str): transaction date
 
-            A reason behind unmatches is business names from transactions and proofs
+            One reason behind unmatches is business names from transactions and proofs
             don't fully match even though there are matching Total and Date.
             ---------------------------
             Example:
@@ -156,6 +157,30 @@ class Validator:
             Transaction Business Name,Transaction Total,Transaction Date,Proof Business Name,Proof Total,Proof Date,Reason
             Ikkousha Long Beach, 143.62, 2023-01-01, Ikkousha Ramen, 143.62, 2023-01-01, Same business with matching
             dates and transaction totals.
+
+            ---------------------------
+            Another reason behind unmatches is business name can be different on transactions and proofs,
+            even though the totals and dates are the exact same.
+
+            ---------------------------
+            Example:
+            unmatched_transactions:
+             Business Name      Total        Date
+             Ikkousha Irvine    143.62       2023-01-01
+              Jones LLC         230.45       2023-02-15
+              Smith Inc         312.67       2023-03-30
+            
+            unmatched_proofs:
+             Business Name      Total        Date
+             Kiosk             143.62       2023-01-01
+              Taco Bell        230.45       2023-02-15
+              AMC Movies       312.67       2023-03-30
+
+            Recommendations Example:
+
+            Transaction Business Name,Transaction Total,Transaction Date,Proof Business Name,Proof Total,Proof Date,Reason
+            Ikkousha Long Beach, 143.62, 2023-01-01, Kiosk, 143.62, 2023-01-01, Matching Totals and Dates.
+
             ---------------------------
             Only output the recommendations
         """
