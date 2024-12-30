@@ -17,7 +17,7 @@ class Interface:
     def run_validation(
         self, state, transactions: pd.DataFrame, proofs: pd.DataFrame,
         progress=gr.Progress()
-    ) -> tuple:
+    ) -> tuple[gr.Dataframe]:
         """
         Run the validation process.
 
@@ -35,21 +35,21 @@ class Interface:
         print("Total proofs uploaded:", len(proofs if proofs else []))
         
         progress(step_increment, desc="Initializing Data Reader")
-        self.data_reader = DataReader(transactions=transactions, proofs=proofs)
+        data_reader = DataReader(transactions=transactions, proofs=proofs)
 
         sleep(0.5) # Simulate Progress
 
         # Load Transactions
         progress(2 * step_increment, desc="Loading Transactions")
         if transactions:
-            transactions_data = self.data_reader.load_data(DataType.TRANSACTIONS)
+            transactions_data = data_reader.load_data(DataType.TRANSACTIONS)
         else:
             transactions_data = state["transactions"]
 
         # Load Proofs
         progress(3 * step_increment, desc="Loading Proofs")
         if proofs:
-            proofs_data = self.data_reader.load_data(DataType.PROOFS)
+            proofs_data = data_reader.load_data(DataType.PROOFS)
         else:
             proofs_data = state["proofs"]
 
@@ -60,45 +60,89 @@ class Interface:
         validation_results = validator.validate()
         
         progress(6 * step_increment, desc="Analyzing Results & Providing Recommendations")
-        analysis, recommendations = validator.analyze_results(validation_results)
+        results, recommendations = validator.analyze_results(validation_results)
         
         discrepancies, unmatched_transactions, unmatched_proofs = validation_results
 
         # Clear current file uploads to prepare for next turn (if any)
         transactions = proofs = None
         progress(7 * step_increment, desc="Preparing Results")
-        state["discrepancies"] = pd.concat(
-            [state["discrepancies"], discrepancies], ignore_index=True
-        ).drop_duplicates()
+        state["discrepancies"] = discrepancies
 
-        state["unmatched_transactions"] = pd.concat(
-            [state["unmatched_transactions"], unmatched_transactions], ignore_index=True
-        ).drop_duplicates()
+        state["unmatched_transactions"] = unmatched_transactions
+        state["unmatched_proofs"] = unmatched_proofs
 
-        state["unmatched_proofs"] = pd.concat(
-            [state["unmatched_proofs"], unmatched_proofs], ignore_index=True
-        ).drop_duplicates()
-
-        state["transactions"] = pd.concat(
-            [state["transactions"], transactions_data], ignore_index=True
-        ).drop_duplicates()
-
-        state["proofs"] = pd.concat(
-            [state["proofs"], proofs_data], ignore_index=True
-        ).drop_duplicates()
+        state["recommendations"] = recommendations
 
         progress(8 * step_increment, desc="Displaying Results")
 
+        # checkboxes = []
+        # # Create a single column for both DataFrame and checkboxes
+        # with gr.Column():
+        #     for _, row in state.value["recommendations"].iterrows():
+        #         with gr.Row():
+        #             # Display each row of the DataFrame
+        #             gr.Text(row["Transaction Business Name"])
+        #             gr.Text(row["Transaction Total"])
+        #             gr.Text(row["Transaction Date"])
+        #             gr.Text(row["Proof Business Name"])
+        #             gr.Text(row["Proof Total"])
+        #             gr.Text(row["Proof Date"])
+        #             gr.Text(row["Reason"])
+                    
+        #             # Add a checkbox for each row
+        #             checkbox = gr.Checkbox(label="Accept", value=False)
+        #             checkboxes.append(checkbox)
+
+        #     submit_btn = gr.Button("Submit")
+
+
         return (
-            state["discrepancies"],
-            state["unmatched_transactions"],
-            state["unmatched_proofs"],
-            analysis,
-            recommendations,
-            transactions,
-            proofs,
-            state,
-        )
+            gr.Dataframe(state["discrepancies"], visible=Interface.is_not_empty(discrepancies)),
+            gr.Dataframe(state["unmatched_transactions"], visible=Interface.is_not_empty(unmatched_transactions)),
+            gr.Dataframe(state["unmatched_proofs"], visible=Interface.is_not_empty(unmatched_proofs)),
+            results,
+            gr.Dataframe(state["recommendations"], visible=Interface.is_not_empty(recommendations))
+        ) 
+
+    @staticmethod
+    def display_recommendations(recommendations: pd.DataFrame):
+        """_summary_
+
+        Args:
+            recommendations: _description_
+        """
+        if recommendations.empty:
+            return 
+
+        # Create a list to hold checkbox states
+        checkboxes = []
+
+        # Create a single column for both DataFrame and checkboxes
+        with gr.Column():
+            for _, row in recommendations.iterrows():
+                with gr.Row():
+                    # Display each row of the DataFrame
+                    gr.Text(row["Transaction Business Name"])
+                    gr.Text(row["Transaction Total"])
+                    gr.Text(row["Transaction Date"])
+                    gr.Text(row["Proof Business Name"])
+                    gr.Text(row["Proof Total"])
+                    gr.Text(row["Proof Date"])
+                    gr.Text(row["Reason"])
+                    
+                    # Add a checkbox for each row
+                    checkbox = gr.Checkbox(label="Accept", value=False)
+                    checkboxes.append(checkbox)
+
+        submit_btn = gr.Button("Submit")
+
+    @staticmethod
+    def is_not_empty(df: pd.DataFrame) -> bool:
+        """
+        Check if the df is empty
+        """
+        return not df.empty
 
     def run_interface(self):
         """
@@ -117,76 +161,61 @@ class Interface:
                     "discrepancies": self.create_empty_df(columns=[""]),
                     "recommendations": self.create_empty_df(columns=[""]),
                     "transactions": self.create_empty_df(),
-                    "proofs": self.create_empty_df(),
+                    "proofs": self.create_empty_df()
                 }
             )
             with gr.Row():
-                transactions_dir = gr.File(
+                transactions_input = gr.File(
                     label="Upload Transactions", file_count="multiple", file_types=["image"]
                 )
-                proofs_dir = gr.File(
+                proofs_input = gr.File(
                     label="Upload Proofs", file_count="multiple", file_types=["image"]
                 )
 
             with gr.Row():
-                run_btn = gr.Button(value="Validate", variant="primary", elem_classes="custom_button")
+                validate_btn = gr.Button(value="Validate", variant="primary", elem_classes="custom_button")
                 clear_btn = gr.Button(value="Clear", variant="secondary", elem_classes="custom_button")
 
             results = gr.Textbox(value="", label="Results", render=True)
+            
+            discrepancies = gr.Dataframe(value=state.value["discrepancies"],
+                                         label="Discrepancies", render=True,
+                                         visible=False)
 
-            recommendations = gr.DataFrame(
-                state.value["recommendations"],
-                headers=["Transaction Business Name", "Transaction Total", "Transaction Date",
-                         "Proof Business Name", "Proof Total", "Proof Date", "Reason"],
-                label="Recommendations"
-            )
+            with gr.Row():
+                unmatched_transactions = gr.Dataframe(value=state.value["unmatched_transactions"],
+                                                      label="Unmatched Transactions", render=True,
+                                                      visible=False)
 
-            discrepancies = gr.DataFrame(
-                state.value["discrepancies"],
-                headers=["Transaction Business Name", "Transaction Total", "Transaction Date",
-                         "Proof Business Name", "Proof Total", "Proof Date", "Delta"],
-                label="Discrepancies"
-            )
+                unmatched_proofs = gr.Dataframe(value=state.value["unmatched_proofs"],
+                                                label="Unmatched Proofs", render=True,
+                                                visible=False)
 
-            unmatched_transactions = gr.DataFrame(
-                state.value["unmatched_transactions"],
-                headers=["Business Name", "Total", "Date"],
-                label="Unmatched Transactions"
-            )
-            unmatched_proofs = gr.DataFrame(
-                state.value["unmatched_proofs"],
-                headers=["Business Name", "Total", "Date"],
-                label="Unmatched Proofs"
-            )
+            recommendations = gr.Dataframe(state.value["recommendations"], label="Recommendations",
+                                           interactive=True, visible=False)
 
-            run_btn.click(
+            validate_btn.click(
                 fn=self.run_validation,
-                inputs=[state, transactions_dir, proofs_dir],
+                inputs=[state, transactions_input, proofs_input],
                 outputs=[
                     discrepancies,
                     unmatched_transactions,
                     unmatched_proofs,
                     results,
-                    recommendations,
-                    transactions_dir,
-                    proofs_dir,
-                    state,
+                    recommendations
                 ],
             )
+
             # Clear button functionality
             clear_btn.click(
-                fn=lambda: [None] * 8,
+                fn=lambda: [None] * 5,
                 outputs=[
                     discrepancies,
                     unmatched_transactions,
                     unmatched_proofs,
                     results,
-                    recommendations,
-                    transactions_dir,
-                    proofs_dir,
-                    state,
+                    recommendations
                 ]
             )
-            print()
 
         ui.launch()

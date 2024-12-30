@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 from time import time
 from io import StringIO
-import gradio as gr
 
 from fuzzywuzzy import process, fuzz
 from openai import OpenAI
@@ -215,5 +214,6 @@ class Validator:
                 unmatched_transactions, unmatched_proofs
                 )
             recommendations = pd.read_csv(StringIO(recommendations))
+            recommendations.columns = [col.strip() for col in recommendations.columns]
 
         return analysis, recommendations
