@@ -76,66 +76,13 @@ class Interface:
 
         progress(8 * step_increment, desc="Displaying Results")
 
-        # checkboxes = []
-        # # Create a single column for both DataFrame and checkboxes
-        # with gr.Column():
-        #     for _, row in state.value["recommendations"].iterrows():
-        #         with gr.Row():
-        #             # Display each row of the DataFrame
-        #             gr.Text(row["Transaction Business Name"])
-        #             gr.Text(row["Transaction Total"])
-        #             gr.Text(row["Transaction Date"])
-        #             gr.Text(row["Proof Business Name"])
-        #             gr.Text(row["Proof Total"])
-        #             gr.Text(row["Proof Date"])
-        #             gr.Text(row["Reason"])
-                    
-        #             # Add a checkbox for each row
-        #             checkbox = gr.Checkbox(label="Accept", value=False)
-        #             checkboxes.append(checkbox)
-
-        #     submit_btn = gr.Button("Submit")
-
-
         return (
             gr.Dataframe(state["discrepancies"], visible=Interface.is_not_empty(discrepancies)),
             gr.Dataframe(state["unmatched_transactions"], visible=Interface.is_not_empty(unmatched_transactions)),
             gr.Dataframe(state["unmatched_proofs"], visible=Interface.is_not_empty(unmatched_proofs)),
             results,
-            gr.Dataframe(state["recommendations"], visible=Interface.is_not_empty(recommendations))
+            gr.Dataframe(state["recommendations"], visible=False)
         ) 
-
-    @staticmethod
-    def display_recommendations(recommendations: pd.DataFrame):
-        """_summary_
-
-        Args:
-            recommendations: _description_
-        """
-        if recommendations.empty:
-            return 
-
-        # Create a list to hold checkbox states
-        checkboxes = []
-
-        # Create a single column for both DataFrame and checkboxes
-        with gr.Column():
-            for _, row in recommendations.iterrows():
-                with gr.Row():
-                    # Display each row of the DataFrame
-                    gr.Text(row["Transaction Business Name"])
-                    gr.Text(row["Transaction Total"])
-                    gr.Text(row["Transaction Date"])
-                    gr.Text(row["Proof Business Name"])
-                    gr.Text(row["Proof Total"])
-                    gr.Text(row["Proof Date"])
-                    gr.Text(row["Reason"])
-                    
-                    # Add a checkbox for each row
-                    checkbox = gr.Checkbox(label="Accept", value=False)
-                    checkboxes.append(checkbox)
-
-        submit_btn = gr.Button("Submit")
 
     @staticmethod
     def is_not_empty(df: pd.DataFrame) -> bool:
@@ -192,7 +139,8 @@ class Interface:
                                                 visible=False)
 
             recommendations = gr.Dataframe(state.value["recommendations"], label="Recommendations",
-                                           interactive=True, visible=False)
+                                           visible=False)
+            output = gr.Textbox('You accepted recommendations for:', label="Notes", visible=False)
 
             validate_btn.click(
                 fn=self.run_validation,
@@ -218,4 +166,52 @@ class Interface:
                 ]
             )
 
+            @gr.render(inputs=[recommendations, output], triggers=[recommendations.change, output.change])
+            def display_recommendations(rec: pd.DataFrame, out):
+                if len(rec.columns) < 7:
+                    return 
+
+                checkboxes = []
+                with gr.Column():
+                    gr.Markdown("### Recommendations")
+                    if rec.empty:
+                        gr.Textbox('No recommendations', show_label=False)
+                        return
+
+                    for _, row in rec.iterrows():
+                        with gr.Row():
+                            gr.Text(row["Transaction Business Name"], show_label=True, label='Transaction Business Name')
+                            gr.Text(row["Transaction Total"], show_label=True, label='Transaction Total')
+                            gr.Text(row["Transaction Date"], show_label=True, label='Transaction Date')
+                            gr.Text(row["Proof Business Name"], show_label=True, label='Proof Business Name')
+                            gr.Text(row["Proof Total"], show_label=True, label='Proof Total')
+                            gr.Text(row["Proof Date"], show_label=True, label='Proof Date')
+                            gr.Text(row["Reason"], show_label=True, label='Reason')
+
+                            checkbox = gr.Checkbox(label="Accept", value=False)
+                            checkboxes.append(checkbox)
+
+                    submit_btn = gr.Button("Submit Changes")
+
+                    def accept_recommendation(*checkbox_values):
+                        selected_indices = [i for i, value in enumerate(checkbox_values) if value]
+
+                        output_txt = process_recommendations(selected_indices)
+                        rec.drop(selected_indices, inplace=True)
+                        rec.reset_index(drop=True, inplace=True)
+                        return (
+                            gr.Textbox(out + '\n' + output_txt, label="Notes", visible=True),
+                            rec
+                        )
+
+                    def process_recommendations(selected_indices):
+                        rows = []
+                        for index in selected_indices:
+                            dropped_row = rec.iloc[index]
+                            rows.append(f"{dropped_row['Transaction Business Name']} - {dropped_row['Proof Business Name']}")
+                        return '\n'.join(map(str, rows)) if selected_indices else "No recommendations accepted."
+
+                    submit_btn.click(fn=accept_recommendation, inputs=checkboxes, outputs=[output, recommendations])
+
         ui.launch()
+
