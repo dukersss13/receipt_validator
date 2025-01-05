@@ -138,9 +138,10 @@ class Interface:
                                                 label="Unmatched Proofs", render=True,
                                                 visible=False)
 
-            recommendations = gr.Dataframe(state.value["recommendations"], label="Recommendations",
+            recommendations = gr.Dataframe(value=state.value["recommendations"],
+                                           label="Recommendations",
                                            visible=False)
-            output = gr.Textbox('You accepted recommendations for:', label="Notes", visible=False)
+            output = gr.Textbox("You accepted recommendations for:", label="Notes", visible=False)
 
             validate_btn.click(
                 fn=self.run_validation,
@@ -175,23 +176,23 @@ class Interface:
                 with gr.Column():
                     gr.Markdown("### Recommendations")
                     if rec.empty:
-                        gr.Textbox('No recommendations', show_label=False)
+                        gr.Textbox("No recommendations", show_label=False)
                         return
 
                     for _, row in rec.iterrows():
                         with gr.Row():
-                            gr.Text(row["Transaction Business Name"], show_label=True, label='Transaction Business Name')
-                            gr.Text(row["Transaction Total"], show_label=True, label='Transaction Total')
-                            gr.Text(row["Transaction Date"], show_label=True, label='Transaction Date')
-                            gr.Text(row["Proof Business Name"], show_label=True, label='Proof Business Name')
-                            gr.Text(row["Proof Total"], show_label=True, label='Proof Total')
-                            gr.Text(row["Proof Date"], show_label=True, label='Proof Date')
-                            gr.Text(row["Reason"], show_label=True, label='Reason')
+                            gr.Text(row["Transaction Business Name"], show_label=True, label="Trans Business Name")
+                            gr.Text(row["Transaction Total"], show_label=True, label="Trans Total")
+                            gr.Text(row["Transaction Date"], show_label=True, label="Trans Date")
+                            gr.Text(row["Proof Business Name"], show_label=True, label="Proof Business Name")
+                            gr.Text(row["Proof Total"], show_label=True, label="Proof Total")
+                            gr.Text(row["Proof Date"], show_label=True, label="Proof Date")
+                            gr.Text(row["Reason"], show_label=True, label="Reason")
 
                             checkbox = gr.Checkbox(label="Accept", value=False)
                             checkboxes.append(checkbox)
 
-                    submit_btn = gr.Button("Submit Changes")
+                    submit_btn = gr.Button("Accept Recommendations")
 
                     def accept_recommendation(*checkbox_values):
                         selected_indices = [i for i, value in enumerate(checkbox_values) if value]
@@ -208,7 +209,7 @@ class Interface:
                         rows = []
                         for index in selected_indices:
                             dropped_row = rec.iloc[index]
-                            rows.append(f"{dropped_row['Transaction Business Name']} - {dropped_row['Proof Business Name']}")
+                            rows.append(f'{dropped_row["Transaction Business Name"]} - {dropped_row["Proof Business Name"]}')
                         return '\n'.join(map(str, rows)) if selected_indices else "No recommendations accepted."
 
                     submit_btn.click(fn=accept_recommendation, inputs=checkboxes, outputs=[output, recommendations])
