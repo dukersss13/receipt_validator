@@ -4,8 +4,8 @@
     "dockerfile": "Dockerfile",
     "context": "..",
     "args": {
-      "GITHUB_NAME": "${localEnv:GITHUB_NAME}",
-      "GITHUB_EMAIL": "${localEnv:GITHUB_EMAIL}"
+      "GITHUB_NAME": "name",
+      "GITHUB_EMAIL": "email@yahoo.com"
     }
   },
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",

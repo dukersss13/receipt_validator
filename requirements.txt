@@ -6,3 +6,4 @@ openai
 pytest
 gradio
 faker
+python-Levenshtein
