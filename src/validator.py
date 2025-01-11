@@ -7,10 +7,7 @@ from fuzzywuzzy import process, fuzz
 from openai import OpenAI
 from src.utils import setup_openai, GPT_MODEL
 
-
 pd.set_option("display.max_columns", None)
-
-
 
 
 class Validator:
