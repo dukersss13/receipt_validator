@@ -15,9 +15,11 @@ client = OpenAI()
 
 
 class Validator:
-    def __init__(self, transactions: pd.DataFrame, proofs: pd.DataFrame):
+    def __init__(self, transactions: pd.DataFrame,
+                 proofs: pd.DataFrame, local_test: bool = False):
         self.transactions = transactions
         self.proofs = proofs
+    
 
     @staticmethod
     def match_business_names(transaction_name: str, proofs: list[str], threshold=80):
