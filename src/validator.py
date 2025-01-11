@@ -10,14 +10,27 @@ from src.utils import setup_openai, GPT_MODEL
 
 pd.set_option("display.max_columns", None)
 
-setup_openai()
-client = OpenAI()
+
 
 
 class Validator:
-    def __init__(self, transactions: pd.DataFrame, proofs: pd.DataFrame):
+    def __init__(self, transactions: pd.DataFrame,
+                 proofs: pd.DataFrame, setup_client: bool = True):
         self.transactions = transactions
         self.proofs = proofs
+
+        if setup_client:
+            self.setup_client()
+
+    def setup_client(self):
+        """
+        Sets up the OpenAI client by initializing the necessary configurations.
+
+        This method calls the setup_openai function to configure the OpenAI environment
+        and then creates an instance of the OpenAI client.
+        """
+        setup_openai()
+        self.client = OpenAI()
 
     @staticmethod
     def match_business_names(transaction_name: str, proofs: list[str], threshold=80):
@@ -117,8 +130,7 @@ class Validator:
 
         return discrepancies, unmatched_transactions, unmatched_proofs
 
-    @staticmethod
-    def analyze_unmatched_results(
+    def analyze_unmatched_results(self,
         unmatched_transactions: pd.DataFrame, unmatched_proofs: pd.DataFrame
     ) -> str:
         """
@@ -126,6 +138,7 @@ class Validator:
         """
         unmatched_trans_txt = unmatched_transactions.to_string(index=False)
         unmatched_proofs_txt = unmatched_proofs.to_string(index=False)
+
         full_prompt = """
             Your job is to analyze these unmatched transactions 
             and provide recommendations if there are potential matches that were not matched.
@@ -184,7 +197,7 @@ class Validator:
             Only output the recommendations
         """
         # Send the prompt to ChatGPT
-        response = client.chat.completions.create(
+        response = self.client.chat.completions.create(
             model=GPT_MODEL,
             messages=[
                 {"role": "system", "content": full_prompt},
@@ -210,7 +223,7 @@ class Validator:
             recommendations = pd.DataFrame([])
         else:
             analysis = "I finished the validation process and provided some recommendations below."
-            recommendations = Validator.analyze_unmatched_results(
+            recommendations = self.analyze_unmatched_results(
                 unmatched_transactions, unmatched_proofs
                 )
             recommendations = pd.read_csv(StringIO(recommendations))
