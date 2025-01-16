@@ -7,7 +7,6 @@ from src.validator import Validator
 from src.style.css import interface_theme
 
 
-
 class Interface:
     @staticmethod
     def create_empty_df(columns=["Business Name", "Total", "Date"]) -> pd.DataFrame:
@@ -61,8 +60,13 @@ class Interface:
         
         progress(6 * step_increment, desc="Analyzing Results & Providing Recommendations")
         results, recommendations = validator.analyze_results(validation_results)
-        
-        discrepancies, unmatched_transactions, unmatched_proofs = validation_results
+
+        validated_transactions, discrepancies, unmatched_transactions, unmatched_proofs = (
+            validation_results.validated_transactions,
+            validation_results.discrepancies,
+            validation_results.unmatched_transactions,
+            validation_results.unmatched_proofs,
+        )
 
         # Clear current file uploads to prepare for next turn (if any)
         transactions = proofs = None
@@ -77,6 +81,7 @@ class Interface:
         progress(8 * step_increment, desc="Displaying Results")
 
         return (
+            gr.Dataframe(state["validated_transactions"], visible=Interface.is_not_empty(validated_transactions)),
             gr.Dataframe(state["discrepancies"], visible=Interface.is_not_empty(discrepancies)),
             gr.Dataframe(state["unmatched_transactions"], visible=Interface.is_not_empty(unmatched_transactions)),
             gr.Dataframe(state["unmatched_proofs"], visible=Interface.is_not_empty(unmatched_proofs)),
@@ -102,13 +107,14 @@ class Interface:
             gr.Markdown("# Receipt Validator", elem_classes=["header-text"])
 
             state = gr.State(
-                {
-                    "unmatched_transactions": self.create_empty_df(),
-                    "unmatched_proofs": self.create_empty_df(),
-                    "discrepancies": self.create_empty_df(columns=[""]),
-                    "recommendations": self.create_empty_df(columns=[""]),
-                    "transactions": self.create_empty_df(),
-                    "proofs": self.create_empty_df()
+                {   
+                "validated_transactions": self.create_empty_df(),
+                "unmatched_transactions": self.create_empty_df(),
+                "unmatched_proofs": self.create_empty_df(),
+                "discrepancies": self.create_empty_df(columns=[""]),
+                "recommendations": self.create_empty_df(columns=[""]),
+                "transactions": self.create_empty_df(),
+                "proofs": self.create_empty_df()
                 }
             )
             with gr.Row():
@@ -125,6 +131,10 @@ class Interface:
 
             results = gr.Textbox(value="", label="Results", render=True)
             
+            validated_transactions = gr.Dataframe(value=state.value["validated_transactions"],
+                                                  label="Validated Transactions", render=True,
+                                                  visible=False)
+
             discrepancies = gr.Dataframe(value=state.value["discrepancies"],
                                          label="Discrepancies", render=True,
                                          visible=False)
@@ -147,6 +157,7 @@ class Interface:
                 fn=self.run_validation,
                 inputs=[state, transactions_input, proofs_input],
                 outputs=[
+                    validated_transactions,
                     discrepancies,
                     unmatched_transactions,
                     unmatched_proofs,
@@ -157,8 +168,16 @@ class Interface:
 
             # Clear button functionality
             clear_btn.click(
-                fn=lambda: [None] * 5,
+                fn=lambda: [
+                    self.create_empty_df(),
+                    self.create_empty_df(columns=[""]),
+                    self.create_empty_df(),
+                    self.create_empty_df(),
+                    "",
+                    self.create_empty_df(columns=[""])
+                ],
                 outputs=[
+                    validated_transactions,
                     discrepancies,
                     unmatched_transactions,
                     unmatched_proofs,

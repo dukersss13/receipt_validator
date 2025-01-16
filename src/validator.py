@@ -2,12 +2,23 @@ import numpy as np
 import pandas as pd
 from time import time
 from io import StringIO
+from dataclasses import dataclass
 
 from fuzzywuzzy import process, fuzz
 from openai import OpenAI
 from src.utils import setup_openai, GPT_MODEL
 
 pd.set_option("display.max_columns", None)
+
+
+@dataclass
+class Results:
+    def __init__(self, validated_transactions: pd.DataFrame = None, discrepancies: pd.DataFrame = None,
+                 unmatched_transactions: pd.DataFrame = None, unmatched_proofs: pd.DataFrame = None):
+        self.validated_transactions = validated_transactions
+        self.discrepancies = discrepancies
+        self.unmatched_transactions = unmatched_transactions
+        self.unmatched_proofs = unmatched_proofs
 
 
 class Validator:
@@ -47,7 +58,7 @@ class Validator:
         return match if score >= threshold else None
 
     @staticmethod
-    def find_discrepancies(merged_df: pd.DataFrame) -> pd.DataFrame:
+    def validate_totals(merged_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Find any discrepancy in the list of transactions
         """
@@ -56,8 +67,9 @@ class Validator:
         # If delta > 0.0, then transaction > proof. Elif delta < 0.0, transaction < proof.
         # Else, we're good.
         discrepancies = np.round(merged_df[merged_df["delta"] != 0.0], 2)
+        validated = merged_df[merged_df["delta"] == 0.0]
 
-        return discrepancies
+        return validated, discrepancies
 
     def find_unmatched_transactions(self, merged_df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -81,7 +93,7 @@ class Validator:
 
         return unmatched
 
-    def validate(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def validate(self) -> Results:
         """
         Run the validation process
         """
@@ -107,7 +119,7 @@ class Validator:
 
         merged_df = merged_df.drop(columns=["matched_name", "matched_date"])
 
-        discrepancies = Validator.find_discrepancies(merged_df)
+        validated_transactions, discrepancies = Validator.validate_totals(merged_df)
         unmatched_transactions = self.find_unmatched_transactions(merged_df)
         unmatched_proofs = self.find_unmatched_proofs(merged_df)
 
@@ -125,7 +137,7 @@ class Validator:
         unmatched_transactions.columns = unmatched_cols
         unmatched_proofs.columns = unmatched_cols
 
-        return discrepancies, unmatched_transactions, unmatched_proofs
+        return Results(validated_transactions, discrepancies, unmatched_transactions, unmatched_proofs)
 
     def analyze_unmatched_results(self,
         unmatched_transactions: pd.DataFrame, unmatched_proofs: pd.DataFrame
