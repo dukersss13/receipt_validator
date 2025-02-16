@@ -2,12 +2,23 @@ import numpy as np
 import pandas as pd
 from time import time
 from io import StringIO
+from dataclasses import dataclass
 
 from fuzzywuzzy import process, fuzz
 from openai import OpenAI
 from src.utils import setup_openai, GPT_MODEL
 
 pd.set_option("display.max_columns", None)
+
+
+@dataclass
+class Results:
+    def __init__(self, validated_transactions: pd.DataFrame = None, discrepancies: pd.DataFrame = None,
+                 unmatched_transactions: pd.DataFrame = None, unmatched_proofs: pd.DataFrame = None):
+        self.validated_transactions = validated_transactions
+        self.discrepancies = discrepancies
+        self.unmatched_transactions = unmatched_transactions
+        self.unmatched_proofs = unmatched_proofs
 
 
 class Validator:
@@ -47,7 +58,7 @@ class Validator:
         return match if score >= threshold else None
 
     @staticmethod
-    def find_discrepancies(merged_df: pd.DataFrame) -> pd.DataFrame:
+    def validate_totals(merged_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Find any discrepancy in the list of transactions
         """
@@ -56,8 +67,18 @@ class Validator:
         # If delta > 0.0, then transaction > proof. Elif delta < 0.0, transaction < proof.
         # Else, we're good.
         discrepancies = np.round(merged_df[merged_df["delta"] != 0.0], 2)
+        validated = merged_df[merged_df["delta"] == 0.0]
 
-        return discrepancies
+        validated = validated.drop(columns=["delta"])
+        validated.columns = ["Transaction Business Name",
+                             "Transaction Total",
+                             "Transaction Date",
+                             "Proof Business Name",
+                             "Proof Total",
+                             "Proof Date"]
+        validated["Result"] = ["Validated"] * len(validated)
+
+        return validated, discrepancies
 
     def find_unmatched_transactions(self, merged_df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -81,7 +102,41 @@ class Validator:
 
         return unmatched
 
-    def validate(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    @staticmethod
+    def update_unmatched_dataframes(accepted_recommendations: pd.DataFrame,
+                                    unmatched_transactions: pd.DataFrame,
+                                    unmatched_proofs: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+        # Update & render unmatched transactions and proofs with accepted recommendations
+        if accepted_recommendations.empty:
+            return unmatched_transactions, unmatched_proofs
+
+        # Update the unmatched transactions and proofs
+        accepted_transactions: pd.DataFrame = accepted_recommendations.iloc[:, :3]
+        accepted_transactions = accepted_transactions.map(lambda x: x.strip() if isinstance(x, str) else x)
+        accepted_proofs: pd.DataFrame = accepted_recommendations.iloc[:, 3:-1]
+        accepted_proofs = accepted_proofs.map(lambda x: x.strip() if isinstance(x, str) else x)
+
+        correct_cols = unmatched_transactions.columns
+
+        accepted_transactions = accepted_transactions.rename(columns=dict(zip(accepted_transactions.columns,
+                                                                                correct_cols)))
+
+        accepted_proofs = accepted_proofs.rename(columns=dict(zip(accepted_proofs.columns,
+                                                                    correct_cols)))
+        
+        merged_transactions = unmatched_transactions.merge(accepted_transactions, how="left",
+                                                            indicator=True)
+        remained_unmatched_transactions = merged_transactions[merged_transactions["_merge"]=="left_only"]\
+                                                                                .drop(columns=["_merge"])
+        
+        merged_proofs = unmatched_proofs.merge(accepted_proofs, how="left",
+                                    indicator=True)
+        remained_unmatched_proofs = merged_proofs[merged_proofs["_merge"]=="left_only"]\
+                                                                .drop(columns=["_merge"])
+        
+        return remained_unmatched_transactions, remained_unmatched_proofs
+
+    def validate(self) -> Results:
         """
         Run the validation process
         """
@@ -107,7 +162,7 @@ class Validator:
 
         merged_df = merged_df.drop(columns=["matched_name", "matched_date"])
 
-        discrepancies = Validator.find_discrepancies(merged_df)
+        validated_transactions, discrepancies = Validator.validate_totals(merged_df)
         unmatched_transactions = self.find_unmatched_transactions(merged_df)
         unmatched_proofs = self.find_unmatched_proofs(merged_df)
 
@@ -125,7 +180,7 @@ class Validator:
         unmatched_transactions.columns = unmatched_cols
         unmatched_proofs.columns = unmatched_cols
 
-        return discrepancies, unmatched_transactions, unmatched_proofs
+        return Results(validated_transactions, discrepancies, unmatched_transactions, unmatched_proofs)
 
     def analyze_unmatched_results(self,
         unmatched_transactions: pd.DataFrame, unmatched_proofs: pd.DataFrame
@@ -208,13 +263,13 @@ class Validator:
         return response.choices[0].message.content
 
     def analyze_results(
-        self, validation_results: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
+        self, results: Results
     ) -> tuple[str, pd.DataFrame]:
         """
         Analyze the results & provide recommendations
         for unmatched transactions & proofs
         """
-        _, unmatched_transactions, unmatched_proofs = validation_results
+        unmatched_transactions, unmatched_proofs = results.unmatched_transactions, results.unmatched_proofs
         if unmatched_transactions.empty and unmatched_proofs.empty:
             analysis = "Everything was validated. Great job keeping track of your spending!"
             recommendations = pd.DataFrame([])
