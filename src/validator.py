@@ -69,6 +69,9 @@ class Validator:
         discrepancies = np.round(merged_df[merged_df["delta"] != 0.0], 2)
         validated = merged_df[merged_df["delta"] == 0.0]
 
+        validated = validated.drop(columns=["delta"])
+        validated["Result"] = ["Validated"] * len(validated)
+
         return validated, discrepancies
 
     def find_unmatched_transactions(self, merged_df: pd.DataFrame) -> pd.DataFrame:
@@ -220,13 +223,13 @@ class Validator:
         return response.choices[0].message.content
 
     def analyze_results(
-        self, validation_results: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
+        self, results: Results
     ) -> tuple[str, pd.DataFrame]:
         """
         Analyze the results & provide recommendations
         for unmatched transactions & proofs
         """
-        _, unmatched_transactions, unmatched_proofs = validation_results
+        unmatched_transactions, unmatched_proofs = results.unmatched_transactions, results.unmatched_proofs
         if unmatched_transactions.empty and unmatched_proofs.empty:
             analysis = "Everything was validated. Great job keeping track of your spending!"
             recommendations = pd.DataFrame([])

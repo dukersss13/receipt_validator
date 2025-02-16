@@ -71,11 +71,11 @@ class Interface:
         # Clear current file uploads to prepare for next turn (if any)
         transactions = proofs = None
         progress(7 * step_increment, desc="Preparing Results")
-        state["discrepancies"] = discrepancies
 
+        state["validated_transactions"] = validated_transactions
+        state["discrepancies"] = discrepancies
         state["unmatched_transactions"] = unmatched_transactions
         state["unmatched_proofs"] = unmatched_proofs
-
         state["recommendations"] = recommendations
 
         progress(8 * step_increment, desc="Displaying Results")
@@ -113,6 +113,8 @@ class Interface:
                 "unmatched_proofs": self.create_empty_df(),
                 "discrepancies": self.create_empty_df(columns=[""]),
                 "recommendations": self.create_empty_df(columns=[""]),
+                "recommendations": self.create_empty_df(columns=[""]),
+                "accepted_recommendations": self.create_empty_df(columns=[""]),
                 "transactions": self.create_empty_df(),
                 "proofs": self.create_empty_df()
                 }
@@ -151,6 +153,11 @@ class Interface:
             recommendations = gr.Dataframe(value=state.value["recommendations"],
                                            label="Recommendations",
                                            visible=False)
+            
+            accepted_recommendations = gr.Dataframe(value=state.value["accepted_recommendations"],
+                                                    label="Accepted Recommendations",
+                                                    visible=False)
+
             output = gr.Textbox("You accepted recommendations for:", label="Notes", visible=False)
 
             validate_btn.click(
@@ -186,8 +193,9 @@ class Interface:
                 ]
             )
 
-            @gr.render(inputs=[recommendations, output], triggers=[recommendations.change, output.change])
-            def display_recommendations(rec: pd.DataFrame, out):
+            @gr.render(inputs=[recommendations, unmatched_proofs, output],
+                       triggers=[recommendations.change, unmatched_proofs.change, output.change])
+            def display_recommendations(rec: pd.DataFrame, unmatched_proofs, out):
                 if len(rec.columns) < 7:
                     return 
 
@@ -217,10 +225,15 @@ class Interface:
                         selected_indices = [i for i, value in enumerate(checkbox_values) if value]
 
                         output_txt = process_recommendations(selected_indices)
+                        accepted_recommendations_df = rec.iloc[selected_indices]
+
                         rec.drop(selected_indices, inplace=True)
                         rec.reset_index(drop=True, inplace=True)
+
                         return (
                             gr.Textbox(out + '\n' + output_txt, label="Notes", visible=True),
+                            gr.Dataframe(accepted_recommendations_df, 
+                                         visible=Interface.is_not_empty(accepted_recommendations_df)),
                             rec
                         )
 
@@ -229,9 +242,13 @@ class Interface:
                         for index in selected_indices:
                             dropped_row = rec.iloc[index]
                             rows.append(f'{dropped_row["Transaction Business Name"]} - {dropped_row["Proof Business Name"]}')
-                        return '\n'.join(map(str, rows)) if selected_indices else "No recommendations accepted."
 
-                    submit_btn.click(fn=accept_recommendation, inputs=checkboxes, outputs=[output, recommendations])
+                        return '\n'.join(map(str, rows)) if selected_indices else "No recommendations accepted."
+                    
+                    submit_btn.click(fn=accept_recommendation,
+                                     inputs=checkboxes,
+                                     outputs=[output,
+                                              accepted_recommendations,
+                                              recommendations])
 
         ui.launch()
-
