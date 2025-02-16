@@ -6,7 +6,6 @@ if __name__ == "__main__":
     interface.run_interface()
 
 # TODO 
-# Render changes to unmatched/discrepancies dataframes
 # Concatenate accepted recommendations with validated transactions
 # Reduce image size to speed up data reading
 # Read transactions + proofs files in parallel
