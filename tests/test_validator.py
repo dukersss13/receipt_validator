@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from mock_documents import create_mock_documents
-from src.validator import Validator
+from src.validator import Results, Validator
 import os
 
 
@@ -17,8 +17,14 @@ def test_validator(mock_documents):
     # Testing the Validator's validate function
     transactions, proofs = mock_documents
     validator = Validator(transactions, proofs, setup_client=False)
-    discrepancies, unmatched_transactions, unmatched_proofs = validator.validate()
+    results: Results = validator.validate()
 
+    validated_transactions = results.validated_transactions
+    discrepancies = results.discrepancies
+    unmatched_transactions = results.unmatched_transactions
+    unmatched_proofs = results.unmatched_proofs
+
+    assert len(validated_transactions)
     assert not len(discrepancies)
     assert not len(unmatched_transactions)
     assert not len(unmatched_proofs)
@@ -42,7 +48,8 @@ def test_find_discrepancies():
     )
 
     validator = Validator(transactions, proofs, setup_client=False)
-    discrepancies, unmatched_transactions, unmatched_proofs = validator.validate()
+    results = validator.validate()
+    discrepancies = results.discrepancies
 
     assert len(discrepancies) == 1
     assert discrepancies["Transaction Business Name"].iloc[0] == "Taco Bell"
@@ -69,7 +76,11 @@ def test_unmatched_transactions():
     )
 
     validator = Validator(transactions, proofs, setup_client=False)
-    discrepancies, unmatched_transactions, unmatched_proofs = validator.validate()
+    results: Results = validator.validate()
+
+    discrepancies = results.discrepancies
+    unmatched_transactions = results.unmatched_transactions
+    unmatched_proofs = results.unmatched_proofs
 
     assert not len(discrepancies)
     assert len(unmatched_transactions) == 1
@@ -97,7 +108,11 @@ def test_unmatched_proofs():
     )
 
     validator = Validator(transactions, proofs, setup_client=False)
-    discrepancies, unmatched_transactions, unmatched_proofs = validator.validate()
+    results = validator.validate()
+
+    discrepancies = results.discrepancies
+    unmatched_transactions = results.unmatched_transactions
+    unmatched_proofs = results.unmatched_proofs
 
     assert not len(discrepancies)
     assert not len(unmatched_transactions)
