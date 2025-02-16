@@ -70,6 +70,12 @@ class Validator:
         validated = merged_df[merged_df["delta"] == 0.0]
 
         validated = validated.drop(columns=["delta"])
+        validated.columns = ["Transaction Business Name",
+                             "Transaction Total",
+                             "Transaction Date",
+                             "Proof Business Name",
+                             "Proof Total",
+                             "Proof Date"]
         validated["Result"] = ["Validated"] * len(validated)
 
         return validated, discrepancies
@@ -95,6 +101,40 @@ class Validator:
         ]
 
         return unmatched
+
+    @staticmethod
+    def update_unmatched_dataframes(accepted_recommendations: pd.DataFrame,
+                                    unmatched_transactions: pd.DataFrame,
+                                    unmatched_proofs: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+        # Update & render unmatched transactions and proofs with accepted recommendations
+        if accepted_recommendations.empty:
+            return unmatched_transactions, unmatched_proofs
+
+        # Update the unmatched transactions and proofs
+        accepted_transactions: pd.DataFrame = accepted_recommendations.iloc[:, :3]
+        accepted_transactions = accepted_transactions.map(lambda x: x.strip() if isinstance(x, str) else x)
+        accepted_proofs: pd.DataFrame = accepted_recommendations.iloc[:, 3:-1]
+        accepted_proofs = accepted_proofs.map(lambda x: x.strip() if isinstance(x, str) else x)
+
+        correct_cols = unmatched_transactions.columns
+
+        accepted_transactions = accepted_transactions.rename(columns=dict(zip(accepted_transactions.columns,
+                                                                                correct_cols)))
+
+        accepted_proofs = accepted_proofs.rename(columns=dict(zip(accepted_proofs.columns,
+                                                                    correct_cols)))
+        
+        merged_transactions = unmatched_transactions.merge(accepted_transactions, how="left",
+                                                            indicator=True)
+        remained_unmatched_transactions = merged_transactions[merged_transactions["_merge"]=="left_only"]\
+                                                                                .drop(columns=["_merge"])
+        
+        merged_proofs = unmatched_proofs.merge(accepted_proofs, how="left",
+                                    indicator=True)
+        remained_unmatched_proofs = merged_proofs[merged_proofs["_merge"]=="left_only"]\
+                                                                .drop(columns=["_merge"])
+        
+        return remained_unmatched_transactions, remained_unmatched_proofs
 
     def validate(self) -> Results:
         """

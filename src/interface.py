@@ -134,8 +134,6 @@ class Interface:
                     "unmatched_proofs": self.create_empty_df(),
                     "discrepancies": self.create_empty_df(columns=[""]),
                     "recommendations": self.create_empty_df(columns=[""]),
-                    "recommendations": self.create_empty_df(columns=[""]),
-                    "accepted_recommendations": self.create_empty_df(columns=[""]),
                     "transactions": self.create_empty_df(),
                     "proofs": self.create_empty_df(),
                 }
@@ -163,7 +161,6 @@ class Interface:
             validated_transactions = gr.Dataframe(
                 value=state.value["validated_transactions"],
                 label="Validated Transactions",
-                render=True,
                 visible=False,
             )
 
@@ -189,12 +186,6 @@ class Interface:
             recommendations = gr.Dataframe(
                 value=state.value["recommendations"],
                 label="Recommendations",
-                visible=False,
-            )
-
-            accepted_recommendations = gr.Dataframe(
-                value=state.value["accepted_recommendations"],
-                label="Accepted Recommendations",
                 visible=False,
             )
 
@@ -238,19 +229,22 @@ class Interface:
             @gr.render(
                 inputs=[
                     recommendations,
+                    validated_transactions,
                     unmatched_proofs,
                     unmatched_transactions,
                     output,
                 ],
                 triggers=[
                     recommendations.change,
+                    validated_transactions.change,
                     unmatched_proofs.change,
                     unmatched_transactions.change,
                     output.change,
                 ],
             )
-            def display_recommendations(rec: pd.DataFrame, unmatched_proofs_df: pd.DataFrame, 
-                                        unmatched_transactions_df: pd.DataFrame, out: str):
+            def display_recommendations(rec: pd.DataFrame, validated_transactions_df: pd.DataFrame,
+                                        unmatched_proofs_df: pd.DataFrame, unmatched_transactions_df: pd.DataFrame, 
+                                        out: str):
                 if len(rec.columns) < 7:
                     return
 
@@ -295,25 +289,23 @@ class Interface:
                         selected_indices = [
                             i for i, value in enumerate(checkbox_values) if value
                         ]
-
                         output_txt = process_recommendations(selected_indices)
                         accepted_recommendations_df = rec.iloc[selected_indices]
 
                         rec.drop(selected_indices, inplace=True)
                         rec.reset_index(drop=True, inplace=True)
 
-                        unmatched_trans, unmatched_pr = update_unmatched_dataframes(accepted_recommendations_df,
-                                                                                    unmatched_transactions_df,
-                                                                                    unmatched_proofs_df)
+                        unmatched_trans, unmatched_pr = Validator.update_unmatched_dataframes(accepted_recommendations_df,
+                                                                                              unmatched_transactions_df,
+                                                                                              unmatched_proofs_df)
+
+                        accepted_recommendations_df["Result"] = ["Recommended"] * len(accepted_recommendations_df)
+                        validated = pd.concat([validated_transactions_df, accepted_recommendations_df], axis=0)
 
                         return (
                             gr.Textbox(
                                 out + "\n" + output_txt, label="Notes", visible=True
                             ),
-                            gr.Dataframe(
-                                accepted_recommendations_df,
-                                visible=Interface.is_not_empty(accepted_recommendations_df)
-                                ),
                             gr.Dataframe(
                                 unmatched_trans,
                                 visible=Interface.is_not_empty(unmatched_trans)
@@ -323,43 +315,14 @@ class Interface:
                                 visible=Interface.is_not_empty(unmatched_pr)
                             ),
                             gr.Dataframe(
+                                validated,
+                                visible=Interface.is_not_empty(validated)
+                                ),
+                            gr.Dataframe(
                                 rec,
                                 visible=Interface.is_not_empty(rec)
                             ),
                         )
-                    
-                    def update_unmatched_dataframes(accepted_recommendations: pd.DataFrame,
-                                                    unmatched_transactions: pd.DataFrame,
-                                                    unmatched_proofs: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-                        # Update & render unmatched transactions and proofs with accepted recommendations
-                        if accepted_recommendations.empty:
-                            return unmatched_transactions, unmatched_proofs
-
-                        # Update the unmatched transactions and proofs
-                        accepted_transactions: pd.DataFrame = accepted_recommendations.iloc[:, :3]
-                        accepted_transactions = accepted_transactions.map(lambda x: x.strip() if isinstance(x, str) else x)
-                        accepted_proofs: pd.DataFrame = accepted_recommendations.iloc[:, 3:-1]
-                        accepted_proofs = accepted_proofs.map(lambda x: x.strip() if isinstance(x, str) else x)
-
-                        correct_cols = unmatched_transactions.columns
-
-                        accepted_transactions = accepted_transactions.rename(columns=dict(zip(accepted_transactions.columns,
-                                                                                              correct_cols)))
-
-                        accepted_proofs = accepted_proofs.rename(columns=dict(zip(accepted_proofs.columns,
-                                                                                  correct_cols)))
-                        
-                        merged_transactions = unmatched_transactions.merge(accepted_transactions, how="left",
-                                                                           indicator=True)
-                        remained_unmatched_transactions = merged_transactions[merged_transactions["_merge"]=="left_only"]\
-                                                                                                .drop(columns=["_merge"])
-                        
-                        merged_proofs = unmatched_proofs.merge(accepted_proofs, how="left",
-                                                    indicator=True)
-                        remained_unmatched_proofs = merged_proofs[merged_proofs["_merge"]=="left_only"]\
-                                                                              .drop(columns=["_merge"])
-                        
-                        return remained_unmatched_transactions, remained_unmatched_proofs
 
                     def process_recommendations(selected_indices):
                         rows = []
@@ -379,9 +342,9 @@ class Interface:
                         fn=accept_recommendation,
                         inputs=checkboxes,
                         outputs=[output, 
-                                accepted_recommendations,
                                 unmatched_transactions,
                                 unmatched_proofs,
+                                validated_transactions,
                                 recommendations],
                     )
 
