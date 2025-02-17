@@ -209,19 +209,33 @@ class Interface:
             # Clear button functionality
             clear_btn.click(
                 fn=lambda: [
-                    self.create_empty_df(),
-                    self.create_empty_df(columns=[""]),
-                    self.create_empty_df(),
-                    self.create_empty_df(),
+                    gr.File(
+                    value=None,
+                    label="Upload Transactions",
+                    file_count="multiple",
+                    file_types=["image"],
+                ),
+                    gr.File(
+                    value=None,
+                    label="Upload Proofs", file_count="multiple", file_types=["image"]
+                ),
+                    gr.Dataframe(visible=False),
+                    gr.Dataframe(visible=False),
+                    gr.Dataframe(visible=False),
+                    gr.Dataframe(visible=False),
                     "",
-                    self.create_empty_df(columns=[""]),
+                    gr.Textbox("", visible=False),
+                    gr.Dataframe(visible=False)
                 ],
                 outputs=[
+                    transactions_input,
+                    proofs_input, 
                     validated_transactions,
                     discrepancies,
                     unmatched_transactions,
                     unmatched_proofs,
                     results,
+                    output,
                     recommendations,
                 ],
             )
