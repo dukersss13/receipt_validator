@@ -1,9 +1,12 @@
+from concurrent.futures import ThreadPoolExecutor
 import os
 import base64
 import numpy as np
 import pandas as pd
 from time import time
 import mimetypes
+from PIL import Image
+import io
 
 from openai import OpenAI
 from pyhocon import ConfigFactory
@@ -43,15 +46,15 @@ class DataReader:
         Read (preprocess) data given data type
 
         :param data_type: type of data, transactions or proofs
-        :return: data in a df format
+        :return: data in a df formatz
         """
         if data_type == DataType.TRANSACTIONS:
             data_path = self.transactions_data_path
         elif data_type == DataType.PROOFS:
             data_path = self.proofs_data_path
 
-        payload = DataReader.create_image_payload(data_path)
         start = time()
+        payload = DataReader.create_image_payload(data_path)
         data = DataReader.read_data(payload)
         end = time()
         print(f"Time to read {data_type.name}: {round(end - start, 2)}s")
@@ -74,16 +77,6 @@ class DataReader:
         return data
 
     @staticmethod
-    def encode_image(image_path: str):
-        """
-        Function to encode the image
-
-        :param image_path: path to image (online or offline)
-        """
-        with open(image_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode('utf-8')
-
-    @staticmethod
     def create_image_payload(data_path: str | list[str]) -> list[dict]:
         """
         Create image payload
@@ -95,28 +88,87 @@ class DataReader:
         is_dir = isinstance(data_path, str)
         files = os.listdir(data_path) if is_dir else data_path
 
-        # Loop through all files in the given directory
-        for file_name in files:
+        def process_file(file_name):
             # Get the file's MIME type
             mime_type, _ = mimetypes.guess_type(file_name)
             
             # Process only files that are images
-            if mime_type and mime_type.startswith('image/'):
+            if mime_type and mime_type.startswith("image/"):
                 # Read the file and encode it to base64
                 image_path = os.path.join(data_path, file_name) if is_dir else file_name
                 encoded_string = DataReader.encode_image(image_path)
 
                 # Create the dictionary in the specified format
-                image_dict = {
+                return {
                     "type": "image_url",
                     "image_url": {
-                        "url": f"data:{mime_type};base64,{encoded_string}",
+                    "url": f"data:{mime_type};base64,{encoded_string}",
                     },
                 }
-                # Append the dictionary to the list
-                image_payload.append(image_dict)
+
+            return None
+
+        with ThreadPoolExecutor() as executor:
+            results = list(executor.map(process_file, files))
+
+        # Filter out None results
+        image_payload = [result for result in results if result is not None]
 
         return image_payload
+
+    @staticmethod
+    def reduce_image_size(image_path, max_size=2 * 1024 * 1024):
+        """
+        Reduce an image's size to be under max_size (default 2MB) without saving to disk.
+        
+        :param image_path: Path to the input image
+        :param max_size: Maximum allowed file size in bytes (default 2MB)
+        :return: Compressed image as an in-memory bytes object
+        """
+        img = Image.open(image_path)
+
+        # Convert to RGB (handles transparency in PNGs)
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+
+        # Initialize a BytesIO object to store the compressed image
+        img_bytes = io.BytesIO()
+
+        # Start with a high quality and progressively reduce
+        quality = 90
+        while True:
+            img_bytes.seek(0)  # Reset buffer position
+            img_bytes.truncate(0)  # Clear buffer
+            img.save(img_bytes, format="JPEG", quality=quality)
+
+            # Check if the file size is within the limit
+            if img_bytes.tell() <= max_size or quality <= 10:
+                break  # Stop if it's under max_size or quality is too low
+
+            # Reduce quality
+            quality -= 5
+
+        # If still too large, resize proportionally
+        while img_bytes.tell() > max_size:
+            width, height = img.size
+            img = img.resize((int(width * 0.9), int(height * 0.9)), Image.LANCZOS)
+            img_bytes.seek(0)
+            img_bytes.truncate(0)
+            img.save(img_bytes, format="JPEG", quality=quality)
+
+        img_bytes.seek(0)  # Reset buffer to the start for reading
+
+        return img_bytes
+
+    @staticmethod
+    def encode_image(image_path: str):
+        """
+        Function to encode the image
+
+        :param image_path: path to image (online or offline)
+        """
+        img_bytes = DataReader.reduce_image_size(image_path)
+        return base64.b64encode(img_bytes.read()).decode('utf-8')
 
     @staticmethod
     def read_data(image_payload: list[dict]) -> str:
