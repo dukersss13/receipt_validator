@@ -1,6 +1,6 @@
 import gradio as gr
 import pandas as pd
-from time import sleep
+from concurrent.futures import ThreadPoolExecutor
 
 from src.data_reader import DataReader, DataType
 from src.validator import Validator
@@ -39,21 +39,29 @@ class Interface:
         progress(step_increment, desc="Initializing Data Reader")
         data_reader = DataReader(transactions=transactions, proofs=proofs)
 
-        sleep(0.5)  # Simulate Progress
-
         # Load Transactions
         progress(2 * step_increment, desc="Loading Transactions")
-        if transactions:
-            transactions_data = data_reader.load_data(DataType.TRANSACTIONS)
-        else:
-            transactions_data = state["transactions"]
+        from time import time
+        s = time()
 
-        # Load Proofs
+        def load_transactions():
+            return data_reader.load_data(DataType.TRANSACTIONS) if transactions else state["transactions"]
+
+        def load_proofs():
+            return data_reader.load_data(DataType.PROOFS) if proofs else state["proofs"]
+
         progress(3 * step_increment, desc="Loading Proofs")
-        if proofs:
-            proofs_data = data_reader.load_data(DataType.PROOFS)
-        else:
-            proofs_data = state["proofs"]
+
+        with ThreadPoolExecutor(max_workers=2) as executor:  # Use ProcessPoolExecutor if CPU-bound
+            future_transactions = executor.submit(load_transactions)
+            future_proofs = executor.submit(load_proofs)
+            
+            transactions_data = future_transactions.result()
+            proofs_data = future_proofs.result()
+        
+        e = time()
+        t = e - s
+        print(f"Total data reading time: {round(t, 2)}s")
 
         progress(4 * step_increment, desc="Initializing Validator")
         validator = Validator(transactions_data, proofs_data)

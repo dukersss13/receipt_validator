@@ -6,6 +6,5 @@ if __name__ == "__main__":
     interface.run_interface()
 
 # TODO
-# Read transactions + proofs files in parallel
 # Download validated transactions
 # Enable PDF read

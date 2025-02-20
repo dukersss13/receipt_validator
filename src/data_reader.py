@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor
 import os
 import base64
 import numpy as np
@@ -10,6 +9,7 @@ import io
 
 from openai import OpenAI
 from pyhocon import ConfigFactory
+from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 
 from src.utils import setup_openai, GPT_MODEL
@@ -55,15 +55,25 @@ class DataReader:
 
         start = time()
         payload = DataReader.create_image_payload(data_path)
-        data = DataReader.read_data(payload)
+        data = DataReader.batch_read_data(payload)
         end = time()
         print(f"Time to read {data_type.name}: {round(end - start, 2)}s")
 
-        data_list = eval(data)
+        data_list = [eval(line)[0] for line in data]
         data_vec = np.asarray(data_list)
         data_df = DataReader.preprocess_data(data_vec)
 
         return data_df
+
+    @staticmethod
+    def batch_read_data(image_payloads: list[list[dict]]) -> str:
+        """
+        Process multiple image payloads in parallel
+        """
+        with ThreadPoolExecutor() as executor:  # Adjust based on API rate limits
+            results = list(executor.map(DataReader.read_data, image_payloads))
+
+        return results
 
     @staticmethod
     def preprocess_data(data_vector: np.ndarray) -> pd.DataFrame:
@@ -193,11 +203,11 @@ class DataReader:
                         Give the total amount as numeric. No need to include the currency denomination.
                         Only give me the list, nothing else.""",
                 },
-                *image_payload
+                image_payload
             ],
             }
         ],
-        max_tokens=1000,
+        max_tokens=250,
         )
 
         return response.choices[0].message.content
