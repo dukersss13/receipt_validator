@@ -12,6 +12,8 @@ secrets/*
 # Data
 data/transactions/*
 data/proofs/*
+data/validated/*
 
 !data/transactions/.gitkeep
 !data/proofs/.gitkeep
+!data/validated/.gitkeep

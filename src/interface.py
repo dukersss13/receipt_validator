@@ -1,6 +1,8 @@
 import gradio as gr
 import pandas as pd
-from time import sleep
+import tempfile
+
+from concurrent.futures import ThreadPoolExecutor
 
 from src.data_reader import DataReader, DataType
 from src.validator import Validator
@@ -39,21 +41,29 @@ class Interface:
         progress(step_increment, desc="Initializing Data Reader")
         data_reader = DataReader(transactions=transactions, proofs=proofs)
 
-        sleep(0.5)  # Simulate Progress
-
         # Load Transactions
         progress(2 * step_increment, desc="Loading Transactions")
-        if transactions:
-            transactions_data = data_reader.load_data(DataType.TRANSACTIONS)
-        else:
-            transactions_data = state["transactions"]
+        from time import time
+        s = time()
 
-        # Load Proofs
+        def load_transactions():
+            return data_reader.load_data(DataType.TRANSACTIONS) if transactions else state["transactions"]
+
+        def load_proofs():
+            return data_reader.load_data(DataType.PROOFS) if proofs else state["proofs"]
+
         progress(3 * step_increment, desc="Loading Proofs")
-        if proofs:
-            proofs_data = data_reader.load_data(DataType.PROOFS)
-        else:
-            proofs_data = state["proofs"]
+
+        with ThreadPoolExecutor(max_workers=2) as executor:  # Use ProcessPoolExecutor if CPU-bound
+            future_transactions = executor.submit(load_transactions)
+            future_proofs = executor.submit(load_proofs)
+            
+            transactions_data = future_transactions.result()
+            proofs_data = future_proofs.result()
+        
+        e = time()
+        t = e - s
+        print(f"Total data reading time: {round(t, 2)}s")
 
         progress(4 * step_increment, desc="Initializing Validator")
         validator = Validator(transactions_data, proofs_data)
@@ -116,6 +126,32 @@ class Interface:
         Check if the df is empty
         """
         return not df.empty
+    
+    @staticmethod
+    def save_df_as_csv(df: pd.DataFrame):
+        """
+        Save a DataFrame as a CSV file in a temporary location.
+        Parameters:
+        df (pandas.DataFrame): The DataFrame to be saved as a CSV file.
+        Returns:
+        str: The file path of the saved CSV file.
+        """
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as temp_file:
+            df.to_csv(temp_file.name, index=False)
+            return temp_file.name
+
+    @staticmethod
+    def download_records(validated_records: pd.DataFrame):
+        """
+        Save the given DataFrame as a CSV file and return the file path.
+        Args:
+            validated_records (pandas.DataFrame): The DataFrame to be saved as a CSV file.
+        Returns:
+            str: The file path of the saved CSV file.
+        """
+        csv_path = Interface.save_df_as_csv(validated_records)
+
+        return csv_path
 
     def run_interface(self):
         """
@@ -164,6 +200,13 @@ class Interface:
                 visible=False,
             )
 
+            download_btn = gr.DownloadButton(label="Download Records", variant="primary",
+                                             elem_classes="custom_button")
+
+            download_btn.click(fn=self.download_records,
+                               inputs=validated_transactions,
+                               outputs=download_btn)
+
             discrepancies = gr.Dataframe(
                 value=state.value["discrepancies"],
                 label="Discrepancies",
@@ -209,19 +252,33 @@ class Interface:
             # Clear button functionality
             clear_btn.click(
                 fn=lambda: [
-                    self.create_empty_df(),
-                    self.create_empty_df(columns=[""]),
-                    self.create_empty_df(),
-                    self.create_empty_df(),
+                    gr.File(
+                    value=None,
+                    label="Upload Transactions",
+                    file_count="multiple",
+                    file_types=["image"],
+                ),
+                    gr.File(
+                    value=None,
+                    label="Upload Proofs", file_count="multiple", file_types=["image"]
+                ),
+                    gr.Dataframe(visible=False),
+                    gr.Dataframe(visible=False),
+                    gr.Dataframe(visible=False),
+                    gr.Dataframe(visible=False),
                     "",
-                    self.create_empty_df(columns=[""]),
+                    gr.Textbox("", visible=False),
+                    gr.Dataframe(visible=False)
                 ],
                 outputs=[
+                    transactions_input,
+                    proofs_input, 
                     validated_transactions,
                     discrepancies,
                     unmatched_transactions,
                     unmatched_proofs,
                     results,
+                    output,
                     recommendations,
                 ],
             )

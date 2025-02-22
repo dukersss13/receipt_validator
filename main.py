@@ -6,7 +6,5 @@ if __name__ == "__main__":
     interface.run_interface()
 
 # TODO
-# Reduce image size to speed up data reading
-# Read transactions + proofs files in parallel
 # Download validated transactions
 # Enable PDF read
