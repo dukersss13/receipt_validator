@@ -1,5 +1,7 @@
 import gradio as gr
 import pandas as pd
+import tempfile
+
 from concurrent.futures import ThreadPoolExecutor
 
 from src.data_reader import DataReader, DataType
@@ -124,6 +126,32 @@ class Interface:
         Check if the df is empty
         """
         return not df.empty
+    
+    @staticmethod
+    def save_df_as_csv(df: pd.DataFrame):
+        """
+        Save a DataFrame as a CSV file in a temporary location.
+        Parameters:
+        df (pandas.DataFrame): The DataFrame to be saved as a CSV file.
+        Returns:
+        str: The file path of the saved CSV file.
+        """
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as temp_file:
+            df.to_csv(temp_file.name, index=False)
+            return temp_file.name
+
+    @staticmethod
+    def download_records(validated_records: pd.DataFrame):
+        """
+        Save the given DataFrame as a CSV file and return the file path.
+        Args:
+            validated_records (pandas.DataFrame): The DataFrame to be saved as a CSV file.
+        Returns:
+            str: The file path of the saved CSV file.
+        """
+        csv_path = Interface.save_df_as_csv(validated_records)
+
+        return csv_path
 
     def run_interface(self):
         """
@@ -171,6 +199,13 @@ class Interface:
                 label="Validated Transactions",
                 visible=False,
             )
+
+            download_btn = gr.DownloadButton(label="Download Records", variant="primary",
+                                             elem_classes="custom_button")
+
+            download_btn.click(fn=self.download_records,
+                               inputs=validated_transactions,
+                               outputs=download_btn)
 
             discrepancies = gr.Dataframe(
                 value=state.value["discrepancies"],
