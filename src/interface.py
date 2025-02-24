@@ -62,8 +62,7 @@ class Interface:
             proofs_data = future_proofs.result()
         
         e = time()
-        t = e - s
-        print(f"Total data reading time: {round(t, 2)}s")
+        print(f"Total data reading time: {round(e - s, 2)}s")
 
         progress(4 * step_increment, desc="Initializing Validator")
         validator = Validator(transactions_data, proofs_data)
@@ -136,7 +135,7 @@ class Interface:
         Returns:
         str: The file path of the saved CSV file.
         """
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as temp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as temp_file:
             df.to_csv(temp_file.name, index=False)
             return temp_file.name
 
@@ -201,7 +200,7 @@ class Interface:
             )
 
             download_btn = gr.DownloadButton(label="Download Records", variant="primary",
-                                             elem_classes="custom_button")
+                                             elem_classes="custom_button", visible=True)
 
             download_btn.click(fn=self.download_records,
                                inputs=validated_transactions,
@@ -210,7 +209,6 @@ class Interface:
             discrepancies = gr.Dataframe(
                 value=state.value["discrepancies"],
                 label="Discrepancies",
-                render=True,
                 visible=False,
             )
 
@@ -274,6 +272,7 @@ class Interface:
                     transactions_input,
                     proofs_input, 
                     validated_transactions,
+                    download_btn,
                     discrepancies,
                     unmatched_transactions,
                     unmatched_proofs,
