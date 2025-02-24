@@ -207,7 +207,7 @@ class DataReader:
             ],
             }
         ],
-        max_tokens=250,
+        max_tokens=300,
         )
 
         return response.choices[0].message.content
