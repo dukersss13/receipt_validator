@@ -7,3 +7,6 @@ pytest
 gradio
 faker
 python-Levenshtein
+pdf2image
+pytesseract
+opencv-python

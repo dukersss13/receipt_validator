@@ -177,10 +177,11 @@ class Interface:
                 transactions_input = gr.File(
                     label="Upload Transactions",
                     file_count="multiple",
-                    file_types=["image"],
                 )
                 proofs_input = gr.File(
-                    label="Upload Proofs", file_count="multiple", file_types=["image"]
+                    label="Upload Proofs",
+                    file_count="multiple",
+                    file_types=["image"]
                 )
 
             with gr.Row():
@@ -193,18 +194,37 @@ class Interface:
 
             results = gr.Textbox(value="", label="Results", render=True)
 
+            def update_download_button_visibility(df: pd.DataFrame):
+                if "1" in df.columns:
+                    visible = False
+                else:
+                    visible = not df.empty
+                return gr.update(visible=visible)
+
             validated_transactions = gr.Dataframe(
                 value=state.value["validated_transactions"],
                 label="Validated Transactions",
                 visible=False,
             )
 
-            download_btn = gr.DownloadButton(label="Download Records", variant="primary",
-                                             elem_classes="custom_button", visible=True)
+            download_btn = gr.DownloadButton(
+                label="Download Records",
+                variant="primary",
+                elem_classes="custom_button",
+                visible=False
+            )
 
-            download_btn.click(fn=self.download_records,
-                               inputs=validated_transactions,
-                               outputs=download_btn)
+            validated_transactions.change(
+                fn=update_download_button_visibility,
+                inputs=validated_transactions,
+                outputs=download_btn
+            )
+
+            download_btn.click(
+                fn=self.download_records,
+                inputs=validated_transactions,
+                outputs=download_btn
+            )
 
             discrepancies = gr.Dataframe(
                 value=state.value["discrepancies"],
@@ -254,13 +274,21 @@ class Interface:
                     value=None,
                     label="Upload Transactions",
                     file_count="multiple",
-                    file_types=["image"],
+                    file_types=None,
                 ),
                     gr.File(
                     value=None,
-                    label="Upload Proofs", file_count="multiple", file_types=["image"]
+                    label="Upload Proofs",
+                    file_count="multiple",
+                    file_types=["image"]
                 ),
                     gr.Dataframe(visible=False),
+                    gr.DownloadButton(
+                    label="Download Records",
+                    variant="primary",
+                    elem_classes="custom_button",
+                    visible=False
+                ),
                     gr.Dataframe(visible=False),
                     gr.Dataframe(visible=False),
                     gr.Dataframe(visible=False),
@@ -272,7 +300,7 @@ class Interface:
                     transactions_input,
                     proofs_input, 
                     validated_transactions,
-                    download_btn,
+                    download_btn, 
                     discrepancies,
                     unmatched_transactions,
                     unmatched_proofs,

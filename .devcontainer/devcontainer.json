@@ -24,7 +24,8 @@
         "njpwerner.autodocstring",
         "Gruntfuggly.todo-tree",
         "ms-toolsai.jupyter",
-        "ms-toolsai.datawrangler"
+        "ms-toolsai.datawrangler",
+        "tomoki1207.pdf"
       ],
       "settings": {
         "python.linting.enabled": false,
