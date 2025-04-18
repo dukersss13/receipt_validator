@@ -8,6 +8,8 @@ from PIL import Image
 from pdf2image import convert_from_path
 import pytesseract
 import io
+import re
+import ast
 
 from openai import OpenAI
 from pyhocon import ConfigFactory
@@ -24,6 +26,29 @@ client = OpenAI()
 class DataType(Enum):
     TRANSACTIONS = 1
     PROOFS = 2
+
+
+CLIENT_PROMPT = """
+You are given a block of text from a bank statement or a receipt image.
+The text contains information about transactions, including business names, totals, and transaction dates.
+Your task is to extract this information and format it as a list of tuples.
+Each tuple should contain the business name, total amount, and transaction date.
+The business names should be strings.
+The dates should be formatted as mm-dd-yyyy.
+The total amount should be numeric, without any currency denomination.
+Only give me the list, nothing else.
+For example, if the text contains:
+"Transaction at Starbucks on 01-15-2023 for $5.00"
+You should return:
+[('Starbucks', 5.00, '01-15-2023')] 
+If there are multiple transactions, separate them with commas.
+For example:
+"Transaction at Starbucks on 01-15-2023 for $5.00, Transaction at Amazon on 01-16-2023 for $20.00"
+You should return:
+[('Starbucks', 5.00, '01-15-2023'), ('Amazon', 20.00, '01-16-2023')]
+Make sure to format the output correctly.
+Do not include any additional text or explanations.
+"""
 
 
 class DataReader:
@@ -51,17 +76,13 @@ class DataReader:
         :return: data in a df formatz
         """
         if data_type == DataType.TRANSACTIONS:
-            data = self.load_data(self.transactions_data_path)
+            processed_data = self.load_transaction_data(self.transactions_data_path)
         elif data_type == DataType.PROOFS:
-            data = self.load_data(self.proofs_data_path)
+            processed_data = self.load_proofs_data(self.proofs_data_path)
 
-        data_list = [eval(line)[0] for line in data]
-        data_vec = np.asarray(data_list)
-        data_df = DataReader.preprocess_data(data_vec)
+        return processed_data
 
-        return data_df
-
-    def load_images_with_openai(self, data_path: str) -> str:
+    def load_proofs_data(self, data_path: str) -> pd.DataFrame:
         """
         Loads proof data from the specified path.
         Args:
@@ -75,9 +96,48 @@ class DataReader:
         end = time()
         print(f"Time to read proofs: {round(end - start, 2)}s")
 
-        return data
+        # Flattened list of tuples
+        data_vec = []
 
-    def load_data(self, data_path: str) -> str:
+        for item in data:
+            parsed = ast.literal_eval(item)  # safely parse string into Python object
+            data_vec.extend(parsed) # Flatten the list of tuples 
+
+        processed_data = DataReader.preprocess_data(data_vec)
+
+        return processed_data
+    
+    @staticmethod
+    def strip_sensitive_info(text):
+        # Remove email addresses
+        text = re.sub(r'\b[\w\.-]+@[\w\.-]+\.\w+\b', '[EMAIL]', text)
+
+        # Remove phone numbers (basic US formats)
+        text = re.sub(r'\b(?:\+?1[-.\s]?)*\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b', '[PHONE]', text)
+
+        # Remove dates (MM/DD/YYYY, DD-MM-YYYY, etc.)
+        text = re.sub(r'\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b', '[DATE]', text)
+
+        # Remove ZIP codes
+        text = re.sub(r'\b\d{5}(?:-\d{4})?\b', '[ZIP]', text)
+
+        # Remove credit card numbers (13 to 16 digits)
+        text = re.sub(r'\b(?:\d[ -]*?){13,16}\b', '[CREDIT_CARD]', text)
+
+        # Remove account numbers (common formats: 8–12 digits, with or without label)
+        text = re.sub(r'\b(?:Account|Acct|A/C)[\s#:]*\d{8,20}\b', '[ACCOUNT]', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b\d{8,20}\b', '[ACCOUNT]', text)  # bare numbers fallback
+
+        # Remove street addresses (basic version)
+        text = re.sub(r'\d{1,5}\s+\w+(\s+\w+)*\s+(Street|St|Ave|Avenue|Rd|Road|Blvd|Boulevard|Ln|Lane)\b', 
+                      '[ADDRESS]', text, flags=re.IGNORECASE)
+
+        # Remove full names in Title Case (e.g., John Smith)
+        text = re.sub(r'\b([A-Z][a-z]+\s[A-Z][a-z]+)\b', '[NAME]', text)
+
+        return text
+
+    def load_transaction_data(self, data_path: str) -> pd.DataFrame:
         """
         Loads transaction data from a given file path.
         This method reads images from the specified file path, extracts text from the images using OCR,
@@ -90,38 +150,43 @@ class DataReader:
             The time taken to read and process the transaction statements.
         """
         start = time()
-        images = convert_from_path(data_path)
+        images = convert_from_path(*data_path)
         full_statement_text = DataReader.convert_image_to_text(images)
-        
-        data = self.extract_data_from_image_texts(full_statement_text)
+        filtered_statement_text = DataReader.strip_sensitive_info(full_statement_text)
+
+        data = self.extract_data_from_image_texts(filtered_statement_text)
         end = time()
         print(f"Time to read transaction statements: {round(end - start, 2)}s")
 
-        return data
+        data_vec = eval(data)
+        processed_data = DataReader.preprocess_data(data_vec)
+
+        return processed_data
     
     @staticmethod
     def convert_image_to_text(images) -> list[str]:
-        """_summary_
-
-        Args:
-            image: _description_
-
+        """
+        Converts a list of images into a list of text strings using OCR (Optical
+        Character Recognition). Args:
+            images (list): A list of image objects to be processed.
         Returns:
-            _description_
+            list[str]: A list of strings where each string represents the text
+            extracted from the corresponding image.
         """
         full_text = ""
+        # Iterate through each image and extract text
         for img in images:
             text = pytesseract.image_to_string(img)
             full_text += text
 
-        return text
+        return full_text
 
-    def batch_read_data(self, text_payloads: list[list[dict]]) -> str:
+    def batch_read_data(self, image_payload: list[list[dict]]) -> str:
         """
         Process multiple image payloads in parallel
         """
         with ThreadPoolExecutor() as executor:  # Adjust based on API rate limits
-            results = list(executor.map(self.extract_data_from_image_texts, text_payloads))
+            results = list(executor.map(self.read_proofs_data, image_payload))
 
         return results
 
@@ -230,20 +295,6 @@ class DataReader:
         img_bytes = DataReader.reduce_image_size(image_path)
         return base64.b64encode(img_bytes.read()).decode('utf-8')
 
-    @property
-    def prompt(self):
-        # Prompt
-        client_prompt = \
-        """
-        Tell me the business names, totals and transaction dates. 
-        Answer should be formatted like: [('name1', 'total1', 'date1'), ('name2', 'total2', 'date2'), etc...].
-        The business names should be strings.
-        The dates should be formatted as mm-dd-yyyy.
-        Give the total amount as numeric. No need to include the currency denomination.
-        Only give me the list, nothing else.
-        """
-        return client_prompt
-
     def read_proofs_data(self, image_payload: list[dict]) -> str:
         """
         Read the data to extract information
@@ -259,7 +310,7 @@ class DataReader:
             "content": [
                 {
                 "type": "text",
-                "text": self.prompt,
+                "text": CLIENT_PROMPT,
                 },
                 image_payload
             ],
@@ -278,13 +329,13 @@ class DataReader:
         :return: response from LLM
         """
         response = client.chat.completions.create(
-            model=GPT_MODEL,  # Use "gpt-4-turbo" or "gpt-4" depending on your access
+            model=GPT_MODEL,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": self.prompt + "\n\n" + bank_statement_text}
+                {"role": "user", "content": CLIENT_PROMPT + "\n\n" + bank_statement_text}
             ],
             temperature=0,
-            max_tokens=200
+            max_tokens=400
         )
 
         return response.choices[0].message.content
