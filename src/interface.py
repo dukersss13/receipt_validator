@@ -44,23 +44,34 @@ class Interface:
         # Load Transactions
         progress(2 * step_increment, desc="Loading Transactions")
         from time import time
+
         s = time()
 
         def load_transactions():
-            return data_reader.load_data(DataType.TRANSACTIONS) if transactions else state["transactions"]
+            return (
+                data_reader.load_data(DataType.TRANSACTIONS)
+                if transactions
+                else state["transactions"]
+            )
 
         def load_proofs():
-            return data_reader.load_data(DataType.PROOFS) if proofs else state["proofs"]
+            return (
+                data_reader.load_data(DataType.PROOFS)
+                if proofs
+                else state["proofs"]
+            )
 
         progress(3 * step_increment, desc="Loading Proofs")
 
-        with ThreadPoolExecutor(max_workers=2) as executor:  # Use ProcessPoolExecutor if CPU-bound
+        with ThreadPoolExecutor(
+            max_workers=2
+        ) as executor:  # Use ProcessPoolExecutor if CPU-bound
             future_transactions = executor.submit(load_transactions)
             future_proofs = executor.submit(load_proofs)
-            
+
             transactions_data = future_transactions.result()
             proofs_data = future_proofs.result()
-        
+
         e = time()
         print(f"Total data reading time: {round(e - s, 2)}s")
 
@@ -125,7 +136,7 @@ class Interface:
         Check if the df is empty
         """
         return not df.empty
-    
+
     @staticmethod
     def save_df_as_csv(df: pd.DataFrame):
         """
@@ -177,7 +188,6 @@ class Interface:
                 transactions_input = gr.File(
                     label="Upload Transactions",
                     file_count="multiple",
-                    file_types=["image"],
                 )
                 proofs_input = gr.File(
                     label="Upload Proofs", file_count="multiple", file_types=["image"]
@@ -193,18 +203,37 @@ class Interface:
 
             results = gr.Textbox(value="", label="Results", render=True)
 
+            def update_download_button_visibility(df: pd.DataFrame):
+                if "1" in df.columns:
+                    visible = False
+                else:
+                    visible = not df.empty
+                return gr.update(visible=visible)
+
             validated_transactions = gr.Dataframe(
                 value=state.value["validated_transactions"],
                 label="Validated Transactions",
                 visible=False,
             )
 
-            download_btn = gr.DownloadButton(label="Download Records", variant="primary",
-                                             elem_classes="custom_button", visible=True)
+            download_btn = gr.DownloadButton(
+                label="Download Records",
+                variant="primary",
+                elem_classes="custom_button",
+                visible=False,
+            )
 
-            download_btn.click(fn=self.download_records,
-                               inputs=validated_transactions,
-                               outputs=download_btn)
+            validated_transactions.change(
+                fn=update_download_button_visibility,
+                inputs=validated_transactions,
+                outputs=download_btn,
+            )
+
+            download_btn.click(
+                fn=self.download_records,
+                inputs=validated_transactions,
+                outputs=download_btn,
+            )
 
             discrepancies = gr.Dataframe(
                 value=state.value["discrepancies"],
@@ -251,26 +280,34 @@ class Interface:
             clear_btn.click(
                 fn=lambda: [
                     gr.File(
-                    value=None,
-                    label="Upload Transactions",
-                    file_count="multiple",
-                    file_types=["image"],
-                ),
+                        value=None,
+                        label="Upload Transactions",
+                        file_count="multiple",
+                        file_types=None,
+                    ),
                     gr.File(
-                    value=None,
-                    label="Upload Proofs", file_count="multiple", file_types=["image"]
-                ),
+                        value=None,
+                        label="Upload Proofs",
+                        file_count="multiple",
+                        file_types=["image"],
+                    ),
                     gr.Dataframe(visible=False),
+                    gr.DownloadButton(
+                        label="Download Records",
+                        variant="primary",
+                        elem_classes="custom_button",
+                        visible=False,
+                    ),
                     gr.Dataframe(visible=False),
                     gr.Dataframe(visible=False),
                     gr.Dataframe(visible=False),
                     "",
                     gr.Textbox("", visible=False),
-                    gr.Dataframe(visible=False)
+                    gr.Dataframe(visible=False),
                 ],
                 outputs=[
                     transactions_input,
-                    proofs_input, 
+                    proofs_input,
                     validated_transactions,
                     download_btn,
                     discrepancies,
@@ -298,9 +335,13 @@ class Interface:
                     output.change,
                 ],
             )
-            def display_recommendations(rec: pd.DataFrame, validated_transactions_df: pd.DataFrame,
-                                        unmatched_proofs_df: pd.DataFrame, unmatched_transactions_df: pd.DataFrame, 
-                                        out: str):
+            def display_recommendations(
+                rec: pd.DataFrame,
+                validated_transactions_df: pd.DataFrame,
+                unmatched_proofs_df: pd.DataFrame,
+                unmatched_transactions_df: pd.DataFrame,
+                out: str,
+            ):
                 if len(rec.columns) < 7:
                     return
 
@@ -339,7 +380,9 @@ class Interface:
                             checkbox = gr.Checkbox(label="Accept", value=False)
                             checkboxes.append(checkbox)
 
-                    submit_btn = gr.Button("Accept Recommendations", visible=Interface.is_not_empty(rec))
+                    submit_btn = gr.Button(
+                        "Accept Recommendations", visible=Interface.is_not_empty(rec)
+                    )
 
                     def accept_recommendation(*checkbox_values):
                         selected_indices = [
@@ -351,12 +394,21 @@ class Interface:
                         rec.drop(selected_indices, inplace=True)
                         rec.reset_index(drop=True, inplace=True)
 
-                        unmatched_trans, unmatched_pr = Validator.update_unmatched_dataframes(accepted_recommendations_df,
-                                                                                              unmatched_transactions_df,
-                                                                                              unmatched_proofs_df)
+                        unmatched_trans, unmatched_pr = (
+                            Validator.update_unmatched_dataframes(
+                                accepted_recommendations_df,
+                                unmatched_transactions_df,
+                                unmatched_proofs_df,
+                            )
+                        )
 
-                        accepted_recommendations_df["Result"] = ["Recommended"] * len(accepted_recommendations_df)
-                        validated = pd.concat([validated_transactions_df, accepted_recommendations_df], axis=0)
+                        accepted_recommendations_df["Result"] = ["Recommended"] * len(
+                            accepted_recommendations_df
+                        )
+                        validated = pd.concat(
+                            [validated_transactions_df, accepted_recommendations_df],
+                            axis=0,
+                        )
 
                         return (
                             gr.Textbox(
@@ -364,20 +416,16 @@ class Interface:
                             ),
                             gr.Dataframe(
                                 unmatched_trans,
-                                visible=Interface.is_not_empty(unmatched_trans)
+                                visible=Interface.is_not_empty(unmatched_trans),
                             ),
                             gr.Dataframe(
                                 unmatched_pr,
-                                visible=Interface.is_not_empty(unmatched_pr)
+                                visible=Interface.is_not_empty(unmatched_pr),
                             ),
                             gr.Dataframe(
-                                validated,
-                                visible=Interface.is_not_empty(validated)
-                                ),
-                            gr.Dataframe(
-                                rec,
-                                visible=Interface.is_not_empty(rec)
+                                validated, visible=Interface.is_not_empty(validated)
                             ),
+                            gr.Dataframe(rec, visible=Interface.is_not_empty(rec)),
                         )
 
                     def process_recommendations(selected_indices):
@@ -397,11 +445,13 @@ class Interface:
                     submit_btn.click(
                         fn=accept_recommendation,
                         inputs=checkboxes,
-                        outputs=[output, 
-                                unmatched_transactions,
-                                unmatched_proofs,
-                                validated_transactions,
-                                recommendations],
+                        outputs=[
+                            output,
+                            unmatched_transactions,
+                            unmatched_proofs,
+                            validated_transactions,
+                            recommendations,
+                        ],
                     )
 
         ui.launch()
