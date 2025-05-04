@@ -10,3 +10,5 @@ python-Levenshtein
 pdf2image
 pytesseract
 opencv-python
+langchain-community
+pypdf

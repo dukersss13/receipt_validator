@@ -12,6 +12,7 @@ import re
 import ast
 
 from openai import OpenAI
+from langchain_community.document_loaders import PyPDFLoader
 from pyhocon import ConfigFactory
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
@@ -31,21 +32,27 @@ class DataType(Enum):
 CLIENT_PROMPT = """
 You are given a block of text from a bank statement or a receipt image.
 The text contains information about transactions, including business names, totals, and transaction dates.
+Be sure to only extract the purchases and ignore any other information such as payments made.
+Payments are usually noted with a negative sign, such as -$5.00.
 Your task is to extract this information and format it as a list of tuples.
 Each tuple should contain the business name, total amount, and transaction date.
 The business names should be strings.
 The dates should be formatted as mm-dd-yyyy.
 The total amount should be numeric, without any currency denomination.
 Only give me the list, nothing else.
+
 For example, if the text contains:
 "Transaction at Starbucks on 01-15-2023 for $5.00"
 You should return:
 [('Starbucks', 5.00, '01-15-2023')] 
+
 If there are multiple transactions, separate them with commas.
+
 For example:
 "Transaction at Starbucks on 01-15-2023 for $5.00, Transaction at Amazon on 01-16-2023 for $20.00"
 You should return:
 [('Starbucks', 5.00, '01-15-2023'), ('Amazon', 20.00, '01-16-2023')]
+
 Make sure to format the output correctly.
 Do not include any additional text or explanations.
 """
@@ -150,36 +157,40 @@ class DataReader:
             The time taken to read and process the transaction statements.
         """
         start = time()
-        images = convert_from_path(*data_path)
-        full_statement_text = DataReader.convert_image_to_text(images)
-        filtered_statement_text = DataReader.strip_sensitive_info(full_statement_text)
+        data = pd.DataFrame([])
+        for path in data_path:
+            if path.lower().endswith(".pdf"):
+                extracted_data = self.extract_data_from_pdf(path)
+                data_vec = eval(extracted_data)
+                processed_data = DataReader.preprocess_data(data_vec)
+            else:
+                processed_data = self.load_proofs_data([path])
 
-        data = self.extract_data_from_image_texts(filtered_statement_text)
+            data = pd.concat([data, processed_data], axis=0)
+        
         end = time()
         print(f"Time to read transaction statements: {round(end - start, 2)}s")
 
-        data_vec = eval(data)
-        processed_data = DataReader.preprocess_data(data_vec)
+        return data
 
-        return processed_data
-    
-    @staticmethod
-    def convert_image_to_text(images) -> list[str]:
+    def extract_data_from_pdf(self, pdf_path: str) -> str:
         """
-        Converts a list of images into a list of text strings using OCR (Optical
-        Character Recognition). Args:
-            images (list): A list of image objects to be processed.
+        Extracts data from a PDF file located at the specified path.
+        Args:
+            data_path (str): The path to the PDF file.
         Returns:
-            list[str]: A list of strings where each string represents the text
-            extracted from the corresponding image.
+            str: The extracted data as a string.
         """
-        full_text = ""
-        # Iterate through each image and extract text
-        for img in images:
-            text = pytesseract.image_to_string(img)
-            full_text += text
+        loader = PyPDFLoader(pdf_path)
+        docs = loader.load()
+        text = ""
+        for doc in docs:
+            text += doc.page_content
 
-        return full_text
+        filtered_statement_text = DataReader.strip_sensitive_info(text)
+        data = self.extract_data_from_image_texts(filtered_statement_text)
+
+        return data
 
     def batch_read_data(self, image_payload: list[list[dict]]) -> str:
         """
