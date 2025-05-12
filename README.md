@@ -1,7 +1,5 @@
 # Receipt Validator
 
-# Data Reconciliation and Validation Pipeline with OpenAI API
-
 ## Overview
 
 ### Transaction Validator System🧾
