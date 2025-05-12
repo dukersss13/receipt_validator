@@ -2,7 +2,7 @@
 
 ## Overview
 
-### Transaction Validator System🧾
+### Multi-Modal Transaction Validator System🧾
 A smart pipeline that extracts, validates, and reconciles financial transactions from statements and proof documents (PDFs or images), using LLMs for intelligent matching and discrepancy detection.
 
 ## Architecture 🛠️
