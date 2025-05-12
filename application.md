@@ -28,7 +28,7 @@ The demo shown in this md will demonstrate 3 main features of RV:
 ### Application Run
 
 #### Files Upload
-![Screenshot 2025-05-12 at 11 22 14 AM](https://github.com/user-attachments/assets/915b6689-8003-4c88-be75-97e41412e8f4)
+![Screenshot 2025-05-12 at 12 20 29 PM](https://github.com/user-attachments/assets/3fc9647e-8c18-437d-942b-1d44371f2954)
 
 #### Validate
 ![Screenshot 2025-05-12 at 11 29 03 AM](https://github.com/user-attachments/assets/d13ad73f-6977-4424-b917-754b313f6c37)
