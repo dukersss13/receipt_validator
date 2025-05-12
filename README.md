@@ -50,7 +50,7 @@ The system consists of the following key components:
 3. Generate [OpenAI API Key](https://openai.com/index/openai-api/) & store under **secrets/openai_api_key**
 
 8. **RV in Action**
-   Refer to this to see the application in action.
+   Refer to [this](https://github.com/dukersss13/receipt_validator/blob/main/application.md) to see the application in action.
 
 
  ## 📌 TODO
