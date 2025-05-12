@@ -2,6 +2,7 @@
 
 ### To Start
 Be sure to follow the set up steps to install Docker, set up the necessary API keys. Once that is complete, open the application in the Docker dev-container.
+
 ![image](https://github.com/user-attachments/assets/283615d4-9cb4-4e8e-a4df-98d9b87902be)
 
 
