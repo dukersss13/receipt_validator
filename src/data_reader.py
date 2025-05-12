@@ -5,8 +5,6 @@ import pandas as pd
 from time import time
 import mimetypes
 from PIL import Image
-from pdf2image import convert_from_path
-import pytesseract
 import io
 import re
 import ast

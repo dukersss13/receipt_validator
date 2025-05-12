@@ -1,8 +1,10 @@
+import pytest
+import os
+
 from openai import OpenAI
 import pandas as pd
 from pdf2image import convert_from_path
 import pytesseract
-import os
 from PIL import Image
 
 
@@ -20,6 +22,9 @@ statements_path = "data/transactions/"
 proofs_path = "data/proofs/"
 
 
+@pytest.mark.skipif(
+    os.getenv("GITHUB_ACTIONS") == "true", reason="Skipping on GitHub Actions"
+)
 def test_statement_reading():
     # List all files in the directory
     statements = [f for f in os.listdir(statements_path) if f.lower().endswith((".pdf"))]
@@ -80,7 +85,9 @@ def test_statement_reading():
     print(results)
     
 
-
+@pytest.mark.skipif(
+    os.getenv("GITHUB_ACTIONS") == "true", reason="Skipping on GitHub Actions"
+)
 def test_image_to_string_conversion():
     
     # List all files in the directory
