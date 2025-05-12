@@ -26,11 +26,11 @@ The system consists of the following key components:
 3.  **Validator:**
     * **Discrepancy Calculator:** This module compares the transaction data against the information extracted from the proofs. It identifies discrepancies in amounts, dates, or other relevant fields. An example in the diagram shows a "Lego - 2/11/25 - $2 discrepancy."
     * **Transactions Matching:** This module attempts to match individual transactions with corresponding entries in the proofs. Matching is done through fuzzymatching with threshold of 80%.
-    * **Output (Validator):**
+    * **Recommendation Agent🧠:** This module takes the "Unmatched Transactions" and uses the OpenAI API to potentially generate recommendations (e.g., further investigation, manual review).
+    * **Output:**
         * **Validated Transactions✅:** Transactions that have been successfully matched and validated against the proofs.
         * **Discrepancy Information⚠️:** Details of any discrepancies found (e.g., "Lego - 2/11/25 - $2 discrepancy").
         * **Unmatched Transactions❓:** Transactions that could not be matched with any information in the provided proofs.
-    * **Recommendation Agent🧠:** This module takes the "Unmatched Transactions" and uses the OpenAI API to potentially generate recommendations (e.g., further investigation, manual review).
 
 4.  **OpenAI API:**
     * The OpenAI API is utilized by the "Recommendation Agent." The diagram shows the API receiving "Business Names, Totals and Dates" and "Unmatched Transactions" as input and providing "Recommendations" as output. It is also used by the Data Reader for data extraction.
