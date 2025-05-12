@@ -18,11 +18,11 @@ The Gradio UI URL should pop up in the terminal.
 
 ## Main Features
 The demo shown in this md will demonstrate 3 main features of RV:
-#### 1. Transaction-receipt matching & validation.
+### 1. Transaction-receipt matching & validation.
 ![Screenshot 2025-05-12 at 11 49 27 AM](https://github.com/user-attachments/assets/bbfab5c1-7077-4cab-8939-538dbba8676b)
-#### 2. Discrepancy Flagging
+### 2. Discrepancy Flagging
 ![Screenshot 2025-05-12 at 11 58 02 AM](https://github.com/user-attachments/assets/62180a06-ca45-496c-a56e-eec7c7b9d722)
-#### 3. Recommendation for Unmatched Transaction
+### 3. Recommendation for Unmatched Transaction
 ![Screenshot 2025-05-12 at 11 53 55 AM](https://github.com/user-attachments/assets/5a6f1f6a-1c38-4448-a589-e5d8ff70bca7)
 
 
