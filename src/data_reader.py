@@ -27,8 +27,8 @@ class DataType(Enum):
     PROOFS = 2
 
 
-CLIENT_PROMPT = """
-You are given a block of text from a bank statement or a receipt image.
+STATEMENT_PROMPT = """
+You are given a block of text from a bank statement.
 The text contains information about transactions, including business names, totals, and transaction dates.
 Be sure to only extract the purchases and ignore any other information such as payments made.
 Payments are usually noted with a negative sign, such as -$5.00.
@@ -53,6 +53,20 @@ You should return:
 
 Make sure to format the output correctly.
 Do not include any additional text or explanations.
+"""
+
+IMAGE_PROMPT = """
+You are given a block of text from a receipt image.
+The image contains information about transactions, including business names, totals, and transaction dates.
+Be sure to only extract the business names, totals, and transaction dates format it as a list of tuples.
+Each tuple should contain the business name, total amount, and transaction date.
+The business names should be strings.
+The dates should be formatted as mm-dd-yyyy.
+The total amount should be numeric, without any currency denomination.
+Only give me the list, nothing else.
+
+Example output:
+[('Starbucks', 5.00, '01-15-2023')] 
 """
 
 
@@ -319,13 +333,14 @@ class DataReader:
             "content": [
                 {
                 "type": "text",
-                "text": CLIENT_PROMPT,
+                "text": IMAGE_PROMPT,
                 },
                 image_payload
             ],
             }
         ],
-        max_tokens=200,
+        temperature=0,
+        max_tokens=300,
         )
 
         return response.choices[0].message.content
@@ -341,10 +356,10 @@ class DataReader:
             model=GPT_MODEL,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": CLIENT_PROMPT + "\n\n" + bank_statement_text}
+                {"role": "user", "content": STATEMENT_PROMPT + "\n\n" + bank_statement_text}
             ],
             temperature=0,
-            max_tokens=400
+            max_tokens=350
         )
 
         return response.choices[0].message.content
