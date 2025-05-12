@@ -50,4 +50,4 @@ The system consists of the following key components:
 
  Support more languages/currencies
 
- Integrate with financial software APIs
+ Lang Graph integration
