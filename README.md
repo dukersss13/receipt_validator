@@ -42,14 +42,14 @@ The system consists of the following key components:
 6. **Architecture Diagram**
  ![image](https://github.com/user-attachments/assets/859a47d8-e437-4bf7-bc45-c18a746df921)
 
-## Set Up
+## Set Up ⚙️
 To get started, you will need to install:
 
 1. IDE of choice ([VSCode](https://code.visualstudio.com/download) recommended)
 2. [Docker](https://www.docker.com/products/docker-desktop/) 
 3. Generate [OpenAI API Key](https://openai.com/index/openai-api/) & store under **secrets/openai_api_key**
 
-### RV in Action
+### RV in Action 💻
 Refer to [this](https://github.com/dukersss13/receipt_validator/blob/main/application.md) to see the application in action.
 
 
