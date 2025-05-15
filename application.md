@@ -17,7 +17,7 @@ The Gradio UI URL should pop up in the terminal.
 ![Screenshot 2025-05-12 at 11 21 42 AM](https://github.com/user-attachments/assets/71dc5c87-d816-46b8-8496-35250c53b536)
 
 ## Main Features
-The demo shown in this md will demonstrate 3 main features of RV:
+##### The demo shown in this md will demonstrate 3 main features of RV:
 ### 1. Transaction-receipt matching & validation.
 ![Screenshot 2025-05-12 at 11 49 27 AM](https://github.com/user-attachments/assets/bbfab5c1-7077-4cab-8939-538dbba8676b)
 ### 2. Discrepancy Flagging
@@ -34,8 +34,9 @@ The demo shown in this md will demonstrate 3 main features of RV:
 ### Validate
 After uploading the files, clicking `Validate` will start the validation process. The application starts reading in the uploaded transactions & receipt images.
 
-The receipt images are decoded into base64 bytes payloads & get sent to OpenAI API for data extraction. Statements in PDF forms are loaded via PyPDF Loader from LangChain into text & the text
-is also sent to OpenAI API for data extraction. The image payload creation is done in multi-thread fashion to mitigate run time, as you can imagine there could be potentially a large amount of receipts to process.
+1. The receipt images are decoded into base64 bytes payloads & get sent to OpenAI API for data extraction.
+2. Statements in PDF forms are loaded via PyPDF Loader from LangChain into text & the text is also sent to OpenAI API for data extraction.
+3. The image payload creation is done in multi-thread fashion to mitigate run time, as you can imagine there could be potentially a large amount of receipts to process.
 API calls are also done multi-threadedly to improve performance.
 
 #### ✅ Why Multithreading Works for API Calls
