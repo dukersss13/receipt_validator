@@ -17,7 +17,7 @@ The Gradio UI URL should pop up in the terminal.
 ![Screenshot 2025-05-12 at 11 21 42 AM](https://github.com/user-attachments/assets/71dc5c87-d816-46b8-8496-35250c53b536)
 
 ## Main Features
-##### The demo shown in this md will demonstrate 3 main features of RV:
+##### The demo shown will demonstrate 3 main features of RV:
 ### 1. Transaction-receipt matching & validation.
 ![Screenshot 2025-05-12 at 11 49 27 AM](https://github.com/user-attachments/assets/bbfab5c1-7077-4cab-8939-538dbba8676b)
 ### 2. Discrepancy Flagging
