@@ -8,6 +8,9 @@ gradio
 faker
 python-Levenshtein
 opencv-python
+langchain
+langgraph
+langchain-openai
 langchain-community
 pypdf
 # unstructured[all-docs]

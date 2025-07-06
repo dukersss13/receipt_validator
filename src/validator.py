@@ -136,24 +136,24 @@ class Validator:
         
         return remained_unmatched_transactions, remained_unmatched_proofs
 
-    def validate(self) -> Results:
+    def validate(self, state: dict) -> Results:
         """
         Run the validation process
         """
         start = time()
-        self.transactions["matched_name"] = self.transactions["business_name"].apply(
-            lambda x: self.match_business_names(x, self.proofs["business_name"].values)
+        state["transactions"]["matched_name"] = state["transactions"]["business_name"].apply(
+            lambda x: self.match_business_names(x, state["proofs"]["business_name"].values)
         )
 
-        self.transactions["matched_date"] = self.transactions["date"].apply(
-            lambda x: self.match_business_names(x, self.proofs["date"].values)
+        state["transactions"]["matched_date"] = state["transactions"]["date"].apply(
+            lambda x: self.match_business_names(x, state["proofs"]["date"].values)
         )
 
         end = time()
         print(f"Time taken to match {round(end - start, 3)}s")
         # Merge based on matched names and totals
-        merged_df = self.transactions.merge(
-            self.proofs,
+        merged_df = state["transactions"].merge(
+            state["proofs"],
             left_on=["matched_name", "matched_date"],
             right_on=["business_name", "date"],
             how="inner",

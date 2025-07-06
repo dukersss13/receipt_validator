@@ -23,8 +23,8 @@ client = OpenAI()
 
 
 class DataType(Enum):
-    TRANSACTIONS = 1
-    PROOFS = 2
+    TRANSACTIONS = "transactions"
+    PROOFS = "proofs"
 
 
 STATEMENT_PROMPT = """
@@ -55,19 +55,36 @@ Make sure to format the output correctly.
 Do not include any additional text or explanations.
 """
 
-IMAGE_PROMPT = """
+RECEIPT_PROMPT = """
 You are given a block of text from a receipt image.
-The image contains information about transactions, including business names, totals, and transaction dates.
-Be sure to only extract the business names, totals, and transaction dates format it as a list of tuples.
-Each tuple should contain the business name, total amount, and transaction date.
-The business names should be strings.
-The dates should be formatted as mm-dd-yyyy.
-The total amount should be numeric, without any currency denomination.
-Only give me the list, nothing else.
+
+The image contains information about transactions,
+including business names, totals, transaction dates, and possibly foreign currency symbols or codes.
+
+Your task is to extract the following for each transaction:
+- Business name (string)
+- Total amount (numeric, without any currency symbol or code)
+- Transaction date (in mm-dd-yyyy format)
+- Currency (as an uppercase 3-letter ISO 4217 currency code, e.g., USD, EUR, GBP, JPY)
+
+Recognize and handle currency in either:
+- Symbol form: $, €, £, ¥, ₩, ₹, ₱, etc.
+- Code form: USD, EUR, GBP, JPY, KRW, INR, PHP, etc.
+
+If no currency symbol or code is present, assume the currency is USD.
+
+Format your output as a list of tuples:
+(business_name: str, total_amount: float, date: str, currency: str)
+
+Only return the list. Do not include any explanation or commentary.
 
 Example output:
-[('Starbucks', 5.00, '01-15-2023')] 
+[('Starbucks', 5.00, '01-15-2023', 'USD'),
+ ('Pret A Manger', 7.50, '02-12-2023', 'GBP'),
+ ('7-Eleven Japan', 1200.00, '03-05-2023', 'JPY'),
+ ('Paris Café', 9.80, '04-18-2023', 'EUR')]
 """
+
 
 
 class DataReader:
@@ -101,7 +118,7 @@ class DataReader:
 
         return processed_data
 
-    def load_proofs_data(self, data_path: str) -> pd.DataFrame:
+    def load_proofs_data(self, data_path: str | list[str]) -> pd.DataFrame:
         """
         Loads proof data from the specified path.
         Args:
@@ -156,30 +173,57 @@ class DataReader:
 
         return text
 
-    def load_transaction_data(self, data_path: str) -> pd.DataFrame:
+    def load_transaction_data(self, data_path: str | list[str]) -> pd.DataFrame:
         """
-        Loads transaction data from a given file path.
-        This method reads images from the specified file path, extracts text from the images using OCR,
-        and processes the extracted text to read transaction statements.
+        Loads transaction data from PDFs and image files in a given path or list of file paths.
+        Applies OCR and LLM extraction to return a structured DataFrame.
+        
         Args:
-            data_path (str): The file path to the transaction data.
+            data_path (str | list[str]): Path to a directory, single file, or list of files.
+        
         Returns:
-            str: The processed transaction data.
-        Prints:
-            The time taken to read and process the transaction statements.
+            pd.DataFrame: Structured transaction data with business name, total, and date.
         """
+        from pathlib import Path
+
         start = time()
         data = pd.DataFrame([])
-        for path in data_path:
-            if path.lower().endswith(".pdf"):
-                extracted_data = self.extract_data_from_pdf(path)
-                data_vec = eval(extracted_data)
-                processed_data = DataReader.preprocess_data(data_vec)
-            else:
-                processed_data = self.load_proofs_data([path])
 
-            data = pd.concat([data, processed_data], axis=0)
-        
+        # Resolve files from the input
+        def gather_files(path_input):
+            if isinstance(path_input, str):
+                p = Path(path_input)
+                if p.is_file():
+                    return [str(p)]
+                elif p.is_dir():
+                    return [str(f) for f in p.iterdir() if f.is_file()]
+            elif isinstance(path_input, list):
+                return path_input
+            raise ValueError("data_path must be a file path, directory path, or list of file paths.")
+
+        # Collect and separate files
+        all_files = gather_files(data_path)
+        pdf_files = [f for f in all_files if Path(f).suffix.lower() == ".pdf"]
+        image_files = [f for f in all_files if Path(f).suffix.lower() in {".png", ".jpg", ".jpeg"}]
+
+        # Process PDFs
+        for pdf_path in pdf_files:
+            try:
+                extracted_data = self.extract_data_from_pdf(pdf_path)
+                data_vec = ast.literal_eval(extracted_data)
+                processed_data = DataReader.preprocess_data(data_vec)
+                data = pd.concat([data, processed_data], axis=0)
+            except Exception as e:
+                print(f"Warning: Failed to process PDF {pdf_path}: {e}")
+
+        # Process images (batch)
+        if image_files:
+            try:
+                image_data = self.load_proofs_data(image_files)
+                data = pd.concat([data, image_data], axis=0)
+            except Exception as e:
+                print(f"Warning: Failed to process image files: {e}")
+
         end = time()
         print(f"Time to read transaction statements: {round(end - start, 2)}s")
 
@@ -218,7 +262,7 @@ class DataReader:
         """
         Preprocess data post ingestion
         """
-        data = pd.DataFrame(data_vector, columns=["business_name", "total", "date"])
+        data = pd.DataFrame(data_vector, columns=["business_name", "total", "date", "currency"])
         data["business_name"] = data["business_name"].str.lower()
         data["total"] = data["total"].astype(float)
 
@@ -333,7 +377,7 @@ class DataReader:
             "content": [
                 {
                 "type": "text",
-                "text": IMAGE_PROMPT,
+                "text": RECEIPT_PROMPT,
                 },
                 image_payload
             ],

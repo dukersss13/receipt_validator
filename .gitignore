@@ -13,6 +13,8 @@ secrets/*
 data/transactions/*
 data/proofs/*
 data/validated/*
+data/foreign_currency/*
+
 
 !data/transactions/.gitkeep
 !data/proofs/.gitkeep
