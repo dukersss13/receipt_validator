@@ -58,3 +58,8 @@ def load_tavily_api_key():
 def setup_tavily_search():
     api_key = load_tavily_api_key()
     os.environ["TAVILY_API_KEY"] = api_key
+
+
+def load_exchange_rate_key():
+    # Load Tavily Search API key
+    return load_secret_file("secrets/exchange_rate_key")
