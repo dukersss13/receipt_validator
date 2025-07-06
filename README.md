@@ -64,5 +64,3 @@ Refer to [this](https://github.com/dukersss13/receipt_validator/blob/main/applic
  Improve image OCR robustness
 
  Support more languages/currencies
-
- Lang Graph integration
