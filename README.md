@@ -40,7 +40,11 @@ The system consists of the following key components:
   Users are allowed to download the validated records of the transactions-proofs output.
 
 6. **Architecture Diagram**
- ![Screenshot 2025-05-15 at 1 31 12 PM](https://github.com/user-attachments/assets/9ee7244c-b785-4d6f-8388-bc1cc4e2be3a)
+![Screenshot 2025-05-15 at 1 31 12 PM](https://github.com/user-attachments/assets/9ee7244c-b785-4d6f-8388-bc1cc4e2be3a)
+
+7. **LangGraph Visualization**
+![image](https://github.com/user-attachments/assets/7e5d07ef-6ffe-4ebd-9bd5-cb6e22c74706)
+
 
 
 ## Set Up ⚙️
