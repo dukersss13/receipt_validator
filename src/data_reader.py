@@ -15,6 +15,7 @@ from pyhocon import ConfigFactory
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 
+from src.currency_conversion_agent import convert_currency_to_usd
 from src.utils import setup_openai, GPT_MODEL
 
 
@@ -141,6 +142,14 @@ class DataReader:
 
         processed_data = DataReader.preprocess_data(data_vec)
 
+        # Convert currency to USD if necessary
+        if (processed_data["currency"] != "USD").any():
+            non_usd_data = processed_data[processed_data["currency"] != "USD"]
+            processed_data.loc[non_usd_data.index, "total"] = non_usd_data.apply(lambda row: \
+                                                                                 convert_currency_to_usd(row.to_dict()), axis=1)
+        
+        processed_data["currency"] = "USD"  # Set all currencies to USD after conversion
+    
         return processed_data
     
     @staticmethod
