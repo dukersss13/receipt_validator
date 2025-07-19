@@ -8,7 +8,7 @@ import pytesseract
 from PIL import Image
 
 
-from src.utils import GPT_MODEL, setup_openai
+from src.utils.utils import GPT_MODEL, setup_openai
 
 setup_openai()
 client = OpenAI()

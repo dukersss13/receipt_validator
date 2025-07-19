@@ -1,9 +1,6 @@
-from typing import Optional, TypedDict
-from langchain.agents import AgentExecutor, create_tool_calling_agent
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
-from src.utils import setup_openai, load_exchange_rate_key
+from src.utils.utils import setup_openai
 import pandas as pd
 
 
@@ -28,6 +25,6 @@ def test_currency_conversion_agent():
     # Work on Currency Conversion Agent
     # Tools: 
     # 1. Build Agents Graph for Image to Text, Currency Detection, and Currency Conversion
-    from src.graph import run_graph
+    from graph import run_graph
 
     run_graph()

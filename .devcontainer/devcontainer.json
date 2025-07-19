@@ -25,7 +25,8 @@
         "Gruntfuggly.todo-tree",
         "ms-toolsai.jupyter",
         "ms-toolsai.datawrangler",
-        "tomoki1207.pdf"
+        "tomoki1207.pdf",
+        "qwtel.sqlite-viewer"
       ],
       "settings": {
         "python.linting.enabled": false,

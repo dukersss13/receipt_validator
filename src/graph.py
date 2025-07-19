@@ -4,9 +4,9 @@ from enum import Enum
 import pandas as pd
 
 # Assume these are already implemented and imported
-from src.data_reader import DataReader, DataType
-from src.validator import Validator
-from src.currency_conversion_agent import convert_currency_to_usd
+from data.data_reader import DataReader, DataType
+from validator import Validator
+from utils.currency_conversion_agent import convert_currency_to_usd
 
 
 class Stage(str, Enum):

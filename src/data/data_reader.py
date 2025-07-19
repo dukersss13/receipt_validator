@@ -15,8 +15,8 @@ from pyhocon import ConfigFactory
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 
-from src.currency_conversion_agent import convert_currency_to_usd
-from src.utils import setup_openai, GPT_MODEL
+from src.utils.currency_conversion_agent import convert_currency_to_usd
+from src.utils.utils import setup_openai, GPT_MODEL
 
 
 setup_openai()

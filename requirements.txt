@@ -13,7 +13,7 @@ langgraph
 langchain-openai
 langchain-community
 pypdf
-# unstructured[all-docs]
-pytesseract 
-# python-magic      
-pdf2image               
+pytesseract       
+pdf2image
+sqlalchemy
+psycopg2-binary

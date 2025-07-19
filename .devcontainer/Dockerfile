@@ -1,4 +1,4 @@
-FROM python:3.10-slim-buster
+FROM python:3.11-slim-bookworm
 
 # Accept GitHub credentials as build arguments
 ARG GITHUB_NAME
@@ -11,10 +11,6 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     vim \
     curl \
-    # libmagic-dev \
-    # poppler-utils \
-    # tesseract-ocr \
-    # libgl1 \
     && rm -rf /var/lib/apt/lists/*
     
 # Install GitHub CLI
