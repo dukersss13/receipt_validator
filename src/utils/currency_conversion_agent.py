@@ -1,6 +1,6 @@
 import requests
 import pandas as pd
-from utils.utils import load_exchange_rate_key
+from src.utils.utils import load_exchange_rate_key
 from datetime import datetime
 
 

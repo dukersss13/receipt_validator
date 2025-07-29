@@ -117,7 +117,7 @@ class DataReader:
         elif data_type == DataType.PROOFS:
             processed_data = self.load_proofs_data(self.proofs_data_path)
 
-        return processed_data
+        return processed_data.drop(columns=["currency"])  # Drop currency column for validation
 
     def load_proofs_data(self, data_path: str | list[str]) -> pd.DataFrame:
         """
@@ -147,8 +147,6 @@ class DataReader:
             non_usd_data = processed_data[processed_data["currency"] != "USD"]
             processed_data.loc[non_usd_data.index, "total"] = non_usd_data.apply(lambda row: \
                                                                                  convert_currency_to_usd(row.to_dict()), axis=1)
-        
-        processed_data["currency"] = "USD"  # Set all currencies to USD after conversion
     
         return processed_data
     

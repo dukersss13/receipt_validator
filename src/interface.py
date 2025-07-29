@@ -4,7 +4,7 @@ import tempfile
 
 from concurrent.futures import ThreadPoolExecutor
 
-from data.data_reader import DataReader, DataType
+from src.data.data_reader import DataReader, DataType
 from src.validator import Validator
 from src.style.css import interface_theme
 

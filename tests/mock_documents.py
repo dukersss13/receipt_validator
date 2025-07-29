@@ -29,4 +29,7 @@ def create_mock_documents(num: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     proofs_df = transactions_df.copy()
     proofs_df["business_name"] = proofs_df["business_name"].str.upper()
 
+    transactions_df["currency"] = "USD"
+    proofs_df["currency"] = "USD"
+
     return transactions_df, proofs_df
