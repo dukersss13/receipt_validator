@@ -7,7 +7,6 @@ from sqlalchemy.orm import sessionmaker
 from src.data.db_schema import Base, Session, Transaction, Proof
 
 
-
 def append_transactions_to_db(
     db: Session, session_obj: Session, transaction_data: pd.DataFrame
 ):
@@ -45,7 +44,6 @@ def append_transactions_to_db(
     print(
         f"✅ {len(transaction_data)} transactions committed to session ID {session_obj.id}"
     )
-
 
 def append_proofs_to_db(db: Session, session_obj: Session, proof_data: pd.DataFrame):
     """
@@ -95,12 +93,13 @@ def setup_db(engine_name: str, local_db: bool = True) -> Session:
         db_exists = os.path.exists(db_path)
 
         engine = create_engine(f"sqlite:///{db_path}", echo=True)
+        Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
 
         if db_exists:
             print(f"📂 Found existing database '{db_path}'.")
         else:
             print(f"🆕 Creating new database '{db_path}'.")
-            Base.metadata.create_all(engine)  # Only create tables if DB didn't exist
 
     # Create DB session
     SessionLocal = sessionmaker(bind=engine)

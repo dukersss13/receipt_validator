@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from src.data.data_reader import DataReader, DataType
 from src.validator import Validator
 from src.style.css import interface_theme
+from src.utils.utils import create_session_id
 
 
 class Interface:
@@ -163,6 +164,28 @@ class Interface:
 
         return csv_path
 
+    def load_history(self, session_id: str) -> pd.DataFrame:
+        """
+        Load the history of transactions and proofs for a given session ID.
+        Args:
+            session_id (str): The session ID to load history for.
+        Returns:
+            pd.DataFrame: A DataFrame containing the history of transactions and proofs.
+        """
+        # Placeholder for actual implementation
+        # This should query the database or data source to retrieve the history
+        return pd.DataFrame()
+
+    @staticmethod
+    def generate_new_session():
+        """
+        Generates a new session by creating a unique session ID.
+        Returns:
+            tuple: A tuple containing the new session ID twice.
+        """
+        new_id = create_session_id()
+        return new_id, new_id
+
     def run_interface(self):
         """
         Start the gradio UI interface
@@ -172,6 +195,34 @@ class Interface:
         with gr.Blocks(css=interface_theme, theme=custom_theme) as ui:
             # Header Text
             gr.Markdown("# Receipt Validator", elem_classes=["header-text"])
+
+            # session_id_state = gr.State()
+
+            # with gr.Row():
+            #     live_session_box = gr.Textbox(value="", label="Live Session ID", interactive=False)
+            #     textbox = gr.Textbox(value="", label="Enter Past Session ID")
+
+            # with gr.Row():
+            #     create_button = gr.Button("Create New Session")
+            #     submit_btn = gr.Button("Submit", variant="primary", elem_id="submit-btn")
+
+            # create_button.click(
+            #     fn=Interface.generate_new_session,
+            #     inputs=[],
+            #     outputs=[live_session_box, session_id_state]
+            # )
+
+            # # Simulate loading history
+            # def load_history(session_id):
+            #     return f"Loaded history for session: {session_id}"
+
+            # history_box = gr.Textbox(label="History Output", interactive=False)
+
+            # submit_btn.click(
+            #     fn=load_history,
+            #     inputs=textbox,
+            #     outputs=history_box
+            # )
 
             state = gr.State(
                 {
@@ -257,6 +308,7 @@ class Interface:
                 value=state.value["recommendations"],
                 label="Recommendations",
                 visible=False,
+                interactive=True
             )
 
             output = gr.Textbox(

@@ -1,12 +1,11 @@
 from tests.test_validator import mock_documents
 
 from src.data.db_schema import Session
-from src.data.setup_db import (
+from data.database import (
     setup_db,
     append_transactions_to_db,
     append_proofs_to_db,
 )
-
 
 local_db = setup_db(engine_name="tests/data/db/test_db")
 session_id = Session(user_id="local_test")

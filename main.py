@@ -6,6 +6,7 @@ if __name__ == "__main__":
     interface.run_interface()
 
 # TODO
-# Implement local db for testing
 # Implement live db
+# Incorporate user UUID + live DB
 # Host service on a server
+# Debug recommendation system

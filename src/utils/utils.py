@@ -1,4 +1,5 @@
 import os
+import uuid
 
 GPT_MODEL = "gpt-4o-mini"
 
@@ -63,3 +64,10 @@ def setup_tavily_search():
 def load_exchange_rate_key():
     # Load Tavily Search API key
     return load_secret_file("secrets/exchange_rate_key")
+
+
+def create_session_id() -> str:
+    """
+    Generates a random UUID for session identification.
+    """
+    return str(uuid.uuid4())
