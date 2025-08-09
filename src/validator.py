@@ -66,10 +66,12 @@ class Validator:
         # Identify discrepancies
         # If delta > 0.0, then transaction > proof. Elif delta < 0.0, transaction < proof.
         # Else, we're good.
-        discrepancies = np.round(merged_df[merged_df["delta"] != 0.0], 2)
+        discrepancies: pd.DataFrame = np.round(merged_df[merged_df["delta"] != 0.0], 2)
         validated = merged_df[merged_df["delta"] == 0.0]
 
-        validated = validated.drop(columns=["delta"])
+        validated = validated.drop(columns=["delta", "currency_proof", "currency_transaction"])
+        discrepancies = discrepancies.drop(columns=["currency_proof", "currency_transaction"])
+
         validated.columns = ["Transaction Business Name",
                              "Transaction Total",
                              "Transaction Date",
@@ -90,7 +92,7 @@ class Validator:
             )
         ]
 
-        return unmatched.drop(columns=["matched_name", "matched_date"])
+        return unmatched.drop(columns=["matched_name", "matched_date", "currency"])
 
     def find_unmatched_proofs(self, merged_df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -100,7 +102,7 @@ class Validator:
             ~self.proofs["business_name"].isin(merged_df["business_name_proof"])
         ]
 
-        return unmatched
+        return unmatched.drop(columns=["currency"])
 
     @staticmethod
     def update_unmatched_dataframes(accepted_recommendations: pd.DataFrame,
@@ -192,61 +194,61 @@ class Validator:
         unmatched_proofs_txt = unmatched_proofs.to_string(index=False)
 
         full_prompt = """
-            Your job is to analyze these unmatched transactions 
-            and provide recommendations if there are potential matches that were not matched.
-    
-            The columns for both dataframes are:
-            - Business Name (str): name of the business
-            - Total (float): total amount of the transaction
-            - Date (str): transaction date
+        Your job is to analyze these unmatched transactions 
+        and provide recommendations if there are potential matches that were not matched.
 
-            One reason behind unmatches is business names from transactions and proofs
-            don't fully match even though there are matching Total and Date.
-            ---------------------------
-            Example:
-            unmatched_transactions:
-             Business Name      Total        Date
-            Ikkousha Irvine         143.62       2023-01-01
-              Jones LLC         230.45       2023-02-15
-              Smith Inc         312.67       2023-03-30
-            
-            unmatched_proofs:
-             Business Name      Total        Date
-           Ikkousha Ramen      143.62       2023-01-01
-              Taco Bell        230.45       2023-02-15
-              AMC Movies       312.67       2023-03-30
-    
-            Recommendations Example:
+        The columns for both dataframes are:
+        - Business Name (str): name of the business
+        - Total (float): total amount of the transaction
+        - Date (str): transaction date
 
-            Transaction Business Name,Transaction Total,Transaction Date,Proof Business Name,Proof Total,Proof Date,Reason
-            Ikkousha Long Beach, 143.62, 2023-01-01, Ikkousha Ramen, 143.62, 2023-01-01, Same business with matching
-            dates and transaction totals.
+        One reason behind unmatches is business names from transactions and proofs
+        don't fully match even though there are matching Total and Date.
+        ---------------------------
+        Example:
+        unmatched_transactions:
+            Business Name      Total        Date
+        Ikkousha Irvine         143.62       2023-01-01
+            Jones LLC         230.45       2023-02-15
+            Smith Inc         312.67       2023-03-30
+        
+        unmatched_proofs:
+            Business Name      Total        Date
+        Ikkousha Ramen      143.62       2023-01-01
+            Taco Bell        230.45       2023-02-15
+            AMC Movies       312.67       2023-03-30
 
-            ---------------------------
-            Another reason behind unmatches is business name can be different on transactions and proofs,
-            even though the totals and dates are the exact same.
+        Recommendations Example:
 
-            ---------------------------
-            Example:
-            unmatched_transactions:
-             Business Name      Total        Date
-             Ikkousha Irvine    143.62       2023-01-01
-              Jones LLC         230.45       2023-02-15
-              Smith Inc         312.67       2023-03-30
-            
-            unmatched_proofs:
-             Business Name      Total        Date
-             Kiosk             143.62       2023-01-01
-              Taco Bell        230.45       2023-02-15
-              AMC Movies       312.67       2023-03-30
+        Transaction Business Name,Transaction Total,Transaction Date,Proof Business Name,Proof Total,Proof Date,Reason
+        Ikkousha Long Beach, 143.62, 2023-01-01, Ikkousha Ramen, 143.62, 2023-01-01, Same business with matching
+        dates and transaction totals.
 
-            Recommendations Example:
+        ---------------------------
+        Another reason behind unmatches is business name can be different on transactions and proofs,
+        even though the totals and dates are the exact same.
 
-            Transaction Business Name,Transaction Total,Transaction Date,Proof Business Name,Proof Total,Proof Date,Reason
-            Ikkousha Long Beach, 143.62, 2023-01-01, Kiosk, 143.62, 2023-01-01, Matching Totals and Dates.
+        ---------------------------
+        Example:
+        unmatched_transactions:
+            Business Name      Total        Date
+            Ikkousha Irvine    143.62       2023-01-01
+            Jones LLC         230.45       2023-02-15
+            Smith Inc         312.67       2023-03-30
+        
+        unmatched_proofs:
+            Business Name      Total        Date
+            Kiosk             143.62       2023-01-01
+            Taco Bell        230.45       2023-02-15
+            AMC Movies       312.67       2023-03-30
 
-            ---------------------------
-            Only output the recommendations
+        Recommendations Example:
+
+        Transaction Business Name,Transaction Total,Transaction Date,Proof Business Name,Proof Total,Proof Date,Reason
+        Ikkousha Long Beach, 143.62, 2023-01-01, Kiosk, 143.62, 2023-01-01, Matching Totals and Dates.
+
+        ---------------------------
+        Only output the recommendations
         """
         # Send the prompt to ChatGPT
         response = self.client.chat.completions.create(

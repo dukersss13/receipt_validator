@@ -1,40 +1,28 @@
 import gradio as gr
+import pandas as pd
 
-def create_session_id():
-    import uuid
-    return str(uuid.uuid4())
-
-def generate_new_session():
-    new_id = create_session_id()
-    return new_id, new_id
+def validate_and_recommend(input_text):
+    # Example: create dataframe if text meets criteria
+    if "recommend" in input_text.lower():
+        df = pd.DataFrame({
+            "Item": ["A", "B"],
+            "Score": [0.9, 0.8]
+        })
+        return gr.update(value=df, visible=True)
+    else:
+        # Hide DataFrame if empty
+        return gr.update(value=None, visible=False)
 
 with gr.Blocks() as demo:
-    session_id_state = gr.State()
-
-    with gr.Row():
-        live_session_box = gr.Textbox(value="", label="Live Session ID", interactive=False)
-        create_button = gr.Button("Create New Session")
-
-    with gr.Row():
-        textbox = gr.Textbox(value="", label="Enter Past Session ID")
-        submit_btn = gr.Button("Submit")
-
-    create_button.click(
-        fn=generate_new_session,
-        inputs=[],
-        outputs=[live_session_box, session_id_state]
+    text_input = gr.Textbox(label="Enter something")
+    recommendations_df = gr.Dataframe(
+        headers=["Item", "Score"], visible=False, interactive=False
     )
 
-    # Simulate loading history
-    def load_history(session_id):
-        return f"Loaded history for session: {session_id}"
-
-    history_box = gr.Textbox(label="History Output", interactive=False)
-
-    submit_btn.click(
-        fn=load_history,
-        inputs=textbox,
-        outputs=history_box
+    text_input.change(
+        fn=validate_and_recommend,
+        inputs=text_input,
+        outputs=recommendations_df
     )
 
 demo.launch()

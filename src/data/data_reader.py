@@ -117,7 +117,7 @@ class DataReader:
         elif data_type == DataType.PROOFS:
             processed_data = self.load_proofs_data(self.proofs_data_path)
 
-        return processed_data.drop(columns=["currency"])  # Drop currency column for validation
+        return processed_data  # Drop currency column for validation
 
     def load_proofs_data(self, data_path: str | list[str]) -> pd.DataFrame:
         """

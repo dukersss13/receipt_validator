@@ -112,23 +112,30 @@ class Interface:
         progress(8 * step_increment, desc="Displaying Results")
 
         return (
-            gr.Dataframe(
-                state["validated_transactions"],
-                visible=Interface.is_not_empty(validated_transactions),
+            gr.update(
+            value=validated_transactions,
+            visible=Interface.is_not_empty(validated_transactions)
             ),
-            gr.Dataframe(
-                state["discrepancies"], visible=Interface.is_not_empty(discrepancies)
+            gr.update(
+            value=discrepancies,
+            visible=Interface.is_not_empty(discrepancies)
             ),
-            gr.Dataframe(
-                state["unmatched_transactions"],
-                visible=Interface.is_not_empty(unmatched_transactions),
+            gr.update(
+            value=unmatched_transactions,
+            visible=Interface.is_not_empty(unmatched_transactions)
             ),
-            gr.Dataframe(
-                state["unmatched_proofs"],
-                visible=Interface.is_not_empty(unmatched_proofs),
+            gr.update(
+            value=unmatched_proofs,
+            visible=Interface.is_not_empty(unmatched_proofs)
             ),
-            results,
-            gr.Dataframe(state["recommendations"], visible=False),
+            gr.update(
+            value=results,
+            visible=bool(results)
+            ),
+            gr.update(
+            value=state["recommendations"],
+            visible=Interface.is_not_empty(state["recommendations"])
+            )
         )
 
     @staticmethod
@@ -164,6 +171,16 @@ class Interface:
 
         return csv_path
 
+    @staticmethod
+    def generate_new_session():
+        """
+        Generates a new session by creating a unique session ID.
+        Returns:
+            tuple: A tuple containing the new session ID twice.
+        """
+        new_id = create_session_id()
+        return new_id, new_id
+
     def load_history(self, session_id: str) -> pd.DataFrame:
         """
         Load the history of transactions and proofs for a given session ID.
@@ -176,16 +193,6 @@ class Interface:
         # This should query the database or data source to retrieve the history
         return pd.DataFrame()
 
-    @staticmethod
-    def generate_new_session():
-        """
-        Generates a new session by creating a unique session ID.
-        Returns:
-            tuple: A tuple containing the new session ID twice.
-        """
-        new_id = create_session_id()
-        return new_id, new_id
-
     def run_interface(self):
         """
         Start the gradio UI interface
@@ -196,33 +203,29 @@ class Interface:
             # Header Text
             gr.Markdown("# Receipt Validator", elem_classes=["header-text"])
 
-            # session_id_state = gr.State()
+            session_id_state = gr.State()
 
-            # with gr.Row():
-            #     live_session_box = gr.Textbox(value="", label="Live Session ID", interactive=False)
-            #     textbox = gr.Textbox(value="", label="Enter Past Session ID")
+            with gr.Row():
+                live_session_box = gr.Textbox(value="", label="Live Session ID", interactive=False)
+                textbox = gr.Textbox(value="", label="Enter Past Session ID")
 
-            # with gr.Row():
-            #     create_button = gr.Button("Create New Session")
-            #     submit_btn = gr.Button("Submit", variant="primary", elem_id="submit-btn")
+            with gr.Row():
+                create_button = gr.Button("Create New Session")
+                submit_session_btn = gr.Button("Submit", variant="primary", elem_id="submit-btn")
 
-            # create_button.click(
-            #     fn=Interface.generate_new_session,
-            #     inputs=[],
-            #     outputs=[live_session_box, session_id_state]
-            # )
+            create_button.click(
+                fn=Interface.generate_new_session,
+                inputs=[],
+                outputs=[live_session_box, session_id_state]
+            )
 
-            # # Simulate loading history
-            # def load_history(session_id):
-            #     return f"Loaded history for session: {session_id}"
+            history_box = gr.Textbox(label="History Output", interactive=False)
 
-            # history_box = gr.Textbox(label="History Output", interactive=False)
-
-            # submit_btn.click(
-            #     fn=load_history,
-            #     inputs=textbox,
-            #     outputs=history_box
-            # )
+            submit_session_btn.click(
+                fn=load_history,
+                inputs=textbox,
+                outputs=history_box
+            )
 
             state = gr.State(
                 {
@@ -307,8 +310,7 @@ class Interface:
             recommendations = gr.Dataframe(
                 value=state.value["recommendations"],
                 label="Recommendations",
-                visible=False,
-                interactive=True
+                visible=False
             )
 
             output = gr.Textbox(
@@ -318,14 +320,9 @@ class Interface:
             validate_btn.click(
                 fn=self.run_validation,
                 inputs=[state, transactions_input, proofs_input],
-                outputs=[
-                    validated_transactions,
-                    discrepancies,
-                    unmatched_transactions,
-                    unmatched_proofs,
-                    results,
-                    recommendations,
-                ],
+                outputs=[validated_transactions, discrepancies,
+                        unmatched_transactions, unmatched_proofs,
+                        results, recommendations]
             )
 
             # Clear button functionality
@@ -387,6 +384,7 @@ class Interface:
                     output.change,
                 ],
             )
+            
             def display_recommendations(
                 rec: pd.DataFrame,
                 validated_transactions_df: pd.DataFrame,
@@ -457,9 +455,11 @@ class Interface:
                         accepted_recommendations_df["Result"] = ["Recommended"] * len(
                             accepted_recommendations_df
                         )
-                        validated = pd.concat(
-                            [validated_transactions_df, accepted_recommendations_df],
-                            axis=0,
+                        frames = [validated_transactions_df, accepted_recommendations_df]
+                        frames = [f for f in frames if not f.empty]
+                        validated = (
+                            pd.concat(frames, ignore_index=True)
+                            if frames else validated_transactions_df.copy()
                         )
 
                         return (
