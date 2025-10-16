@@ -30,6 +30,25 @@ class DataBase:
 
         SessionLocal = sessionmaker(bind=self.engine)
         self.db = SessionLocal()
+    
+
+    def load_session_history(self, session_id: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Load both transaction and proof history for a given session ID.
+        Returns (transactions_df, proofs_df).
+        """
+        # --- Load Transactions ---
+        txn_query = self.db.query(Transaction).filter(Transaction.session_id == session_id)
+        transactions_df = pd.read_sql(txn_query.statement, self.db.bind)
+
+        # --- Load Proofs ---
+        proof_query = self.db.query(Proof).filter(Proof.session_id == session_id)
+        proofs_df = pd.read_sql(proof_query.statement, self.db.bind)
+
+        print(f"Loaded {len(transactions_df)} transactions and {len(proofs_df)} proofs for session {session_id}")
+
+        return transactions_df, proofs_df
+
 
     def append_transactions(self, session_obj: Session, transaction_data: pd.DataFrame):
         """

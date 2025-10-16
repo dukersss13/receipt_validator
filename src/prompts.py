@@ -1,0 +1,116 @@
+STATEMENT_PROMPT = """
+You are given a block of text from a bank statement.
+The text contains information about transactions, including business names, totals, and transaction dates.
+Be sure to only extract the purchases and ignore any other information such as payments made.
+Payments are usually noted with a negative sign, such as -$5.00.
+Your task is to extract this information and format it as a list of tuples.
+Each tuple should contain the business name, total amount, and transaction date.
+The business names should be strings.
+The dates should be formatted as mm-dd-yyyy.
+The total amount should be numeric, without any currency denomination.
+Only give me the list, nothing else.
+
+For example, if the text contains:
+"Transaction at Starbucks on 01-15-2023 for $5.00"
+You should return:
+[('Starbucks', 5.00, '01-15-2023')] 
+
+If there are multiple transactions, separate them with commas.
+
+For example:
+"Transaction at Starbucks on 01-15-2023 for $5.00, Transaction at Amazon on 01-16-2023 for $20.00"
+You should return:
+[('Starbucks', 5.00, '01-15-2023'), ('Amazon', 20.00, '01-16-2023')]
+
+Make sure to format the output correctly.
+Do not include any additional text or explanations.
+"""
+
+RECEIPT_PROMPT = """
+You are given a block of text from a receipt image.
+
+The image contains information about transactions,
+including business names, totals, transaction dates, and possibly foreign currency symbols or codes.
+
+Your task is to extract the following for each transaction:
+- Business name (string)
+- Total amount (numeric, without any currency symbol or code)
+- Transaction date (in mm-dd-yyyy format)
+- Currency (as an uppercase 3-letter ISO 4217 currency code, e.g., USD, EUR, GBP, JPY)
+
+Recognize and handle currency in either:
+- Symbol form: $, €, £, ¥, ₩, ₹, ₱, etc.
+- Code form: USD, EUR, GBP, JPY, KRW, INR, PHP, etc.
+
+If no currency symbol or code is present, assume the currency is USD.
+
+Format your output as a list of tuples:
+(business_name: str, total_amount: float, date: str, currency: str)
+
+Only return the list. Do not include any explanation or commentary.
+
+Example output:
+[('Starbucks', 5.00, '01-15-2023', 'USD'),
+ ('Pret A Manger', 7.50, '02-12-2023', 'GBP'),
+ ('7-Eleven Japan', 1200.00, '03-05-2023', 'JPY'),
+ ('Paris Café', 9.80, '04-18-2023', 'EUR')]
+"""
+
+
+RECOMMENDATION_PROMPT = """
+Your job is to analyze these unmatched transactions 
+and provide recommendations if there are potential matches that were not matched.
+
+The columns for both dataframes are:
+- Business Name (str): name of the business
+- Total (float): total amount of the transaction
+- Date (str): transaction date
+
+One reason behind unmatches is business names from transactions and proofs
+don't fully match even though there are matching Total and Date.
+---------------------------
+Example:
+unmatched_transactions:
+    Business Name      Total        Date
+Ikkousha Irvine         143.62       2023-01-01
+    Jones LLC         230.45       2023-02-15
+    Smith Inc         312.67       2023-03-30
+
+unmatched_proofs:
+    Business Name      Total        Date
+Ikkousha Ramen      143.62       2023-01-01
+    Taco Bell        230.45       2023-02-15
+    AMC Movies       312.67       2023-03-30
+
+Recommendations Example:
+
+Transaction Business Name,Transaction Total,Transaction Date,Proof Business Name,Proof Total,Proof Date,Reason
+Ikkousha Long Beach, 143.62, 2023-01-01, Ikkousha Ramen, 143.62, 2023-01-01, Same business with matching
+dates and transaction totals.
+
+---------------------------
+Another reason behind unmatches is business name can be different on transactions and proofs,
+even though the totals and dates are the exact same.
+
+---------------------------
+Example:
+unmatched_transactions:
+    Business Name      Total        Date
+    Ikkousha Irvine    143.62       2023-01-01
+    Jones LLC         230.45       2023-02-15
+    Smith Inc         312.67       2023-03-30
+
+unmatched_proofs:
+    Business Name      Total        Date
+    Kiosk             143.62       2023-01-01
+    Taco Bell        230.45       2023-02-15
+    AMC Movies       312.67       2023-03-30
+
+Recommendations Example:
+
+Transaction Business Name,Transaction Total,Transaction Date,Proof Business Name,Proof Total,Proof Date,Reason
+Ikkousha Long Beach, 143.62, 2023-01-01, Kiosk, 143.62, 2023-01-01, Matching Totals and Dates.
+
+---------------------------
+Only output the recommendations
+"""

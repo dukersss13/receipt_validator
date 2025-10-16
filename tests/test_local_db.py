@@ -17,10 +17,8 @@ def test_setup_db(mock_documents):
     local_db.append_transactions(session_obj, transactions)
     local_db.append_proofs(session_obj, proofs)
 
-    # Verify that the data was added correctly
-    db_session = local_db.db.query(Session).first()
-    assert db_session is not None
-    assert len(db_session.transactions) == len(transactions)
-    assert len(db_session.proofs) == len(proofs)
+    db_transactions, db_proofs = local_db.load_session_history(session_obj.id)
+    assert len(db_transactions) == len(transactions)
+    assert len(db_proofs) == len(proofs)
 
     print("✅ Database setup test passed.")

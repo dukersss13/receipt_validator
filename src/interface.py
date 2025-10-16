@@ -4,6 +4,7 @@ import tempfile
 
 from concurrent.futures import ThreadPoolExecutor
 
+from src.data.database import DataBase
 from src.data.data_reader import DataReader, DataType
 from src.validator import Validator
 from src.style.css import interface_theme
@@ -11,6 +12,14 @@ from src.utils.utils import create_session_id
 
 
 class Interface:
+    """
+    Class to handle the Gradio interface for the Receipt Validator application.
+    """
+
+    def __init__(self):
+        self.data_reader = DataReader()
+        self.database: DataBase = self.data_reader.database
+
     @staticmethod
     def create_empty_df(columns=["Business Name", "Total", "Date"]) -> pd.DataFrame:
         # Create empty placeholder df
@@ -40,7 +49,7 @@ class Interface:
         print("Total proofs uploaded:", len(proofs if proofs else []))
 
         progress(step_increment, desc="Initializing Data Reader")
-        data_reader = DataReader(transactions=transactions, proofs=proofs)
+        self.data_reader.load_files(transactions, proofs)
 
         # Load Transactions
         progress(2 * step_increment, desc="Loading Transactions")
@@ -50,14 +59,14 @@ class Interface:
 
         def load_transactions():
             return (
-                data_reader.load_data(DataType.TRANSACTIONS)
+                self.data_reader.load_data(DataType.TRANSACTIONS)
                 if transactions
                 else state["transactions"]
             )
 
         def load_proofs():
             return (
-                data_reader.load_data(DataType.PROOFS)
+                self.data_reader.load_data(DataType.PROOFS)
                 if proofs
                 else state["proofs"]
             )
@@ -113,29 +122,24 @@ class Interface:
 
         return (
             gr.update(
-            value=validated_transactions,
-            visible=Interface.is_not_empty(validated_transactions)
+                value=validated_transactions,
+                visible=Interface.is_not_empty(validated_transactions),
             ),
             gr.update(
-            value=discrepancies,
-            visible=Interface.is_not_empty(discrepancies)
+                value=discrepancies, visible=Interface.is_not_empty(discrepancies)
             ),
             gr.update(
-            value=unmatched_transactions,
-            visible=Interface.is_not_empty(unmatched_transactions)
+                value=unmatched_transactions,
+                visible=Interface.is_not_empty(unmatched_transactions),
             ),
             gr.update(
-            value=unmatched_proofs,
-            visible=Interface.is_not_empty(unmatched_proofs)
+                value=unmatched_proofs, visible=Interface.is_not_empty(unmatched_proofs)
             ),
+            gr.update(value=results, visible=bool(results)),
             gr.update(
-            value=results,
-            visible=bool(results)
+                value=state["recommendations"],
+                visible=Interface.is_not_empty(state["recommendations"]),
             ),
-            gr.update(
-            value=state["recommendations"],
-            visible=Interface.is_not_empty(state["recommendations"])
-            )
         )
 
     @staticmethod
@@ -179,19 +183,26 @@ class Interface:
             tuple: A tuple containing the new session ID twice.
         """
         new_id = create_session_id()
+
         return new_id, new_id
 
-    def load_history(self, session_id: str) -> pd.DataFrame:
+    def load_history(self, session_id: str):
         """
         Load the history of transactions and proofs for a given session ID.
-        Args:
-            session_id (str): The session ID to load history for.
-        Returns:
-            pd.DataFrame: A DataFrame containing the history of transactions and proofs.
+        Returns two DataFrames: transactions and proofs.
         """
-        # Placeholder for actual implementation
-        # This should query the database or data source to retrieve the history
-        return pd.DataFrame()
+        try:
+            transactions_df, proofs_df = self.database.load_session_history(
+                int(session_id)
+            )
+        except Exception as e:
+            return gr.update(value=f"Error loading session: {e}"), gr.update(
+                value=f"Error loading session: {e}"
+            )
+
+        return gr.update(value=transactions_df, visible=True), gr.update(
+            value=proofs_df, visible=True
+        )
 
     def run_interface(self):
         """
@@ -203,28 +214,25 @@ class Interface:
             # Header Text
             gr.Markdown("# Receipt Validator", elem_classes=["header-text"])
 
+            # TODO Set session ID state in DataReader
             session_id_state = gr.State()
 
             with gr.Row():
-                live_session_box = gr.Textbox(value="", label="Live Session ID", interactive=False)
+                live_session_box = gr.Textbox(
+                    value="", label="Live Session ID", interactive=False
+                )
                 textbox = gr.Textbox(value="", label="Enter Past Session ID")
 
             with gr.Row():
                 create_button = gr.Button("Create New Session")
-                submit_session_btn = gr.Button("Submit", variant="primary", elem_id="submit-btn")
+                submit_session_btn = gr.Button(
+                    "Submit", variant="primary", elem_id="submit-btn"
+                )
 
             create_button.click(
                 fn=Interface.generate_new_session,
                 inputs=[],
-                outputs=[live_session_box, session_id_state]
-            )
-
-            history_box = gr.Textbox(label="History Output", interactive=False)
-
-            submit_session_btn.click(
-                fn=load_history,
-                inputs=textbox,
-                outputs=history_box
+                outputs=[live_session_box, session_id_state],
             )
 
             state = gr.State(
@@ -246,6 +254,12 @@ class Interface:
                 proofs_input = gr.File(
                     label="Upload Proofs", file_count="multiple", file_types=["image"]
                 )
+
+            submit_session_btn.click(
+                fn=self.load_history,
+                inputs=textbox,
+                outputs=[transactions_input, proofs_input],
+            )
 
             with gr.Row():
                 validate_btn = gr.Button(
@@ -310,7 +324,7 @@ class Interface:
             recommendations = gr.Dataframe(
                 value=state.value["recommendations"],
                 label="Recommendations",
-                visible=False
+                visible=False,
             )
 
             output = gr.Textbox(
@@ -320,9 +334,14 @@ class Interface:
             validate_btn.click(
                 fn=self.run_validation,
                 inputs=[state, transactions_input, proofs_input],
-                outputs=[validated_transactions, discrepancies,
-                        unmatched_transactions, unmatched_proofs,
-                        results, recommendations]
+                outputs=[
+                    validated_transactions,
+                    discrepancies,
+                    unmatched_transactions,
+                    unmatched_proofs,
+                    results,
+                    recommendations,
+                ],
             )
 
             # Clear button functionality
@@ -384,7 +403,6 @@ class Interface:
                     output.change,
                 ],
             )
-            
             def display_recommendations(
                 rec: pd.DataFrame,
                 validated_transactions_df: pd.DataFrame,
@@ -455,11 +473,15 @@ class Interface:
                         accepted_recommendations_df["Result"] = ["Recommended"] * len(
                             accepted_recommendations_df
                         )
-                        frames = [validated_transactions_df, accepted_recommendations_df]
+                        frames = [
+                            validated_transactions_df,
+                            accepted_recommendations_df,
+                        ]
                         frames = [f for f in frames if not f.empty]
                         validated = (
                             pd.concat(frames, ignore_index=True)
-                            if frames else validated_transactions_df.copy()
+                            if frames
+                            else validated_transactions_df.copy()
                         )
 
                         return (

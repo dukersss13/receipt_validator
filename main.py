@@ -6,6 +6,6 @@ if __name__ == "__main__":
     interface.run_interface()
 
 # TODO
-# Implement live db
-# Incorporate user UUID + live DB
-# Host service on a server
+# Implement Session ID query functionality in DataBase class
+# Implement load Session ID 
+# Add live DB

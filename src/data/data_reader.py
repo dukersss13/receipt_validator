@@ -15,8 +15,10 @@ from pyhocon import ConfigFactory
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 
+from src.prompts import RECEIPT_PROMPT, STATEMENT_PROMPT
 from src.utils.currency_conversion_agent import convert_currency_to_usd
 from src.utils.utils import setup_openai, GPT_MODEL
+from src.data.database import DataBase
 
 
 setup_openai()
@@ -28,82 +30,31 @@ class DataType(Enum):
     PROOFS = "proofs"
 
 
-STATEMENT_PROMPT = """
-You are given a block of text from a bank statement.
-The text contains information about transactions, including business names, totals, and transaction dates.
-Be sure to only extract the purchases and ignore any other information such as payments made.
-Payments are usually noted with a negative sign, such as -$5.00.
-Your task is to extract this information and format it as a list of tuples.
-Each tuple should contain the business name, total amount, and transaction date.
-The business names should be strings.
-The dates should be formatted as mm-dd-yyyy.
-The total amount should be numeric, without any currency denomination.
-Only give me the list, nothing else.
-
-For example, if the text contains:
-"Transaction at Starbucks on 01-15-2023 for $5.00"
-You should return:
-[('Starbucks', 5.00, '01-15-2023')] 
-
-If there are multiple transactions, separate them with commas.
-
-For example:
-"Transaction at Starbucks on 01-15-2023 for $5.00, Transaction at Amazon on 01-16-2023 for $20.00"
-You should return:
-[('Starbucks', 5.00, '01-15-2023'), ('Amazon', 20.00, '01-16-2023')]
-
-Make sure to format the output correctly.
-Do not include any additional text or explanations.
-"""
-
-RECEIPT_PROMPT = """
-You are given a block of text from a receipt image.
-
-The image contains information about transactions,
-including business names, totals, transaction dates, and possibly foreign currency symbols or codes.
-
-Your task is to extract the following for each transaction:
-- Business name (string)
-- Total amount (numeric, without any currency symbol or code)
-- Transaction date (in mm-dd-yyyy format)
-- Currency (as an uppercase 3-letter ISO 4217 currency code, e.g., USD, EUR, GBP, JPY)
-
-Recognize and handle currency in either:
-- Symbol form: $, €, £, ¥, ₩, ₹, ₱, etc.
-- Code form: USD, EUR, GBP, JPY, KRW, INR, PHP, etc.
-
-If no currency symbol or code is present, assume the currency is USD.
-
-Format your output as a list of tuples:
-(business_name: str, total_amount: float, date: str, currency: str)
-
-Only return the list. Do not include any explanation or commentary.
-
-Example output:
-[('Starbucks', 5.00, '01-15-2023', 'USD'),
- ('Pret A Manger', 7.50, '02-12-2023', 'GBP'),
- ('7-Eleven Japan', 1200.00, '03-05-2023', 'JPY'),
- ('Paris Café', 9.80, '04-18-2023', 'EUR')]
-"""
-
-
-
 class DataReader:
     """
     Data Reader class ingests transactions and proofs images
     prior to the validation process.
     """
-    def __init__(self, transactions: list[str] | None = [], 
-                 proofs: list[str] | None = [],
+    def __init__(self, transactions: list[str] | None = None, 
+                 proofs: list[str] | None = None,
                  config_path: str = "config.conf"):
 
         data_path = ConfigFactory.parse_file(config_path).get("data_path")
+        self.database = DataBase(engine_name="receipt_validator_db", local_db=True)
         self.transactions_data_path = data_path["transactions"]
         self.proofs_data_path = data_path["proofs"]
 
         if transactions and proofs and len(transactions) and len(proofs):
             self.transactions_data_path = transactions
             self.proofs_data_path = proofs
+    
+    def load_files(self, transactions: list[str] | None = None, 
+                   proofs: list[str] | None = None):
+        """
+        Load files into the DataReader instance.
+        """
+        self.transactions = transactions
+        self.proofs = proofs
 
     def load_data(self, data_type: DataType):
         """
@@ -146,7 +97,7 @@ class DataReader:
         if (processed_data["currency"] != "USD").any():
             non_usd_data = processed_data[processed_data["currency"] != "USD"]
             processed_data.loc[non_usd_data.index, "total"] = non_usd_data.apply(lambda row: \
-                                                                                 convert_currency_to_usd(row.to_dict()), axis=1)
+                                                              convert_currency_to_usd(row.to_dict()), axis=1)
     
         return processed_data
     
