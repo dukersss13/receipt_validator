@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship, declarative_base
 
 
@@ -20,6 +20,12 @@ class Session(Base):
     )
     proofs = relationship(
         "Proof", back_populates="session", cascade="all, delete-orphan"
+    )
+    state = relationship(
+        "SessionState",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        uselist=False,
     )
 
 
@@ -56,3 +62,16 @@ class Proof(Base):
 
     transaction = relationship("Transaction", back_populates="proofs")
     session = relationship("Session", back_populates="proofs")
+
+
+class SessionState(Base):
+    __tablename__ = "session_states"
+
+    id = Column(Integer, primary_key=True)
+    session_ref_id = Column(
+        Integer, ForeignKey("sessions.id"), nullable=False, unique=True, index=True
+    )
+    payload = Column(Text, nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    session = relationship("Session", back_populates="state")

@@ -13,6 +13,14 @@ let progressValue = 0;
 
 const byId = (id) => document.getElementById(id);
 
+function buildLocalSessionId() {
+    if (globalThis.crypto?.randomUUID) {
+        return globalThis.crypto.randomUUID();
+    }
+
+    return `local-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+}
+
 function setStatus(text) {
     byId("workflow-status").value = text;
 }
@@ -139,6 +147,22 @@ function setPanelVisibility(panelId, visible) {
     panel.classList.toggle("hidden-panel", !visible);
 }
 
+function hasMeaningfulRows(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+        return false;
+    }
+
+    return rows.some((row) => {
+        if (!row || typeof row !== "object") {
+            return false;
+        }
+
+        return Object.values(row).some(
+            (value) => value !== null && value !== undefined && String(value).trim() !== "",
+        );
+    });
+}
+
 function updateResultPanelsVisibility() {
     setPanelVisibility("loaded-transactions-panel", state.loadedTransactions.length > 0);
     setPanelVisibility("loaded-proofs-panel", state.loadedProofs.length > 0);
@@ -218,7 +242,7 @@ function renderDiscrepanciesTable() {
         adjustInput.step = "0.01";
         adjustInput.className = "table-input";
         adjustInput.id = `adjusted-amount-${idx}`;
-        adjustInput.value = row["Proof Total"] ?? row["Transaction Total"] ?? "";
+        adjustInput.value = row["Transaction Total"] ?? row["Proof Total"] ?? "";
         adjustCell.appendChild(adjustInput);
         tr.appendChild(adjustCell);
 
@@ -299,11 +323,170 @@ function renderRecommendationsTable() {
     byId("accept-recommendations-btn").disabled = false;
 }
 
+function getSelectedIndices(inputName) {
+    return Array.from(document.querySelectorAll(`input[name='${inputName}']:checked`))
+        .map((node) => Number(node.value))
+        .filter((value) => Number.isInteger(value));
+}
+
+function updateManualMatchButtonState() {
+    const button = byId("manual-match-btn");
+    if (!button) {
+        return;
+    }
+
+    const selectedTx = getSelectedIndices("unmatched-transaction-select");
+    const selectedProofs = getSelectedIndices("unmatched-proof-select");
+
+    button.disabled =
+        selectedTx.length === 0 ||
+        selectedProofs.length === 0 ||
+        selectedTx.length !== selectedProofs.length;
+}
+
+function renderSelectableUnmatchedTable(elementId, rows, checkboxName) {
+    const container = byId(elementId);
+    container.innerHTML = "";
+
+    if (!rows || rows.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "table-empty";
+        empty.textContent = "No rows";
+        container.appendChild(empty);
+        updateManualMatchButtonState();
+        return;
+    }
+
+    const columns = Object.keys(rows[0]);
+    const table = document.createElement("table");
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+
+    const selectHeader = document.createElement("th");
+    selectHeader.className = "check-cell";
+    selectHeader.textContent = "Select";
+    headRow.appendChild(selectHeader);
+
+    columns.forEach((col) => {
+        const th = document.createElement("th");
+        th.textContent = col;
+        headRow.appendChild(th);
+    });
+
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    rows.forEach((row, idx) => {
+        const tr = document.createElement("tr");
+
+        const checkCell = document.createElement("td");
+        checkCell.className = "check-cell";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.name = checkboxName;
+        checkbox.value = String(idx);
+        checkbox.addEventListener("change", updateManualMatchButtonState);
+        checkCell.appendChild(checkbox);
+        tr.appendChild(checkCell);
+
+        columns.forEach((col) => {
+            const td = document.createElement("td");
+            td.textContent = row[col] ?? "";
+            tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    container.appendChild(table);
+    updateManualMatchButtonState();
+}
+
+function renderUnmatchedTransactionsTable() {
+    renderSelectableUnmatchedTable(
+        "unmatched-transactions-table",
+        state.unmatchedTransactions,
+        "unmatched-transaction-select",
+    );
+}
+
+function renderUnmatchedProofsTable() {
+    renderSelectableUnmatchedTable(
+        "unmatched-proofs-table",
+        state.unmatchedProofs,
+        "unmatched-proof-select",
+    );
+}
+
+function manualMatchSelectedUnmatchedRows() {
+    const selectedTx = getSelectedIndices("unmatched-transaction-select");
+    const selectedProofs = getSelectedIndices("unmatched-proof-select");
+
+    if (!selectedTx.length || !selectedProofs.length) {
+        showError("Select at least one unmatched transaction and one unmatched proof.");
+        return;
+    }
+
+    if (selectedTx.length !== selectedProofs.length) {
+        showError("Select the same number of unmatched transactions and unmatched proofs.");
+        return;
+    }
+
+    showError("");
+
+    const txRows = selectedTx
+        .map((idx) => ({ idx, row: state.unmatchedTransactions[idx] }))
+        .filter((item) => item.row);
+    const proofRows = selectedProofs
+        .map((idx) => ({ idx, row: state.unmatchedProofs[idx] }))
+        .filter((item) => item.row);
+
+    const pairCount = Math.min(txRows.length, proofRows.length);
+    if (pairCount === 0) {
+        showError("No valid unmatched rows were selected.");
+        return;
+    }
+
+    for (let i = 0; i < pairCount; i += 1) {
+        const tx = txRows[i].row;
+        const proof = proofRows[i].row;
+        state.validatedTransactions.push({
+            "Transaction Business Name": tx["Business Name"],
+            "Transaction Total": tx.Total,
+            "Transaction Date": tx.Date,
+            "Proof Business Name": proof["Business Name"],
+            "Proof Total": proof.Total,
+            "Proof Date": proof.Date,
+            Reason: "Manually Matched",
+        });
+    }
+
+    const selectedTxSet = new Set(txRows.slice(0, pairCount).map((item) => item.idx));
+    const selectedProofSet = new Set(proofRows.slice(0, pairCount).map((item) => item.idx));
+
+    state.unmatchedTransactions = state.unmatchedTransactions.filter((_, idx) => !selectedTxSet.has(idx));
+    state.unmatchedProofs = state.unmatchedProofs.filter((_, idx) => !selectedProofSet.has(idx));
+
+    updateMetrics({
+        validatedTransactions: state.validatedTransactions,
+        discrepancies: state.discrepancies,
+        unmatchedTransactions: state.unmatchedTransactions,
+        unmatchedProofs: state.unmatchedProofs,
+    });
+
+    renderTable("validated-table", state.validatedTransactions);
+    renderUnmatchedTransactionsTable();
+    renderUnmatchedProofsTable();
+    updateResultPanelsVisibility();
+
+    byId("download-btn").disabled = state.validatedTransactions.length === 0;
+    byId("summary-text").textContent = `Manually matched ${pairCount} unmatched pair(s).`;
+}
+
 function updateMetrics(payload) {
-    byId("metric-validated").textContent = payload.validatedTransactions.length;
-    byId("metric-discrepancies").textContent = payload.discrepancies.length;
-    byId("metric-unmatched-transactions").textContent = payload.unmatchedTransactions.length;
-    byId("metric-unmatched-proofs").textContent = payload.unmatchedProofs.length;
+    void payload;
 }
 
 function normalizeCell(value) {
@@ -376,8 +559,8 @@ function acceptSelectedRecommendations() {
     });
 
     renderTable("validated-table", state.validatedTransactions);
-    renderTable("unmatched-transactions-table", state.unmatchedTransactions);
-    renderTable("unmatched-proofs-table", state.unmatchedProofs);
+    renderUnmatchedTransactionsTable();
+    renderUnmatchedProofsTable();
     renderRecommendationsTable();
     updateResultPanelsVisibility();
 
@@ -449,9 +632,13 @@ function validateSelectedDiscrepancies() {
     byId("summary-text").textContent = `Moved ${selectedRows.length} discrepancy row(s) into validated records.`;
 }
 
-function clearAll() {
+function clearAll({ keepSessionIds = false } = {}) {
     byId("transactions-input").value = "";
     byId("proofs-input").value = "";
+    if (!keepSessionIds) {
+        byId("session-id").value = "";
+        byId("load-session-id").value = "";
+    }
     byId("summary-text").textContent = "No validation has been executed yet.";
     showError("");
     setStatus("Idle");
@@ -474,6 +661,7 @@ function clearAll() {
     byId("download-btn").disabled = true;
     byId("accept-recommendations-btn").disabled = true;
     byId("validate-discrepancies-btn").disabled = true;
+    byId("manual-match-btn").disabled = true;
     resetProgress();
 
     updateMetrics(emptyPayload);
@@ -481,19 +669,20 @@ function clearAll() {
     renderTable("loaded-proofs-table", []);
     renderTable("validated-table", []);
     renderDiscrepanciesTable();
-    renderTable("unmatched-transactions-table", []);
-    renderTable("unmatched-proofs-table", []);
+    renderUnmatchedTransactionsTable();
+    renderUnmatchedProofsTable();
     renderRecommendationsTable();
     updateResultPanelsVisibility();
 }
 
 async function createSession() {
+    clearAll();
     setStatus("Creating session...");
     showError("");
 
     try {
         const response = await fetch("/api/session/new", { method: "POST" });
-        const payload = await response.json();
+        const payload = await response.json().catch(() => ({}));
 
         if (!response.ok) {
             throw new Error(payload.error || "Could not create session.");
@@ -504,9 +693,53 @@ async function createSession() {
         setStatus("Session ready");
         return payload.sessionId;
     } catch (err) {
+        const fallbackSessionId = buildLocalSessionId();
+        byId("session-id").value = fallbackSessionId;
+        byId("load-session-id").value = fallbackSessionId;
+        setStatus("Session ready");
+        showError(`Session service unavailable. Using local session: ${fallbackSessionId}`);
+        return fallbackSessionId;
+    }
+}
+
+async function saveSession() {
+    const sessionId = byId("session-id").value.trim();
+    showError("");
+
+    if (!sessionId) {
+        showError("Create or load a session before saving.");
+        return;
+    }
+
+    const snapshot = {
+        summary: byId("summary-text").textContent,
+        validatedTransactions: state.validatedTransactions,
+        discrepancies: state.discrepancies,
+        unmatchedTransactions: state.unmatchedTransactions,
+        unmatchedProofs: state.unmatchedProofs,
+        recommendations: state.recommendations,
+    };
+
+    setStatus("Saving session...");
+
+    try {
+        const response = await fetch(`/api/session/${encodeURIComponent(sessionId)}/save`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ state: snapshot }),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(payload.error || "Could not save session.");
+        }
+
+        setStatus("Session saved");
+    } catch (err) {
         setStatus("Error");
         showError(err.message);
-        return null;
     }
 }
 
@@ -568,8 +801,8 @@ async function runValidation() {
 
         renderTable("validated-table", payload.validatedTransactions);
         renderDiscrepanciesTable();
-        renderTable("unmatched-transactions-table", payload.unmatchedTransactions);
-        renderTable("unmatched-proofs-table", payload.unmatchedProofs);
+        renderUnmatchedTransactionsTable();
+        renderUnmatchedProofsTable();
         renderRecommendationsTable();
         updateResultPanelsVisibility();
 
@@ -602,15 +835,45 @@ async function loadSessionInputs() {
             throw new Error(payload.error || "Could not load session.");
         }
 
+        clearAll();
         byId("session-id").value = payload.sessionId;
+        byId("load-session-id").value = payload.sessionId;
         state.loadedTransactions = payload.transactions;
         state.loadedProofs = payload.proofs;
 
         renderTable("loaded-transactions-table", state.loadedTransactions);
         renderTable("loaded-proofs-table", state.loadedProofs);
-        updateResultPanelsVisibility();
 
-        byId("summary-text").textContent = `Loaded session ${payload.sessionId} with ${payload.transactions.length} transaction rows and ${payload.proofs.length} proof rows.`;
+        const stateResponse = await fetch(
+            `/api/session/${encodeURIComponent(payload.sessionId)}/state`,
+        );
+        const statePayload = await stateResponse.json().catch(() => ({}));
+        if (!stateResponse.ok) {
+            throw new Error(statePayload.error || "Could not load saved session state.");
+        }
+
+        if (statePayload.state && typeof statePayload.state === "object") {
+            state.validatedTransactions = statePayload.state.validatedTransactions ?? [];
+            state.discrepancies = statePayload.state.discrepancies ?? [];
+            state.unmatchedTransactions = statePayload.state.unmatchedTransactions ?? [];
+            state.unmatchedProofs = statePayload.state.unmatchedProofs ?? [];
+            state.recommendations = statePayload.state.recommendations ?? [];
+
+            renderTable("validated-table", state.validatedTransactions);
+            renderDiscrepanciesTable();
+            renderUnmatchedTransactionsTable();
+            renderUnmatchedProofsTable();
+            renderRecommendationsTable();
+
+            byId("summary-text").textContent =
+                statePayload.state.summary ||
+                `Loaded session ${payload.sessionId} with saved progress.`;
+            byId("download-btn").disabled = state.validatedTransactions.length === 0;
+        } else {
+            byId("summary-text").textContent = `Loaded session ${payload.sessionId} with ${payload.transactions.length} transaction rows and ${payload.proofs.length} proof rows.`;
+        }
+
+        updateResultPanelsVisibility();
         setStatus("Session loaded");
     } catch (err) {
         setStatus("Error");
@@ -618,12 +881,12 @@ async function loadSessionInputs() {
     }
 }
 
-async function downloadValidatedCsv() {
+async function downloadValidatedPdf() {
     if (!state.validatedTransactions.length) {
         return;
     }
 
-    setStatus("Preparing CSV...");
+    setStatus("Preparing PDF...");
 
     try {
         const response = await fetch("/api/export/validated", {
@@ -636,20 +899,20 @@ async function downloadValidatedCsv() {
 
         if (!response.ok) {
             const payload = await response.json();
-            throw new Error(payload.error || "CSV export failed.");
+            throw new Error(payload.error || "PDF export failed.");
         }
 
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = "validated_transactions.csv";
+        link.download = "validated_transactions.pdf";
         document.body.appendChild(link);
         link.click();
         link.remove();
         URL.revokeObjectURL(url);
 
-        setStatus("CSV downloaded");
+        setStatus("PDF downloaded");
     } catch (err) {
         setStatus("Error");
         showError(err.message);
@@ -658,10 +921,12 @@ async function downloadValidatedCsv() {
 
 byId("new-session-btn").addEventListener("click", createSession);
 byId("load-session-btn").addEventListener("click", loadSessionInputs);
+byId("save-session-btn").addEventListener("click", saveSession);
 byId("validate-btn").addEventListener("click", runValidation);
 byId("clear-btn").addEventListener("click", clearAll);
-byId("download-btn").addEventListener("click", downloadValidatedCsv);
+byId("download-btn").addEventListener("click", downloadValidatedPdf);
 byId("accept-recommendations-btn").addEventListener("click", acceptSelectedRecommendations);
 byId("validate-discrepancies-btn").addEventListener("click", validateSelectedDiscrepancies);
+byId("manual-match-btn").addEventListener("click", manualMatchSelectedUnmatchedRows);
 
 clearAll();

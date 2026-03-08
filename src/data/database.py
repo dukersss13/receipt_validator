@@ -1,11 +1,13 @@
 import os
+import json
+from datetime import datetime
 
 import pandas as pd
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.data.db_schema import Base, Session, Transaction, Proof
+from src.data.db_schema import Base, Session, Transaction, Proof, SessionState
 
 
 class DataBase:
@@ -50,6 +52,25 @@ class DataBase:
         self.SessionLocal = sessionmaker(bind=self.engine, expire_on_commit=False)
 
     @staticmethod
+    def _normalize_date_series(series: pd.Series) -> pd.Series:
+        """Normalize potentially noisy date strings into calendar dates."""
+        parsed = pd.to_datetime(series, errors="coerce")
+
+        unresolved = parsed.isna()
+        if unresolved.any():
+            extracted = series.astype(str).str.extract(
+                r"(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})",
+                expand=False,
+            )
+            reparsed = pd.to_datetime(extracted, errors="coerce")
+            parsed = parsed.where(~unresolved, reparsed)
+
+        if parsed.isna().any():
+            raise ValueError("Unable to parse one or more date values from inputs.")
+
+        return parsed.dt.date
+
+    @staticmethod
     def _normalize_input_df(frame: pd.DataFrame) -> pd.DataFrame:
         """Normalize incoming transaction/proof rows before persistence."""
         if frame is None or frame.empty:
@@ -70,7 +91,7 @@ class DataBase:
             normalized["business_name"].astype(str).str.strip()
         )
         normalized["total"] = pd.to_numeric(normalized["total"], errors="raise")
-        normalized["date"] = pd.to_datetime(normalized["date"], errors="raise").dt.date
+        normalized["date"] = DataBase._normalize_date_series(normalized["date"])
         normalized["currency"] = (
             normalized["currency"]
             .astype(str)
@@ -246,3 +267,82 @@ class DataBase:
         print(
             f"✅ {len(proof_data)} proofs committed to session ID {session_obj.session_id}"
         )
+
+    def clear_all_data(self) -> None:
+        """Remove all persisted sessions, transactions, and proofs."""
+        with self.SessionLocal() as db:
+            db.query(SessionState).delete()
+            db.query(Proof).delete()
+            db.query(Transaction).delete()
+            db.query(Session).delete()
+            db.commit()
+
+    def save_session_state(self, session_id: str, state: dict) -> None:
+        """Persist frontend/UI state for a session to support resume flows."""
+        normalized_session_id = str(session_id).strip()
+        if not normalized_session_id:
+            raise ValueError("session_id cannot be empty.")
+        if not isinstance(state, dict):
+            raise ValueError("state must be an object.")
+
+        with self.SessionLocal() as db:
+            session_obj = (
+                db.query(Session)
+                .filter(Session.session_id == normalized_session_id)
+                .first()
+            )
+
+            if session_obj is None:
+                session_obj = Session(session_id=normalized_session_id)
+                db.add(session_obj)
+                db.flush()
+
+            state_obj = (
+                db.query(SessionState)
+                .filter(SessionState.session_ref_id == session_obj.id)
+                .first()
+            )
+
+            payload = json.dumps(state)
+            if state_obj is None:
+                state_obj = SessionState(
+                    session_ref_id=session_obj.id,
+                    payload=payload,
+                    updated_at=datetime.utcnow(),
+                )
+                db.add(state_obj)
+            else:
+                state_obj.payload = payload
+                state_obj.updated_at = datetime.utcnow()
+
+            db.commit()
+
+    def load_session_state(self, session_id: str) -> dict | None:
+        """Load previously saved frontend/UI state for a session if it exists."""
+        normalized_session_id = str(session_id).strip()
+        if not normalized_session_id:
+            raise ValueError("session_id cannot be empty.")
+
+        with self.SessionLocal() as db:
+            session_obj = (
+                db.query(Session)
+                .filter(Session.session_id == normalized_session_id)
+                .first()
+            )
+
+            if session_obj is None:
+                raise ValueError(f"Session '{normalized_session_id}' not found")
+
+            state_obj = (
+                db.query(SessionState)
+                .filter(SessionState.session_ref_id == session_obj.id)
+                .first()
+            )
+
+            if state_obj is None:
+                return None
+
+            try:
+                return json.loads(state_obj.payload)
+            except json.JSONDecodeError:
+                return None

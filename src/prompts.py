@@ -34,18 +34,25 @@ including business names, totals, transaction dates, and possibly foreign curren
 
 Your task is to extract the following for each transaction:
 - Business name (string)
-- Total amount (numeric, without any currency symbol or code)
+- Final charged total amount only (numeric, without any currency symbol or code)
 - Transaction date (in mm-dd-yyyy format)
 - Currency (as an uppercase 3-letter ISO 4217 currency code, e.g., USD, EUR, GBP, JPY)
+
+Rules for amount extraction:
+- Use the final paid amount (often labeled as TOTAL, AMOUNT PAID, GRAND TOTAL).
+- Do not use subtotal, tax, tip, discount, balance due, or line-item totals.
+- Keep cents precision exactly as shown on the receipt.
+
+Rules for output format:
+- Return only a Python list of tuples.
+- Do not wrap the result in markdown code fences.
+- Each tuple must be: (business_name: str, total_amount: float, date: str, currency: str)
 
 Recognize and handle currency in either:
 - Symbol form: $, €, £, ¥, ₩, ₹, ₱, etc.
 - Code form: USD, EUR, GBP, JPY, KRW, INR, PHP, etc.
 
 If no currency symbol or code is present, assume the currency is USD.
-
-Format your output as a list of tuples:
-(business_name: str, total_amount: float, date: str, currency: str)
 
 Only return the list. Do not include any explanation or commentary.
 

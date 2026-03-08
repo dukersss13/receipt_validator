@@ -19,7 +19,7 @@
         <section class="hero">
             <p class="eyebrow">Receipt Validator</p>
             <h1 class="brand-title">
-                <span>AreVee</span>
+                <span>ArVee</span>
                 <span class="brand-robot" aria-hidden="true">
                     <svg viewBox="0 0 24 24" role="presentation" focusable="false">
                         <rect x="5" y="7" width="14" height="12" rx="3"></rect>
@@ -40,13 +40,13 @@
         <section class="panel upload-panel">
             <div class="panel-header">
                 <h2>Session & Inputs</h2>
-                <button id="new-session-btn" class="btn btn-muted">Create Session</button>
+                <button id="new-session-btn" class="btn btn-muted">Create New Session</button>
             </div>
 
             <div class="session-grid">
                 <div>
                     <label>Live Session ID</label>
-                    <input id="session-id" type="text" readonly placeholder="Click Create Session" />
+                    <input id="session-id" type="text" readonly placeholder="Click Create New Session" />
                 </div>
                 <div>
                     <label>Load Existing Session ID</label>
@@ -59,7 +59,8 @@
             </div>
 
             <div class="actions actions-compact">
-                <button id="load-session-btn" class="btn btn-muted">Load Session Inputs</button>
+                <button id="load-session-btn" class="btn btn-muted">Load Session</button>
+                <button id="save-session-btn" class="btn btn-muted">Save Session</button>
             </div>
 
             <div class="uploads-grid">
@@ -76,7 +77,7 @@
             <div class="actions">
                 <button id="validate-btn" class="btn btn-primary">Run Validation</button>
                 <button id="clear-btn" class="btn btn-secondary">Clear</button>
-                <button id="download-btn" class="btn btn-tertiary" disabled>Download Validated CSV</button>
+                <button id="download-btn" class="btn btn-tertiary" disabled>Download Validated PDF</button>
             </div>
         </section>
 
@@ -103,71 +104,56 @@
                             <div class="receipt-card"></div>
                         </div>
                     </div>
-                    <p class="loader-copy">Robot is reading through receipts</p>
+                    <p class="loader-copy">ArVee is reading through receipts</p>
                 </div>
             </div>
             <p id="error-text" class="error-text" hidden></p>
         </section>
 
-        <section class="metrics-grid">
-            <article class="metric-card">
-                <p>Validated</p>
-                <strong id="metric-validated">0</strong>
-            </article>
-            <article class="metric-card">
-                <p>Discrepancies</p>
-                <strong id="metric-discrepancies">0</strong>
-            </article>
-            <article class="metric-card">
-                <p>Unmatched Txns</p>
-                <strong id="metric-unmatched-transactions">0</strong>
-            </article>
-            <article class="metric-card">
-                <p>Unmatched Proofs</p>
-                <strong id="metric-unmatched-proofs">0</strong>
-            </article>
-        </section>
-
         <section class="results-grid">
-            <article class="panel" id="loaded-transactions-panel">
-                <h3>Loaded Session Transactions (Inputs)</h3>
-                <div id="loaded-transactions-table" class="table-wrap"></div>
-            </article>
-
-            <article class="panel" id="loaded-proofs-panel">
-                <h3>Loaded Session Proofs (Inputs)</h3>
-                <div id="loaded-proofs-table" class="table-wrap"></div>
-            </article>
-
-            <article class="panel" id="validated-panel">
+            <article class="panel hidden-panel" id="validated-panel">
                 <h3>Validated Transactions</h3>
                 <div id="validated-table" class="table-wrap"></div>
             </article>
 
-            <article class="panel" id="discrepancies-panel">
+            <article class="panel hidden-panel" id="discrepancies-panel">
                 <h3>Discrepancies</h3>
-                <div class="actions actions-compact">
-                    <button id="validate-discrepancies-btn" class="btn btn-primary" disabled>Add Selected to Validated</button>
-                </div>
                 <div id="discrepancies-table" class="table-wrap"></div>
+                <div class="panel-footer-actions">
+                    <button id="validate-discrepancies-btn" class="btn btn-primary-soft" disabled>Add Selected to Validated</button>
+                </div>
             </article>
 
-            <article class="panel" id="unmatched-transactions-panel">
+            <article class="panel hidden-panel" id="recommendations-panel">
+                <h3>Recommendations</h3>
+                <div id="recommendations-table" class="table-wrap"></div>
+                <div class="panel-footer-actions">
+                    <button id="accept-recommendations-btn" class="btn btn-primary-soft" disabled>Accept Selected
+                        Recommendations</button>
+                </div>
+            </article>
+
+            <article class="panel hidden-panel" id="unmatched-transactions-panel">
                 <h3>Unmatched Transactions</h3>
                 <div id="unmatched-transactions-table" class="table-wrap"></div>
             </article>
 
-            <article class="panel" id="unmatched-proofs-panel">
+            <article class="panel hidden-panel" id="unmatched-proofs-panel">
                 <h3>Unmatched Proofs</h3>
                 <div id="unmatched-proofs-table" class="table-wrap"></div>
+                <div class="panel-footer-actions panel-footer-actions-spaced">
+                    <button id="manual-match-btn" class="btn btn-primary-soft" disabled>Match Unmatched Transactions</button>
+                </div>
             </article>
 
-            <article class="panel results-wide" id="recommendations-panel">
-                <h3>Recommendations</h3>
-                <div class="actions actions-compact">
-                    <button id="accept-recommendations-btn" class="btn btn-primary" disabled>Accept Selected Recommendations</button>
-                </div>
-                <div id="recommendations-table" class="table-wrap"></div>
+            <article class="panel hidden-panel" id="loaded-transactions-panel">
+                <h3>Loaded Session Transactions (Inputs)</h3>
+                <div id="loaded-transactions-table" class="table-wrap"></div>
+            </article>
+
+            <article class="panel hidden-panel" id="loaded-proofs-panel">
+                <h3>Loaded Session Proofs (Inputs)</h3>
+                <div id="loaded-proofs-table" class="table-wrap"></div>
             </article>
         </section>
     </main>

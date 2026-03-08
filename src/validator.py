@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from time import time
 from dataclasses import dataclass
+import re
 
 from fuzzywuzzy import process, fuzz
 
@@ -41,24 +42,62 @@ class Validator:
 
         :param transaction_name: name of transaction to match
         :param receipts_names: business names from the receipts
-        :param threshold: threshold of similiarity
+        :param threshold: threshold of similarity
         :return: the match found
         """
-        match, score = process.extractOne(
-            transaction_name, proofs, scorer=fuzz.partial_ratio
-        )
+        if transaction_name is None or proofs is None or len(proofs) == 0:
+            return None
 
+        candidate = process.extractOne(
+            str(transaction_name), proofs, scorer=fuzz.partial_ratio
+        )
+        if candidate is None:
+            return None
+
+        match, score = candidate
         return match if score >= threshold else None
 
     @staticmethod
+    def _normalize_date_value(value: object) -> pd.Timestamp:
+        """Parse raw/noisy date text into a normalized date or NaT."""
+        raw = str(value).strip()
+        parsed = pd.to_datetime(raw, errors="coerce")
+        if pd.notna(parsed):
+            return parsed.normalize()
+
+        token = re.search(
+            r"(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})",
+            raw,
+        )
+        if not token:
+            return pd.NaT
+
+        parsed_token = pd.to_datetime(token.group(1), errors="coerce")
+        if pd.isna(parsed_token):
+            return pd.NaT
+
+        return parsed_token.normalize()
+
+    @staticmethod
+    def _date_key(value: object) -> str:
+        """Build a stable YYYY-MM-DD key for matching dates with format noise."""
+        parsed = Validator._normalize_date_value(value)
+        if pd.notna(parsed):
+            return parsed.strftime("%Y-%m-%d")
+        return str(value).strip().lower()
+
+    @staticmethod
+    def _name_similarity(left: object, right: object) -> int:
+        """Compute fuzzy similarity for business names in a stable way."""
+        return int(
+            fuzz.partial_ratio(str(left).strip().lower(), str(right).strip().lower())
+        )
+
+    @staticmethod
     def validate_totals(merged_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """
-        Find any discrepancy in the list of transactions
-        """
+        """Find any discrepancy in the list of transactions."""
         merged_df["delta"] = merged_df["total_transaction"] - merged_df["total_proof"]
-        # Identify discrepancies
-        # If delta > 0.0, then transaction > proof. Elif delta < 0.0, transaction < proof.
-        # Else, we're good.
+
         discrepancies: pd.DataFrame = np.round(merged_df[merged_df["delta"] != 0.0], 2)
         validated = merged_df[merged_df["delta"] == 0.0]
 
@@ -83,30 +122,23 @@ class Validator:
 
         return validated, discrepancies
 
-    def find_unmatched_transactions(self, merged_df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Identify any transaction that had no match
-        """
-        unmatched = self.transactions[
-            ~self.transactions["business_name"].isin(
-                merged_df["business_name_transaction"]
-            )
+    def find_unmatched_transactions(self, used_tx_indices: set[int]) -> pd.DataFrame:
+        """Identify transactions not used in any matched pair."""
+        unmatched = self.transactions.loc[
+            ~self.transactions.index.isin(list(used_tx_indices))
         ]
 
         return unmatched.drop(
-            columns=["matched_name", "matched_date", "currency"],
-            errors="ignore",
+            columns=["name_key", "date_key", "currency"], errors="ignore"
         )
 
-    def find_unmatched_proofs(self, merged_df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Identify any proof that had no match
-        """
-        unmatched = self.proofs[
-            ~self.proofs["business_name"].isin(merged_df["business_name_proof"])
-        ]
+    def find_unmatched_proofs(self, used_proof_indices: set[int]) -> pd.DataFrame:
+        """Identify proofs not used in any matched pair."""
+        unmatched = self.proofs.loc[~self.proofs.index.isin(list(used_proof_indices))]
 
-        return unmatched.drop(columns=["currency"], errors="ignore")
+        return unmatched.drop(
+            columns=["name_key", "date_key", "currency"], errors="ignore"
+        )
 
     @staticmethod
     def update_unmatched_dataframes(
@@ -118,7 +150,6 @@ class Validator:
         if accepted_recommendations.empty:
             return unmatched_transactions, unmatched_proofs
 
-        # Update the unmatched transactions and proofs
         accepted_transactions: pd.DataFrame = accepted_recommendations.iloc[:, :3]
         accepted_transactions = accepted_transactions.map(
             lambda x: x.strip() if isinstance(x, str) else x
@@ -133,7 +164,6 @@ class Validator:
         accepted_transactions = accepted_transactions.rename(
             columns=dict(zip(accepted_transactions.columns, correct_cols))
         )
-
         accepted_proofs = accepted_proofs.rename(
             columns=dict(zip(accepted_proofs.columns, correct_cols))
         )
@@ -155,34 +185,107 @@ class Validator:
         return remained_unmatched_transactions, remained_unmatched_proofs
 
     def validate(self) -> Results:
-        """
-        Run the validation process
-        """
+        """Run the validation process."""
         start = time()
-        self.transactions["matched_name"] = self.transactions["business_name"].apply(
-            lambda x: self.match_business_names(x, self.proofs["business_name"].values)
+        self.transactions = self.transactions.copy()
+        self.proofs = self.proofs.copy()
+
+        self.transactions["name_key"] = (
+            self.transactions["business_name"].astype(str).str.strip().str.lower()
+        )
+        self.proofs["name_key"] = (
+            self.proofs["business_name"].astype(str).str.strip().str.lower()
         )
 
-        self.transactions["matched_date"] = self.transactions["date"].apply(
-            lambda x: self.match_business_names(x, self.proofs["date"].values)
+        self.transactions["date_key"] = self.transactions["date"].apply(
+            Validator._date_key
         )
+        self.proofs["date_key"] = self.proofs["date"].apply(Validator._date_key)
+
+        tx_totals = pd.to_numeric(self.transactions["total"], errors="coerce")
+        pr_totals = pd.to_numeric(self.proofs["total"], errors="coerce")
+
+        candidates: list[tuple[int, int, int, float]] = []
+        for tx_idx, tx_row in self.transactions.iterrows():
+            same_date_proofs = self.proofs[
+                self.proofs["date_key"] == tx_row["date_key"]
+            ]
+            if same_date_proofs.empty:
+                continue
+
+            for pr_idx, pr_row in same_date_proofs.iterrows():
+                score = Validator._name_similarity(
+                    tx_row["name_key"], pr_row["name_key"]
+                )
+                if score < 80:
+                    continue
+
+                total_delta = (
+                    abs(float(tx_totals.loc[tx_idx]) - float(pr_totals.loc[pr_idx]))
+                    if pd.notna(tx_totals.loc[tx_idx])
+                    and pd.notna(pr_totals.loc[pr_idx])
+                    else float("inf")
+                )
+                candidates.append((tx_idx, pr_idx, score, total_delta))
+
+        candidates.sort(key=lambda item: (-item[2], item[3]))
+
+        used_tx_indices: set[int] = set()
+        used_proof_indices: set[int] = set()
+        matched_pairs: list[tuple[int, int]] = []
+
+        for tx_idx, pr_idx, _, _ in candidates:
+            if tx_idx in used_tx_indices or pr_idx in used_proof_indices:
+                continue
+
+            used_tx_indices.add(tx_idx)
+            used_proof_indices.add(pr_idx)
+            matched_pairs.append((tx_idx, pr_idx))
 
         end = time()
         print(f"Time taken to match {round(end - start, 3)}s")
-        # Merge based on matched names and totals
-        merged_df = self.transactions.merge(
-            self.proofs,
-            left_on=["matched_name", "matched_date"],
-            right_on=["business_name", "date"],
-            how="inner",
-            suffixes=("_transaction", "_proof"),
+
+        if matched_pairs:
+            tx_idx_vec = [tx_idx for tx_idx, _ in matched_pairs]
+            pr_idx_vec = [pr_idx for _, pr_idx in matched_pairs]
+            merged_df = (
+                self.transactions.loc[tx_idx_vec]
+                .reset_index(drop=True)
+                .add_suffix("_transaction")
+                .join(
+                    self.proofs.loc[pr_idx_vec]
+                    .reset_index(drop=True)
+                    .add_suffix("_proof")
+                )
+            )
+        else:
+            merged_df = pd.DataFrame(
+                columns=[
+                    "business_name_transaction",
+                    "total_transaction",
+                    "date_transaction",
+                    "currency_transaction",
+                    "business_name_proof",
+                    "total_proof",
+                    "date_proof",
+                    "currency_proof",
+                ]
+            )
+
+        merged_df = merged_df.drop(
+            columns=[
+                "name_key_transaction",
+                "name_key_proof",
+                "date_key_transaction",
+                "date_key_proof",
+            ],
+            errors="ignore",
         )
 
-        merged_df = merged_df.drop(columns=["matched_name", "matched_date"])
-
         validated_transactions, discrepancies = Validator.validate_totals(merged_df)
-        unmatched_transactions = self.find_unmatched_transactions(merged_df)
-        unmatched_proofs = self.find_unmatched_proofs(merged_df)
+
+        unmatched_transactions = self.find_unmatched_transactions(used_tx_indices)
+        unmatched_proofs = self.find_unmatched_proofs(used_proof_indices)
 
         discrepancies.columns = [
             "Transaction Business Name",
@@ -195,6 +298,8 @@ class Validator:
         ]
 
         unmatched_cols = ["Business Name", "Total", "Date"]
+        unmatched_transactions = unmatched_transactions.reset_index(drop=True)
+        unmatched_proofs = unmatched_proofs.reset_index(drop=True)
         unmatched_transactions.columns = unmatched_cols
         unmatched_proofs.columns = unmatched_cols
 
@@ -208,19 +313,15 @@ class Validator:
     def analyze_unmatched_results(
         self, unmatched_transactions: pd.DataFrame, unmatched_proofs: pd.DataFrame
     ) -> pd.DataFrame:
-        """
-        Provide deterministic recommendations using:
-        1) totals match and dates are within +/- 1 day, but business names differ
-        2) business names are similar and dates are within +/- 1 day, but totals differ
-        """
+        """Recommend unmatched pairs when totals and dates are close."""
         if unmatched_transactions.empty or unmatched_proofs.empty:
             return pd.DataFrame([])
 
         tx = unmatched_transactions.copy()
         pr = unmatched_proofs.copy()
 
-        tx["__match_date"] = pd.to_datetime(tx["Date"], errors="coerce").dt.normalize()
-        pr["__match_date"] = pd.to_datetime(pr["Date"], errors="coerce").dt.normalize()
+        tx["__match_date"] = tx["Date"].apply(Validator._normalize_date_value)
+        pr["__match_date"] = pr["Date"].apply(Validator._normalize_date_value)
 
         tx["__match_total"] = pd.to_numeric(tx["Total"], errors="coerce").round(2)
         pr["__match_total"] = pd.to_numeric(pr["Total"], errors="coerce").round(2)
@@ -231,85 +332,88 @@ class Validator:
         if tx.empty or pr.empty:
             return pd.DataFrame([])
 
-        # Rule 1: same total and date within +/- 1 day, but business names differ.
-        exact_total_date = tx.merge(
+        candidate_pairs = tx.merge(
             pr,
-            on=["__match_total"],
-            how="inner",
+            how="cross",
             suffixes=("_tx", "_pr"),
         )
 
-        if not exact_total_date.empty:
-            exact_total_date = exact_total_date[
+        if not candidate_pairs.empty:
+            candidate_pairs = candidate_pairs[
                 (
-                    exact_total_date["__match_date_tx"]
-                    - exact_total_date["__match_date_pr"]
+                    candidate_pairs["__match_date_tx"]
+                    - candidate_pairs["__match_date_pr"]
                 ).abs()
-                <= pd.Timedelta(days=1)
+                <= pd.Timedelta(days=2)
             ]
-            exact_total_date = exact_total_date[
-                exact_total_date["Business Name_tx"].str.strip().str.lower()
-                != exact_total_date["Business Name_pr"].str.strip().str.lower()
+            candidate_pairs = candidate_pairs[
+                (
+                    candidate_pairs["__match_total_tx"]
+                    - candidate_pairs["__match_total_pr"]
+                ).abs()
+                <= 0.01
             ]
 
-        rule1 = pd.DataFrame([])
-        if not exact_total_date.empty:
-            rule1 = pd.DataFrame(
+            if not candidate_pairs.empty:
+                candidate_pairs["__date_distance"] = (
+                    (
+                        candidate_pairs["__match_date_tx"]
+                        - candidate_pairs["__match_date_pr"]
+                    )
+                    .abs()
+                    .dt.days
+                )
+                candidate_pairs["__total_delta"] = (
+                    candidate_pairs["__match_total_tx"]
+                    - candidate_pairs["__match_total_pr"]
+                ).abs()
+                candidate_pairs["__name_similarity"] = candidate_pairs.apply(
+                    lambda row: Validator._name_similarity(
+                        row["Business Name_tx"], row["Business Name_pr"]
+                    ),
+                    axis=1,
+                )
+
+                candidate_pairs = candidate_pairs.sort_values(
+                    by=["__date_distance", "__total_delta", "__name_similarity"],
+                    ascending=[True, True, False],
+                )
+
+                used_tx: set[str] = set()
+                used_pr: set[str] = set()
+                selected_rows: list[pd.Series] = []
+                for _, row in candidate_pairs.iterrows():
+                    tx_key = (
+                        str(row["Business Name_tx"]),
+                        float(row["__match_total_tx"]),
+                        str(row["Date_tx"]),
+                    )
+                    pr_key = (
+                        str(row["Business Name_pr"]),
+                        float(row["__match_total_pr"]),
+                        str(row["Date_pr"]),
+                    )
+                    if tx_key in used_tx or pr_key in used_pr:
+                        continue
+                    used_tx.add(tx_key)
+                    used_pr.add(pr_key)
+                    selected_rows.append(row)
+
+                candidate_pairs = pd.DataFrame(selected_rows)
+
+        recommendations = pd.DataFrame([])
+        if not candidate_pairs.empty:
+            recommendations = pd.DataFrame(
                 {
-                    "Transaction Business Name": exact_total_date["Business Name_tx"],
-                    "Transaction Total": exact_total_date["Total_tx"],
-                    "Transaction Date": exact_total_date["Date_tx"],
-                    "Proof Business Name": exact_total_date["Business Name_pr"],
-                    "Proof Total": exact_total_date["Total_pr"],
-                    "Proof Date": exact_total_date["Date_pr"],
-                    "Reason": "Matching totals and dates within one day, but different business names.",
+                    "Transaction Business Name": candidate_pairs["Business Name_tx"],
+                    "Transaction Total": candidate_pairs["Total_tx"],
+                    "Transaction Date": candidate_pairs["Date_tx"],
+                    "Proof Business Name": candidate_pairs["Business Name_pr"],
+                    "Proof Total": candidate_pairs["Total_pr"],
+                    "Proof Date": candidate_pairs["Date_pr"],
+                    "Reason": "Similar dates and amount",
                 }
             )
-
-        # Rule 2: similar business names + dates within +/- 1 day, but different totals.
-        same_date_pairs = tx.merge(pr, how="cross", suffixes=("_tx", "_pr"))
-
-        rule2 = pd.DataFrame([])
-        if not same_date_pairs.empty:
-            same_date_pairs["__name_similarity"] = same_date_pairs.apply(
-                lambda row: fuzz.partial_ratio(
-                    str(row["Business Name_tx"]), str(row["Business Name_pr"])
-                ),
-                axis=1,
-            )
-
-            similar_name_diff_total = same_date_pairs[
-                (
-                    (
-                        same_date_pairs["__match_date_tx"]
-                        - same_date_pairs["__match_date_pr"]
-                    ).abs()
-                    <= pd.Timedelta(days=1)
-                )
-                &
-                (same_date_pairs["__name_similarity"] >= 80)
-                & (
-                    same_date_pairs["__match_total_tx"]
-                    != same_date_pairs["__match_total_pr"]
-                )
-            ]
-
-            if not similar_name_diff_total.empty:
-                rule2 = pd.DataFrame(
-                    {
-                        "Transaction Business Name": similar_name_diff_total[
-                            "Business Name_tx"
-                        ],
-                        "Transaction Total": similar_name_diff_total["Total_tx"],
-                        "Transaction Date": similar_name_diff_total["Date_tx"],
-                        "Proof Business Name": similar_name_diff_total["Business Name_pr"],
-                        "Proof Total": similar_name_diff_total["Total_pr"],
-                        "Proof Date": similar_name_diff_total["Date_pr"],
-                        "Reason": "Similar business names and dates within one day, but different totals.",
-                    }
-                )
-
-        recommendations = pd.concat([rule1, rule2], ignore_index=True)
 
         if recommendations.empty:
             return pd.DataFrame([])
@@ -328,10 +432,7 @@ class Validator:
         return recommendations.reset_index(drop=True)
 
     def analyze_results(self, results: Results) -> tuple[str, pd.DataFrame]:
-        """
-        Analyze the results & provide recommendations
-        for unmatched transactions & proofs
-        """
+        """Analyze the results & provide recommendations for unmatched rows."""
         unmatched_transactions, unmatched_proofs = (
             results.unmatched_transactions,
             results.unmatched_proofs,
@@ -341,8 +442,14 @@ class Validator:
                 "Everything was validated. Great job keeping track of your spending!"
             )
             recommendations = pd.DataFrame([])
+        elif unmatched_transactions.empty:
+            analysis = "No unmatched transactions detected, so no recommendations were generated."
+            recommendations = pd.DataFrame([])
+        elif unmatched_proofs.empty:
+            analysis = "Unmatched transactions found, but no unmatched proofs are available to recommend pairings."
+            recommendations = pd.DataFrame([])
         else:
-            analysis = "I finished the validation process and provided deterministic recommendations based on totals with date proximity (+/- 1 day) and business-name similarity with date proximity (+/- 1 day)."
+            analysis = "I finished the validation process and provided some recommendations for you."
             recommendations = self.analyze_unmatched_results(
                 unmatched_transactions, unmatched_proofs
             )

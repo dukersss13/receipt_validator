@@ -49,8 +49,7 @@ body {
     grid-template-areas:
         "hero hero"
         "upload summary"
-        "upload metrics"
-        "results results";
+        "upload results";
 }
 
 .hero {
@@ -133,6 +132,47 @@ body {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.95rem;
+}
+
+@media (min-width: 821px) {
+
+    #validated-panel,
+    #discrepancies-panel,
+    #recommendations-panel {
+        grid-column: 1 / -1;
+    }
+
+    #validated-panel {
+        grid-row: 1;
+    }
+
+    #discrepancies-panel {
+        grid-row: 2;
+    }
+
+    #recommendations-panel {
+        grid-row: 3;
+    }
+
+    #unmatched-transactions-panel {
+        grid-column: 1;
+        grid-row: 4;
+    }
+
+    #unmatched-proofs-panel {
+        grid-column: 2;
+        grid-row: 4;
+    }
+
+    #loaded-transactions-panel {
+        grid-column: 1;
+        grid-row: 5;
+    }
+
+    #loaded-proofs-panel {
+        grid-column: 2;
+        grid-row: 5;
+    }
 }
 
 .results-wide {
@@ -244,6 +284,24 @@ input[type="file"] {
 .btn-muted {
     background: #d6e8e4;
     color: #184039;
+}
+
+.btn-primary-soft {
+    background: #8ed2c7;
+    color: #0f3f38;
+    padding: 0.5rem 0.78rem;
+    font-size: 0.86rem;
+    border-radius: 9px;
+}
+
+.panel-footer-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.85rem;
+}
+
+.panel-footer-actions-spaced {
+    margin-top: 1.2rem;
 }
 
 .summary-panel p {
@@ -618,7 +676,6 @@ input[type="file"] {
             "hero"
             "upload"
             "summary"
-            "metrics"
             "results";
     }
 

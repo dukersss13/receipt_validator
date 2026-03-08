@@ -8,6 +8,7 @@ from datetime import datetime
 access_key = load_exchange_rate_key()
 CONVERT_URL = "https://api.exchangerate.host/convert"
 
+
 class CurrencyConversionState(pd.DataFrame):
     amount: float
     currency: str
@@ -46,6 +47,13 @@ def convert_currency_to_usd(entry: dict) -> float:
     """
     Converts a given amount in foreign currency to USD using the exchange rate on the specified date.
     """
+    currency = str(entry.get("currency", "USD")).upper()
+    amount = float(entry.get("total", 0.0))
+
+    # No conversion needed for USD entries.
+    if currency == "USD":
+        return round(amount, 2)
+
     params = _build_params(entry)
     response = requests.get(CONVERT_URL, params=params, timeout=20)
     data = response.json()
