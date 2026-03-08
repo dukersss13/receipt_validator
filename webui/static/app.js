@@ -38,8 +38,25 @@ function setProgress(value) {
     byId("progress-label").textContent = `${clamped}%`;
 }
 
+function setLoadingState(isLoading) {
+    const progressTrack = byId("progress-track");
+    const progressFill = byId("progress-fill");
+    const receiptLoader = byId("receipt-loader");
+
+    progressTrack.classList.toggle("loading", isLoading);
+    progressFill.classList.toggle("loading", isLoading);
+    receiptLoader.classList.toggle("loading", isLoading);
+    receiptLoader.hidden = !isLoading;
+}
+
+function setProgressShellVisible(isVisible) {
+    byId("progress-shell").hidden = !isVisible;
+}
+
 function startProgress() {
     clearInterval(progressTimer);
+    setProgressShellVisible(true);
+    setLoadingState(true);
     setProgress(4);
 
     progressTimer = setInterval(() => {
@@ -55,11 +72,14 @@ function startProgress() {
 function completeProgress() {
     clearInterval(progressTimer);
     setProgress(100);
+    setLoadingState(false);
 }
 
 function resetProgress() {
     clearInterval(progressTimer);
     setProgress(0);
+    setLoadingState(false);
+    setProgressShellVisible(false);
 }
 
 function renderTable(elementId, rows) {
@@ -119,7 +139,10 @@ function setPanelVisibility(panelId, visible) {
     panel.classList.toggle("hidden-panel", !visible);
 }
 
-function updateResolutionPanelsVisibility() {
+function updateResultPanelsVisibility() {
+    setPanelVisibility("loaded-transactions-panel", state.loadedTransactions.length > 0);
+    setPanelVisibility("loaded-proofs-panel", state.loadedProofs.length > 0);
+    setPanelVisibility("validated-panel", state.validatedTransactions.length > 0);
     setPanelVisibility("discrepancies-panel", state.discrepancies.length > 0);
     setPanelVisibility(
         "unmatched-transactions-panel",
@@ -356,7 +379,7 @@ function acceptSelectedRecommendations() {
     renderTable("unmatched-transactions-table", state.unmatchedTransactions);
     renderTable("unmatched-proofs-table", state.unmatchedProofs);
     renderRecommendationsTable();
-    updateResolutionPanelsVisibility();
+    updateResultPanelsVisibility();
 
     byId("download-btn").disabled = state.validatedTransactions.length === 0;
     byId("summary-text").textContent = `Accepted ${selectedRows.length} recommendation(s).`;
@@ -420,7 +443,7 @@ function validateSelectedDiscrepancies() {
 
     renderTable("validated-table", state.validatedTransactions);
     renderDiscrepanciesTable();
-    updateResolutionPanelsVisibility();
+    updateResultPanelsVisibility();
 
     byId("download-btn").disabled = state.validatedTransactions.length === 0;
     byId("summary-text").textContent = `Moved ${selectedRows.length} discrepancy row(s) into validated records.`;
@@ -461,7 +484,7 @@ function clearAll() {
     renderTable("unmatched-transactions-table", []);
     renderTable("unmatched-proofs-table", []);
     renderRecommendationsTable();
-    updateResolutionPanelsVisibility();
+    updateResultPanelsVisibility();
 }
 
 async function createSession() {
@@ -548,12 +571,13 @@ async function runValidation() {
         renderTable("unmatched-transactions-table", payload.unmatchedTransactions);
         renderTable("unmatched-proofs-table", payload.unmatchedProofs);
         renderRecommendationsTable();
-        updateResolutionPanelsVisibility();
+        updateResultPanelsVisibility();
 
         completeProgress();
         setStatus("Validation complete");
     } catch (err) {
         clearInterval(progressTimer);
+        setLoadingState(false);
         setStatus("Error");
         showError(err.message);
     }
@@ -584,6 +608,7 @@ async function loadSessionInputs() {
 
         renderTable("loaded-transactions-table", state.loadedTransactions);
         renderTable("loaded-proofs-table", state.loadedProofs);
+        updateResultPanelsVisibility();
 
         byId("summary-text").textContent = `Loaded session ${payload.sessionId} with ${payload.transactions.length} transaction rows and ${payload.proofs.length} proof rows.`;
         setStatus("Session loaded");
