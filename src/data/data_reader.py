@@ -3,12 +3,15 @@ import base64
 import numpy as np
 import pandas as pd
 from time import time
+import time as wall_time
 import mimetypes
 from PIL import Image
 import io
 import re
 import ast
+import json
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from openai import OpenAI
 from langchain_community.document_loaders import PyPDFLoader
@@ -44,14 +47,36 @@ class DataReader:
         config_path: str = "config.conf",
         database: DataBase | None = None,
     ):
-        data_path = ConfigFactory.parse_file(config_path).get("data_path")
+        config = ConfigFactory.parse_file(config_path)
+        data_path = config.get("data_path")
         self.transactions_data_path = data_path["transactions"]
         self.proofs_data_path = data_path["proofs"]
+        self.validated_data_path = data_path.get("validated", "data/validated")
         self.database = database
         # Concurrency knobs for ingestion performance.
         self.io_max_workers = 8
         self.llm_max_workers = 6
         self.fx_max_workers = 8
+        raw_use_batch_api = config.get("llm.use_batch_api", False)
+        if isinstance(raw_use_batch_api, str):
+            self.use_batch_api = raw_use_batch_api.strip().lower() == "true"
+        else:
+            self.use_batch_api = bool(raw_use_batch_api)
+        self.batch_completion_window = str(
+            config.get("llm.batch_completion_window", "24h")
+        )
+        self.batch_poll_seconds = int(config.get("llm.batch_poll_seconds", 2))
+        self.batch_max_wait_seconds = int(config.get("llm.batch_max_wait_seconds", 10))
+
+        self.ingestion_usage = {
+            "model": GPT_MODEL,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "llm_calls": 0,
+            "batch_runs": 0,
+            "standard_runs": 0,
+            "fx_calls": 0,
+        }
 
         if transactions and proofs and len(transactions) and len(proofs):
             self.transactions_data_path = transactions
@@ -65,8 +90,10 @@ class DataReader:
         :return: data in a df format
         """
         if data_type == DataType.TRANSACTIONS:
+            print("\n[Ingestion] Reading Transactions...\n")
             processed_data = self.load_transaction_data(self.transactions_data_path)
         elif data_type == DataType.PROOFS:
+            print("\n[Ingestion] Reading Proofs...\n")
             processed_data = self.load_proofs_data(self.proofs_data_path)
         else:
             raise ValueError(f"Unsupported data type: {data_type}")
@@ -74,15 +101,218 @@ class DataReader:
         # Keep currency for persistence and conversion pipeline.
         return processed_data
 
+    @staticmethod
+    def _input_token_rate_per_million(model_name: str) -> float:
+        rates = {
+            # Keep this table current as pricing evolves.
+            "gpt-4o-mini": 0.15,
+        }
+        return rates.get(model_name, 0.15)
+
+    @staticmethod
+    def _output_token_rate_per_million(model_name: str) -> float:
+        rates = {
+            "gpt-4o-mini": 0.60,
+        }
+        return rates.get(model_name, 0.60)
+
+    def _record_usage(self, usage: object | None, mode: str) -> None:
+        if usage is None:
+            return
+
+        input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+        output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+        self.ingestion_usage["input_tokens"] += input_tokens
+        self.ingestion_usage["output_tokens"] += output_tokens
+        self.ingestion_usage["llm_calls"] += 1
+
+        if mode == "batch":
+            self.ingestion_usage["batch_runs"] += 1
+        else:
+            self.ingestion_usage["standard_runs"] += 1
+
+    def _record_usage_from_body(self, body: dict, mode: str) -> None:
+        usage = body.get("usage", {}) if isinstance(body, dict) else {}
+        input_tokens = int(usage.get("prompt_tokens", 0) or 0)
+        output_tokens = int(usage.get("completion_tokens", 0) or 0)
+
+        self.ingestion_usage["input_tokens"] += input_tokens
+        self.ingestion_usage["output_tokens"] += output_tokens
+        self.ingestion_usage["llm_calls"] += 1
+
+        if mode == "batch":
+            self.ingestion_usage["batch_runs"] += 1
+        else:
+            self.ingestion_usage["standard_runs"] += 1
+
+    def get_ingestion_cost_summary(self) -> dict:
+        model_name = self.ingestion_usage["model"]
+        input_tokens = int(self.ingestion_usage["input_tokens"])
+        output_tokens = int(self.ingestion_usage["output_tokens"])
+
+        input_cost = (
+            input_tokens / 1_000_000
+        ) * DataReader._input_token_rate_per_million(model_name)
+        output_cost = (
+            output_tokens / 1_000_000
+        ) * DataReader._output_token_rate_per_million(model_name)
+
+        return {
+            "model": model_name,
+            "inputTokens": input_tokens,
+            "outputTokens": output_tokens,
+            "llmCalls": int(self.ingestion_usage["llm_calls"]),
+            "batchCalls": int(self.ingestion_usage["batch_runs"]),
+            "standardCalls": int(self.ingestion_usage["standard_runs"]),
+            "fxCalls": int(self.ingestion_usage["fx_calls"]),
+            "estimatedInputCostUsd": round(input_cost, 2),
+            "estimatedOutputCostUsd": round(output_cost, 2),
+            "estimatedTotalCostUsd": round(input_cost + output_cost, 2),
+        }
+
+    def log_ingestion_cost(self, session_id: str) -> dict:
+        summary = self.get_ingestion_cost_summary()
+        log_entry = {
+            "ts": pd.Timestamp.utcnow().isoformat(),
+            "sessionId": session_id,
+            "ingestion": summary,
+        }
+
+        os.makedirs(self.validated_data_path, exist_ok=True)
+        log_path = os.path.join(self.validated_data_path, "ingestion_cost.log")
+        with open(log_path, "a", encoding="utf-8") as log_file:
+            log_file.write(json.dumps(log_entry) + "\n")
+
+        print(f"\nIngestion usage: {json.dumps(log_entry)}\n")
+        return summary
+
+    @staticmethod
+    def _extract_text_content(message_content: object) -> str:
+        if isinstance(message_content, str):
+            return message_content
+
+        if isinstance(message_content, list):
+            parts: list[str] = []
+            for item in message_content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    parts.append(str(item.get("text", "")))
+                elif isinstance(item, str):
+                    parts.append(item)
+            return "".join(parts)
+
+        return str(message_content)
+
+    def _poll_batch_until_done(self, batch_id: str):
+        started = wall_time.time()
+        terminal = {"completed", "failed", "cancelled", "expired"}
+
+        while True:
+            batch = client.batches.retrieve(batch_id)
+            if batch.status in terminal:
+                return batch
+
+            if (wall_time.time() - started) > self.batch_max_wait_seconds:
+                raise TimeoutError(
+                    f"Batch {batch_id} did not finish within {self.batch_max_wait_seconds}s"
+                )
+
+            wall_time.sleep(max(1, self.batch_poll_seconds))
+
+    @staticmethod
+    def _serialize_batch_output(raw_content: object) -> str:
+        if hasattr(raw_content, "text"):
+            return str(raw_content.text)
+        if hasattr(raw_content, "read"):
+            read_val = raw_content.read()
+            if isinstance(read_val, bytes):
+                return read_val.decode("utf-8")
+            return str(read_val)
+        if hasattr(raw_content, "content"):
+            content = raw_content.content
+            if isinstance(content, bytes):
+                return content.decode("utf-8")
+            return str(content)
+        return str(raw_content)
+
+    def _run_chat_batch_requests(self, requests_payload: list[dict]) -> list[str]:
+        if not requests_payload:
+            return []
+
+        if not hasattr(client, "batches"):
+            raise RuntimeError("OpenAI client does not support Batch API.")
+
+        with NamedTemporaryFile(
+            mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
+        ) as tmp:
+            for item in requests_payload:
+                tmp.write(json.dumps(item) + "\n")
+            input_file_path = tmp.name
+
+        output_text: str | None = None
+        try:
+            with open(input_file_path, "rb") as f_obj:
+                input_file = client.files.create(file=f_obj, purpose="batch")
+
+            batch = client.batches.create(
+                input_file_id=input_file.id,
+                endpoint="/v1/chat/completions",
+                completion_window=self.batch_completion_window,
+            )
+
+            completed_batch = self._poll_batch_until_done(batch.id)
+            if (
+                completed_batch.status != "completed"
+                or not completed_batch.output_file_id
+            ):
+                raise RuntimeError(
+                    f"Batch failed with status {completed_batch.status}."
+                )
+
+            output = client.files.content(completed_batch.output_file_id)
+            output_text = DataReader._serialize_batch_output(output)
+        finally:
+            try:
+                os.remove(input_file_path)
+            except OSError:
+                pass
+
+        lines = (
+            [line for line in output_text.splitlines() if line.strip()]
+            if output_text
+            else []
+        )
+        by_id: dict[str, str] = {}
+
+        for line in lines:
+            obj = json.loads(line)
+            custom_id = str(obj.get("custom_id", ""))
+            body = ((obj.get("response") or {}).get("body")) or {}
+            self._record_usage_from_body(body, mode="batch")
+
+            choices = body.get("choices", []) if isinstance(body, dict) else []
+            if not choices:
+                by_id[custom_id] = ""
+                continue
+
+            msg_content = (choices[0].get("message") or {}).get("content", "")
+            by_id[custom_id] = DataReader._extract_text_content(msg_content)
+
+        outputs: list[str] = []
+        for req in requests_payload:
+            outputs.append(by_id.get(str(req.get("custom_id", "")), ""))
+
+        return outputs
+
     def load_proofs_data(self, data_path: str | list[str]) -> pd.DataFrame:
         """
         Loads proof data from the specified path.
         """
+        print("\n[Ingestion] Starting proof extraction\n")
         start = time()
         payload = DataReader.create_image_payload(data_path, self.io_max_workers)
         data = self.batch_read_data(payload)
         end = time()
-        print(f"Time to read proofs: {round(end - start, 2)}s")
+        print(f"\nTime to read proofs: {round(end - start, 2)}s\n")
 
         data_vec = []
         for item in data:
@@ -95,6 +325,7 @@ class DataReader:
         if (processed_data["currency"] != "USD").any():
             non_usd_data = processed_data[processed_data["currency"] != "USD"]
             entries = non_usd_data.to_dict(orient="records")
+            self.ingestion_usage["fx_calls"] += len(entries)
             with ThreadPoolExecutor(
                 max_workers=min(self.fx_max_workers, len(entries))
             ) as executor:
@@ -136,6 +367,7 @@ class DataReader:
         """
         Loads transaction data from PDFs and image files in a given path or list of file paths.
         """
+        print("\n[Ingestion] Starting transaction extraction\n")
         start = time()
         data = pd.DataFrame([])
 
@@ -145,20 +377,41 @@ class DataReader:
             f for f in all_files if Path(f).suffix.lower() in {".png", ".jpg", ".jpeg"}
         ]
 
-        def process_pdf(pdf_path: str) -> pd.DataFrame:
-            try:
-                extracted_data = self.extract_data_from_pdf(pdf_path)
-                data_vec = ast.literal_eval(extracted_data)
-                return DataReader.preprocess_data(data_vec)
-            except Exception as e:
-                print(f"Warning: Failed to process PDF {pdf_path}: {e}")
-                return pd.DataFrame([])
-
         if pdf_files:
-            with ThreadPoolExecutor(
-                max_workers=min(self.io_max_workers, len(pdf_files))
-            ) as executor:
-                pdf_frames = list(executor.map(process_pdf, pdf_files))
+            pdf_frames: list[pd.DataFrame] = []
+
+            if self.use_batch_api:
+                try:
+                    statement_texts = [
+                        DataReader.strip_sensitive_info(self._read_pdf_text(path))
+                        for path in pdf_files
+                    ]
+                    extracted = self.extract_statement_data_batch(statement_texts)
+                    for item in extracted:
+                        if not item:
+                            continue
+                        data_vec = ast.literal_eval(item)
+                        pdf_frames.append(DataReader.preprocess_data(data_vec))
+                except Exception as e:
+                    print(
+                        f"\nWarning: Batch PDF extraction failed; falling back. Error: {e}\n"
+                    )
+
+            if not pdf_frames:
+
+                def process_pdf(pdf_path: str) -> pd.DataFrame:
+                    try:
+                        extracted_data = self.extract_data_from_pdf(pdf_path)
+                        data_vec = ast.literal_eval(extracted_data)
+                        return DataReader.preprocess_data(data_vec)
+                    except Exception as e:
+                        print(f"\nWarning: Failed to process PDF {pdf_path}: {e}\n")
+                        return pd.DataFrame([])
+
+                with ThreadPoolExecutor(
+                    max_workers=min(self.io_max_workers, len(pdf_files))
+                ) as executor:
+                    pdf_frames = list(executor.map(process_pdf, pdf_files))
 
             valid_pdf_frames = [frame for frame in pdf_frames if not frame.empty]
             if valid_pdf_frames:
@@ -169,10 +422,10 @@ class DataReader:
                 image_data = self.load_proofs_data(image_files)
                 data = pd.concat([data, image_data], axis=0)
             except Exception as e:
-                print(f"Warning: Failed to process image files: {e}")
+                print(f"\nWarning: Failed to process image files: {e}\n")
 
         end = time()
-        print(f"Time to read transaction statements: {round(end - start, 2)}s")
+        print(f"\nTime to read transaction statements: {round(end - start, 2)}s\n")
 
         return data
 
@@ -195,21 +448,34 @@ class DataReader:
         """
         Extracts data from a PDF file located at the specified path.
         """
+        filtered_statement_text = DataReader.strip_sensitive_info(
+            self._read_pdf_text(pdf_path)
+        )
+        data = self.extract_data_from_image_texts(filtered_statement_text)
+
+        return data
+
+    @staticmethod
+    def _read_pdf_text(pdf_path: str) -> str:
         loader = PyPDFLoader(pdf_path)
         docs = loader.load()
         text = ""
         for doc in docs:
             text += doc.page_content
-
-        filtered_statement_text = DataReader.strip_sensitive_info(text)
-        data = self.extract_data_from_image_texts(filtered_statement_text)
-
-        return data
+        return text
 
     def batch_read_data(self, image_payloads: list[dict]) -> list[str]:
         """
         Process multiple image payloads in parallel.
         """
+        if self.use_batch_api and image_payloads:
+            try:
+                return self.read_proofs_data_batch(image_payloads)
+            except Exception as e:
+                print(
+                    f"\nWarning: Batch proof extraction failed; falling back. Error: {e}\n"
+                )
+
         with ThreadPoolExecutor(
             max_workers=min(self.llm_max_workers, max(1, len(image_payloads)))
         ) as executor:
@@ -324,7 +590,36 @@ class DataReader:
             max_tokens=300,
         )
 
+        self._record_usage(response.usage, mode="standard")
+
         return response.choices[0].message.content
+
+    def read_proofs_data_batch(self, image_payloads: list[dict]) -> list[str]:
+        requests_payload: list[dict] = []
+        for idx, image_payload in enumerate(image_payloads):
+            requests_payload.append(
+                {
+                    "custom_id": f"receipt-{idx}",
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": {
+                        "model": GPT_MODEL,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": RECEIPT_PROMPT},
+                                    image_payload,
+                                ],
+                            }
+                        ],
+                        "temperature": 0,
+                        "max_tokens": 300,
+                    },
+                }
+            )
+
+        return self._run_chat_batch_requests(requests_payload)
 
     def extract_data_from_image_texts(self, bank_statement_text: str) -> str:
         """
@@ -343,4 +638,34 @@ class DataReader:
             max_tokens=350,
         )
 
+        self._record_usage(response.usage, mode="standard")
+
         return response.choices[0].message.content
+
+    def extract_statement_data_batch(self, statement_texts: list[str]) -> list[str]:
+        requests_payload: list[dict] = []
+        for idx, statement_text in enumerate(statement_texts):
+            requests_payload.append(
+                {
+                    "custom_id": f"statement-{idx}",
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": {
+                        "model": GPT_MODEL,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "You are a helpful assistant.",
+                            },
+                            {
+                                "role": "user",
+                                "content": STATEMENT_PROMPT + "\n\n" + statement_text,
+                            },
+                        ],
+                        "temperature": 0,
+                        "max_tokens": 350,
+                    },
+                }
+            )
+
+        return self._run_chat_batch_requests(requests_payload)

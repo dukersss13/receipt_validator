@@ -396,14 +396,46 @@ def validate():
     proof_paths = _save_uploaded_files(proofs)
 
     try:
+        print(f"\n[Validation] Run started for session {session_id}\n")
         data_reader = DataReader(
             transactions=transaction_paths,
             proofs=proof_paths,
             database=database,
         )
 
+        print("\n[Validation] Reading Transactions\n")
         transactions_df = data_reader.load_data(DataType.TRANSACTIONS)
+        txn_cost = data_reader.get_ingestion_cost_summary()
+        print(
+            "\n[Validation] Reading Txn Cost: "
+            f"${txn_cost['estimatedTotalCostUsd']:.2f} "
+            f"({txn_cost['inputTokens']} in / {txn_cost['outputTokens']} out)"
+        )
+
+        print("\n[Validation] Reading Proofs\n")
         proofs_df = data_reader.load_data(DataType.PROOFS)
+        total_cost = data_reader.get_ingestion_cost_summary()
+        proof_cost = {
+            "inputTokens": max(0, total_cost["inputTokens"] - txn_cost["inputTokens"]),
+            "outputTokens": max(
+                0, total_cost["outputTokens"] - txn_cost["outputTokens"]
+            ),
+            "estimatedTotalCostUsd": round(
+                max(
+                    0.0,
+                    total_cost["estimatedTotalCostUsd"]
+                    - txn_cost["estimatedTotalCostUsd"],
+                ),
+                2,
+            ),
+        }
+        print(
+            "\n[Validation] Reading Proofs Cost: "
+            f"${proof_cost['estimatedTotalCostUsd']:.2f} "
+            f"({proof_cost['inputTokens']} in / {proof_cost['outputTokens']} out)"
+        )
+
+        ingestion_cost = data_reader.log_ingestion_cost(session_id)
 
         # Persist extracted user inputs by session_id for later retrieval.
         database.save_session_inputs(session_id, transactions_df, proofs_df)
@@ -415,6 +447,7 @@ def validate():
         payload = {
             "sessionId": session_id,
             "summary": summary_text,
+            "ingestionCost": ingestion_cost,
             "validatedTransactions": _frame_to_records(results.validated_transactions),
             "discrepancies": _frame_to_records(results.discrepancies),
             "unmatchedTransactions": _frame_to_records(results.unmatched_transactions),

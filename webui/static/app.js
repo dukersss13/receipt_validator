@@ -10,6 +10,7 @@ const state = {
 
 let progressTimer = null;
 let progressValue = 0;
+let isValidationRunning = false;
 
 const byId = (id) => document.getElementById(id);
 
@@ -23,6 +24,22 @@ function buildLocalSessionId() {
 
 function setStatus(text) {
     byId("workflow-status").value = text;
+}
+
+function updateValidationStageStatus() {
+    if (!isValidationRunning) {
+        return;
+    }
+
+    if (progressValue < 35) {
+        setStatus("Reading transactions...");
+    } else if (progressValue < 70) {
+        setStatus("Reading proofs...");
+    } else if (progressValue < 90) {
+        setStatus("Matching records...");
+    } else {
+        setStatus("Finalizing results...");
+    }
 }
 
 function showError(message) {
@@ -66,14 +83,21 @@ function startProgress() {
     setProgressShellVisible(true);
     setLoadingState(true);
     setProgress(4);
+    updateValidationStageStatus();
 
     progressTimer = setInterval(() => {
-        if (progressValue >= 92) {
+        if (progressValue >= 99) {
             return;
         }
 
-        const increment = 1 + Math.floor(Math.random() * 4);
+        const remaining = 99 - progressValue;
+        const maxStep = progressValue < 70 ? 4 : (progressValue < 90 ? 2 : 1);
+        const increment = Math.max(
+            1,
+            Math.min(remaining, 1 + Math.floor(Math.random() * maxStep)),
+        );
         setProgress(progressValue + increment);
+        updateValidationStageStatus();
     }, 420);
 }
 
@@ -675,8 +699,10 @@ function clearAll({ keepSessionIds = false } = {}) {
     updateResultPanelsVisibility();
 }
 
-async function createSession() {
-    clearAll();
+async function createSession({ clearUi = true } = {}) {
+    if (clearUi) {
+        clearAll();
+    }
     setStatus("Creating session...");
     showError("");
 
@@ -751,7 +777,7 @@ async function runValidation() {
     showError("");
 
     if (!sessionId) {
-        const createdSessionId = await createSession();
+        const createdSessionId = await createSession({ clearUi: false });
         if (!createdSessionId) {
             showError("Could not create a session. Please try again.");
             return;
@@ -773,6 +799,7 @@ async function runValidation() {
         formData.append("proofs", file);
     }
 
+    isValidationRunning = true;
     setStatus("Validating...");
     byId("summary-text").textContent = "Validation in progress. Parsing files and matching records...";
     startProgress();
@@ -795,7 +822,6 @@ async function runValidation() {
         state.recommendations = payload.recommendations;
 
         byId("download-btn").disabled = payload.validatedTransactions.length === 0;
-
         byId("summary-text").textContent = payload.summary;
         updateMetrics(payload);
 
@@ -807,10 +833,11 @@ async function runValidation() {
         updateResultPanelsVisibility();
 
         completeProgress();
+        isValidationRunning = false;
         setStatus("Validation complete");
     } catch (err) {
-        clearInterval(progressTimer);
-        setLoadingState(false);
+        isValidationRunning = false;
+        resetProgress();
         setStatus("Error");
         showError(err.message);
     }
