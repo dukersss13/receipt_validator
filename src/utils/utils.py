@@ -1,7 +1,7 @@
 import os
 import uuid
 
-GPT_MODEL = "gpt-4o-mini"
+GPT_MODEL = "gpt-5-nano"
 
 
 def load_secret_file(name: str) -> str:

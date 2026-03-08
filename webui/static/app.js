@@ -834,7 +834,7 @@ async function runValidation() {
 
         completeProgress();
         isValidationRunning = false;
-        setStatus("Validation complete");
+        setStatus("Validation Complete");
     } catch (err) {
         isValidationRunning = false;
         resetProgress();
