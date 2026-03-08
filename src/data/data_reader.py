@@ -102,6 +102,14 @@ class DataReader:
         return processed_data
 
     @staticmethod
+    def _completion_token_kwargs(max_tokens: int) -> dict:
+        return {"max_tokens": max_tokens}
+
+    @staticmethod
+    def _sampling_kwargs() -> dict:
+        return {"temperature": 0.0}
+
+    @staticmethod
     def _input_token_rate_per_million(model_name: str) -> float:
         rates = {
             # Keep this table current as pricing evolves.
@@ -586,8 +594,8 @@ class DataReader:
                     ],
                 }
             ],
-            temperature=0,
-            max_tokens=300,
+            **DataReader._sampling_kwargs(),
+            **DataReader._completion_token_kwargs(300),
         )
 
         self._record_usage(response.usage, mode="standard")
@@ -613,8 +621,8 @@ class DataReader:
                                 ],
                             }
                         ],
-                        "temperature": 0,
-                        "max_tokens": 300,
+                        **DataReader._sampling_kwargs(),
+                        **DataReader._completion_token_kwargs(300),
                     },
                 }
             )
@@ -634,8 +642,8 @@ class DataReader:
                     "content": STATEMENT_PROMPT + "\n\n" + bank_statement_text,
                 },
             ],
-            temperature=0,
-            max_tokens=350,
+            **DataReader._sampling_kwargs(),
+            **DataReader._completion_token_kwargs(350),
         )
 
         self._record_usage(response.usage, mode="standard")
@@ -662,8 +670,8 @@ class DataReader:
                                 "content": STATEMENT_PROMPT + "\n\n" + statement_text,
                             },
                         ],
-                        "temperature": 0,
-                        "max_tokens": 350,
+                        **DataReader._sampling_kwargs(),
+                        **DataReader._completion_token_kwargs(350),
                     },
                 }
             )

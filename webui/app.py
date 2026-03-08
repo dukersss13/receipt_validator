@@ -1,6 +1,7 @@
 import io
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pandas as pd
@@ -307,6 +308,41 @@ def _format_input_rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
     return _frame_to_records(subset)
 
 
+def _merge_ingestion_costs(costs: list[dict[str, Any]]) -> dict[str, Any]:
+    if not costs:
+        return {}
+
+    models = [str(cost.get("model", "unknown")) for cost in costs if cost]
+    merged = {
+        "model": "+".join(models) if models else "unknown",
+        "inputTokens": int(sum(int(cost.get("inputTokens", 0) or 0) for cost in costs)),
+        "outputTokens": int(
+            sum(int(cost.get("outputTokens", 0) or 0) for cost in costs)
+        ),
+        "llmCalls": int(sum(int(cost.get("llmCalls", 0) or 0) for cost in costs)),
+        "batchCalls": int(sum(int(cost.get("batchCalls", 0) or 0) for cost in costs)),
+        "standardCalls": int(
+            sum(int(cost.get("standardCalls", 0) or 0) for cost in costs)
+        ),
+        "fxCalls": int(sum(int(cost.get("fxCalls", 0) or 0) for cost in costs)),
+        "estimatedInputCostUsd": round(
+            sum(float(cost.get("estimatedInputCostUsd", 0.0) or 0.0) for cost in costs),
+            2,
+        ),
+        "estimatedOutputCostUsd": round(
+            sum(
+                float(cost.get("estimatedOutputCostUsd", 0.0) or 0.0) for cost in costs
+            ),
+            2,
+        ),
+        "estimatedTotalCostUsd": round(
+            sum(float(cost.get("estimatedTotalCostUsd", 0.0) or 0.0) for cost in costs),
+            2,
+        ),
+    }
+    return merged
+
+
 @app.get("/")
 def index():
     return render_template("index.html")
@@ -397,36 +433,39 @@ def validate():
 
     try:
         print(f"\n[Validation] Run started for session {session_id}\n")
-        data_reader = DataReader(
+        transactions_reader = DataReader(
+            transactions=transaction_paths,
+            proofs=proof_paths,
+            database=database,
+        )
+        proofs_reader = DataReader(
             transactions=transaction_paths,
             proofs=proof_paths,
             database=database,
         )
 
-        print("\n[Validation] Reading Transactions\n")
-        transactions_df = data_reader.load_data(DataType.TRANSACTIONS)
-        txn_cost = data_reader.get_ingestion_cost_summary()
+        print("\n[Validation] Reading Transactions and Proofs in parallel\n")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            tx_future = executor.submit(
+                transactions_reader.load_data, DataType.TRANSACTIONS
+            )
+            proof_future = executor.submit(proofs_reader.load_data, DataType.PROOFS)
+            transactions_df = tx_future.result()
+            proofs_df = proof_future.result()
+
+        txn_cost = transactions_reader.get_ingestion_cost_summary()
         print(
             "\n[Validation] Reading Txn Cost: "
             f"${txn_cost['estimatedTotalCostUsd']:.2f} "
             f"({txn_cost['inputTokens']} in / {txn_cost['outputTokens']} out)"
         )
 
-        print("\n[Validation] Reading Proofs\n")
-        proofs_df = data_reader.load_data(DataType.PROOFS)
-        total_cost = data_reader.get_ingestion_cost_summary()
+        proofs_cost = proofs_reader.get_ingestion_cost_summary()
         proof_cost = {
-            "inputTokens": max(0, total_cost["inputTokens"] - txn_cost["inputTokens"]),
-            "outputTokens": max(
-                0, total_cost["outputTokens"] - txn_cost["outputTokens"]
-            ),
+            "inputTokens": int(proofs_cost["inputTokens"]),
+            "outputTokens": int(proofs_cost["outputTokens"]),
             "estimatedTotalCostUsd": round(
-                max(
-                    0.0,
-                    total_cost["estimatedTotalCostUsd"]
-                    - txn_cost["estimatedTotalCostUsd"],
-                ),
-                2,
+                float(proofs_cost["estimatedTotalCostUsd"]), 2
             ),
         }
         print(
@@ -435,7 +474,23 @@ def validate():
             f"({proof_cost['inputTokens']} in / {proof_cost['outputTokens']} out)"
         )
 
-        ingestion_cost = data_reader.log_ingestion_cost(session_id)
+        ingestion_cost = _merge_ingestion_costs([txn_cost, proofs_cost])
+
+        log_entry = {
+            "ts": pd.Timestamp.utcnow().isoformat(),
+            "sessionId": session_id,
+            "ingestion": ingestion_cost,
+        }
+        log_dir = transactions_reader.validated_data_path
+        os.makedirs(log_dir, exist_ok=True)
+        with open(
+            os.path.join(log_dir, "ingestion_cost.log"), "a", encoding="utf-8"
+        ) as log_file:
+            import json
+
+            log_file.write(json.dumps(log_entry) + "\n")
+
+        print(f"\nIngestion usage: {log_entry}\n")
 
         # Persist extracted user inputs by session_id for later retrieval.
         database.save_session_inputs(session_id, transactions_df, proofs_df)
