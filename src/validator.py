@@ -1,13 +1,9 @@
 import numpy as np
 import pandas as pd
 from time import time
-from io import StringIO
 from dataclasses import dataclass
 
 from fuzzywuzzy import process, fuzz
-from openai import OpenAI
-from src.utils.utils import setup_openai, GPT_MODEL
-from src.prompts import RECOMMENDATION_PROMPT
 
 pd.set_option("display.max_columns", None)
 
@@ -36,19 +32,6 @@ class Validator:
     ):
         self.transactions = transactions
         self.proofs = proofs
-
-        if setup_client:
-            self.setup_client()
-
-    def setup_client(self):
-        """
-        Sets up the OpenAI client by initializing the necessary configurations.
-
-        This method calls the setup_openai function to configure the OpenAI environment
-        and then creates an instance of the OpenAI client.
-        """
-        setup_openai()
-        self.client = OpenAI()
 
     @staticmethod
     def match_business_names(transaction_name: str, proofs: list[str], threshold=80):
@@ -80,10 +63,12 @@ class Validator:
         validated = merged_df[merged_df["delta"] == 0.0]
 
         validated = validated.drop(
-            columns=["delta", "currency_proof", "currency_transaction"]
+            columns=["delta", "currency_proof", "currency_transaction"],
+            errors="ignore",
         )
         discrepancies = discrepancies.drop(
-            columns=["currency_proof", "currency_transaction"]
+            columns=["currency_proof", "currency_transaction"],
+            errors="ignore",
         )
 
         validated.columns = [
@@ -108,7 +93,10 @@ class Validator:
             )
         ]
 
-        return unmatched.drop(columns=["matched_name", "matched_date", "currency"])
+        return unmatched.drop(
+            columns=["matched_name", "matched_date", "currency"],
+            errors="ignore",
+        )
 
     def find_unmatched_proofs(self, merged_df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -118,7 +106,7 @@ class Validator:
             ~self.proofs["business_name"].isin(merged_df["business_name_proof"])
         ]
 
-        return unmatched.drop(columns=["currency"])
+        return unmatched.drop(columns=["currency"], errors="ignore")
 
     @staticmethod
     def update_unmatched_dataframes(
@@ -219,26 +207,125 @@ class Validator:
 
     def analyze_unmatched_results(
         self, unmatched_transactions: pd.DataFrame, unmatched_proofs: pd.DataFrame
-    ) -> str:
+    ) -> pd.DataFrame:
         """
-        Use LLM to provide recommendations for unmatched results
+        Provide deterministic recommendations using:
+        1) totals match and dates are within +/- 1 day, but business names differ
+        2) business names are similar and dates are within +/- 1 day, but totals differ
         """
-        unmatched_trans_txt = unmatched_transactions.to_string(index=False)
-        unmatched_proofs_txt = unmatched_proofs.to_string(index=False)
+        if unmatched_transactions.empty or unmatched_proofs.empty:
+            return pd.DataFrame([])
 
-        # Send the prompt to ChatGPT
-        response = self.client.chat.completions.create(
-            model=GPT_MODEL,
-            messages=[
-                {"role": "system", "content": RECOMMENDATION_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"Data: {unmatched_trans_txt} {unmatched_proofs_txt}",
-                },
-            ],
+        tx = unmatched_transactions.copy()
+        pr = unmatched_proofs.copy()
+
+        tx["__match_date"] = pd.to_datetime(tx["Date"], errors="coerce").dt.normalize()
+        pr["__match_date"] = pd.to_datetime(pr["Date"], errors="coerce").dt.normalize()
+
+        tx["__match_total"] = pd.to_numeric(tx["Total"], errors="coerce").round(2)
+        pr["__match_total"] = pd.to_numeric(pr["Total"], errors="coerce").round(2)
+
+        tx = tx.dropna(subset=["__match_date", "__match_total"])
+        pr = pr.dropna(subset=["__match_date", "__match_total"])
+
+        if tx.empty or pr.empty:
+            return pd.DataFrame([])
+
+        # Rule 1: same total and date within +/- 1 day, but business names differ.
+        exact_total_date = tx.merge(
+            pr,
+            on=["__match_total"],
+            how="inner",
+            suffixes=("_tx", "_pr"),
         )
 
-        return response.choices[0].message.content
+        if not exact_total_date.empty:
+            exact_total_date = exact_total_date[
+                (
+                    exact_total_date["__match_date_tx"]
+                    - exact_total_date["__match_date_pr"]
+                ).abs()
+                <= pd.Timedelta(days=1)
+            ]
+            exact_total_date = exact_total_date[
+                exact_total_date["Business Name_tx"].str.strip().str.lower()
+                != exact_total_date["Business Name_pr"].str.strip().str.lower()
+            ]
+
+        rule1 = pd.DataFrame([])
+        if not exact_total_date.empty:
+            rule1 = pd.DataFrame(
+                {
+                    "Transaction Business Name": exact_total_date["Business Name_tx"],
+                    "Transaction Total": exact_total_date["Total_tx"],
+                    "Transaction Date": exact_total_date["Date_tx"],
+                    "Proof Business Name": exact_total_date["Business Name_pr"],
+                    "Proof Total": exact_total_date["Total_pr"],
+                    "Proof Date": exact_total_date["Date_pr"],
+                    "Reason": "Matching totals and dates within one day, but different business names.",
+                }
+            )
+
+        # Rule 2: similar business names + dates within +/- 1 day, but different totals.
+        same_date_pairs = tx.merge(pr, how="cross", suffixes=("_tx", "_pr"))
+
+        rule2 = pd.DataFrame([])
+        if not same_date_pairs.empty:
+            same_date_pairs["__name_similarity"] = same_date_pairs.apply(
+                lambda row: fuzz.partial_ratio(
+                    str(row["Business Name_tx"]), str(row["Business Name_pr"])
+                ),
+                axis=1,
+            )
+
+            similar_name_diff_total = same_date_pairs[
+                (
+                    (
+                        same_date_pairs["__match_date_tx"]
+                        - same_date_pairs["__match_date_pr"]
+                    ).abs()
+                    <= pd.Timedelta(days=1)
+                )
+                &
+                (same_date_pairs["__name_similarity"] >= 80)
+                & (
+                    same_date_pairs["__match_total_tx"]
+                    != same_date_pairs["__match_total_pr"]
+                )
+            ]
+
+            if not similar_name_diff_total.empty:
+                rule2 = pd.DataFrame(
+                    {
+                        "Transaction Business Name": similar_name_diff_total[
+                            "Business Name_tx"
+                        ],
+                        "Transaction Total": similar_name_diff_total["Total_tx"],
+                        "Transaction Date": similar_name_diff_total["Date_tx"],
+                        "Proof Business Name": similar_name_diff_total["Business Name_pr"],
+                        "Proof Total": similar_name_diff_total["Total_pr"],
+                        "Proof Date": similar_name_diff_total["Date_pr"],
+                        "Reason": "Similar business names and dates within one day, but different totals.",
+                    }
+                )
+
+        recommendations = pd.concat([rule1, rule2], ignore_index=True)
+
+        if recommendations.empty:
+            return pd.DataFrame([])
+
+        recommendations = recommendations.drop_duplicates(
+            subset=[
+                "Transaction Business Name",
+                "Transaction Total",
+                "Transaction Date",
+                "Proof Business Name",
+                "Proof Total",
+                "Proof Date",
+            ]
+        )
+
+        return recommendations.reset_index(drop=True)
 
     def analyze_results(self, results: Results) -> tuple[str, pd.DataFrame]:
         """
@@ -255,11 +342,9 @@ class Validator:
             )
             recommendations = pd.DataFrame([])
         else:
-            analysis = "I finished the validation process and provided some recommendations below."
+            analysis = "I finished the validation process and provided deterministic recommendations based on totals with date proximity (+/- 1 day) and business-name similarity with date proximity (+/- 1 day)."
             recommendations = self.analyze_unmatched_results(
                 unmatched_transactions, unmatched_proofs
             )
-            recommendations = pd.read_csv(StringIO(recommendations))
-            recommendations.columns = [col.strip() for col in recommendations.columns]
 
         return analysis, recommendations

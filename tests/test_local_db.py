@@ -1,10 +1,16 @@
-from tests.test_validator import mock_documents
+import pytest
 
+from tests.mock_documents import create_mock_documents
 from src.data.db_schema import Session
 from src.data.database import DataBase
 
-local_db = DataBase(engine_name="tests/data/db/test_db")
-session_obj = Session(user_id="local_test")
+local_db = DataBase(engine_name="tests/data/db/test_db", reset_db=True)
+session_obj = Session(session_id="test-local-session", user_id="local_test")
+
+
+@pytest.fixture
+def mock_documents():
+    return create_mock_documents(num=3)
 
 
 def test_setup_db(mock_documents):
@@ -17,7 +23,7 @@ def test_setup_db(mock_documents):
     local_db.append_transactions(session_obj, transactions)
     local_db.append_proofs(session_obj, proofs)
 
-    db_transactions, db_proofs = local_db.load_session_history(session_obj.id)
+    db_transactions, db_proofs = local_db.load_session_history(session_obj.session_id)
     assert len(db_transactions) == len(transactions)
     assert len(db_proofs) == len(proofs)
 

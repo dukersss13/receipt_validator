@@ -59,6 +59,19 @@ To get started, you will need to install:
 ### RV in Action 💻
 Refer to [this](https://github.com/dukersss13/receipt_validator/blob/main/application.md) to see the application in action.
 
+### Custom Website UI
+This repository now includes a custom website UI powered by Flask.
+
+1. Install dependencies:
+    `pip install -r requirements.txt`
+2. Run the web app:
+    `python3 webui/app.py`
+3. Open your browser at:
+    `http://localhost:7860`
+
+The website supports session generation, uploading transaction/proof files, running validation, viewing results tables, and downloading validated CSV records.
+It also persists extracted transaction/proof inputs by `session_id`, so previous sessions can be loaded back into the UI.
+
 
  ## 📌 TODO
  Improve image OCR robustness

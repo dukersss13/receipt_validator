@@ -28,6 +28,7 @@ class Interface:
     def run_validation(
         self,
         state,
+        session_id,
         transactions: pd.DataFrame,
         proofs: pd.DataFrame,
         progress=gr.Progress(),
@@ -84,6 +85,13 @@ class Interface:
 
         e = time()
         print(f"Total data reading time: {round(e - s, 2)}s")
+
+        if session_id:
+            self.database.save_session_inputs(
+                session_id=session_id,
+                transaction_data=transactions_data,
+                proof_data=proofs_data,
+            )
 
         progress(4 * step_increment, desc="Initializing Validator")
         validator = Validator(transactions_data, proofs_data)
@@ -192,9 +200,7 @@ class Interface:
         Returns two DataFrames: transactions and proofs.
         """
         try:
-            transactions_df, proofs_df = self.database.load_session_history(
-                int(session_id)
-            )
+            transactions_df, proofs_df = self.database.load_session_history(session_id)
         except Exception as e:
             return gr.update(value=f"Error loading session: {e}"), gr.update(
                 value=f"Error loading session: {e}"
@@ -333,7 +339,7 @@ class Interface:
 
             validate_btn.click(
                 fn=self.run_validation,
-                inputs=[state, transactions_input, proofs_input],
+                inputs=[state, session_id_state, transactions_input, proofs_input],
                 outputs=[
                     validated_transactions,
                     discrepancies,

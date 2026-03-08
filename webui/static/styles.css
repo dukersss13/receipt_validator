@@ -1,0 +1,348 @@
+:root {
+    --bg-0: #f6efe6;
+    --bg-1: #eadbc8;
+    --ink: #1f1d1a;
+    --ink-muted: #544f49;
+    --accent: #0f7b6c;
+    --accent-strong: #0a5f53;
+    --danger: #b23a2c;
+    --card: rgba(255, 255, 255, 0.88);
+    --stroke: rgba(39, 36, 32, 0.14);
+    --shadow: 0 14px 34px rgba(38, 31, 23, 0.14);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Space Grotesk", sans-serif;
+    color: var(--ink);
+    background: radial-gradient(circle at 10% 5%, #fef3cf 0%, transparent 45%),
+        radial-gradient(circle at 100% 0%, #c4e3dc 0%, transparent 42%),
+        linear-gradient(120deg, var(--bg-0), var(--bg-1));
+}
+
+.backdrop {
+    position: fixed;
+    inset: 0;
+    background-image: linear-gradient(rgba(31, 29, 26, 0.03) 1px,
+            transparent 1px),
+        linear-gradient(90deg, rgba(31, 29, 26, 0.03) 1px, transparent 1px);
+    background-size: 28px 28px;
+    pointer-events: none;
+}
+
+.layout {
+    width: min(1180px, calc(100vw - 2.2rem));
+    margin: 1.6rem auto 2.4rem;
+    display: grid;
+    gap: 1rem;
+    position: relative;
+    z-index: 1;
+}
+
+.hero {
+    padding: 1.2rem 1.3rem;
+    border: 1px solid var(--stroke);
+    border-radius: 18px;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.45));
+    box-shadow: var(--shadow);
+    animation: float-in 0.52s ease-out;
+}
+
+.eyebrow {
+    margin: 0;
+    letter-spacing: 0.12rem;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    color: var(--ink-muted);
+}
+
+.hero h1 {
+    margin: 0.3rem 0;
+    font-size: clamp(1.5rem, 3.1vw, 2.6rem);
+}
+
+.hero-copy {
+    max-width: 76ch;
+    margin: 0;
+    color: var(--ink-muted);
+}
+
+.panel {
+    background: var(--card);
+    border: 1px solid var(--stroke);
+    border-radius: 16px;
+    padding: 1rem;
+    box-shadow: var(--shadow);
+    animation: rise-up 0.45s ease-out;
+}
+
+.panel h2,
+.panel h3 {
+    margin: 0 0 0.65rem;
+}
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.session-grid,
+.uploads-grid,
+.actions {
+    display: grid;
+    gap: 0.85rem;
+    margin-top: 0.8rem;
+}
+
+.session-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.uploads-grid {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.actions {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.actions-compact {
+    grid-template-columns: minmax(220px, 320px);
+}
+
+label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+input[type="text"] {
+    width: 100%;
+    padding: 0.68rem 0.72rem;
+    border-radius: 10px;
+    border: 1px solid var(--stroke);
+    background: rgba(255, 255, 255, 0.84);
+    color: var(--ink);
+    font-family: "IBM Plex Mono", monospace;
+}
+
+.dropzone {
+    border: 1px dashed rgba(15, 123, 108, 0.5);
+    border-radius: 12px;
+    padding: 0.8rem;
+    background: rgba(255, 255, 255, 0.7);
+}
+
+.dropzone span {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+input[type="file"] {
+    width: 100%;
+}
+
+.btn {
+    border: none;
+    border-radius: 12px;
+    padding: 0.72rem 1rem;
+    font-family: "Space Grotesk", sans-serif;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 120ms ease, filter 120ms ease;
+}
+
+.btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.03);
+}
+
+.btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background: var(--accent);
+    color: white;
+}
+
+.btn-secondary {
+    background: #26231f;
+    color: white;
+}
+
+.btn-tertiary {
+    background: #ecdfc8;
+    color: #27221d;
+}
+
+.btn-muted {
+    background: #d6e8e4;
+    color: #184039;
+}
+
+.summary-panel p {
+    margin: 0;
+    color: var(--ink-muted);
+}
+
+.progress-shell {
+    margin-top: 0.75rem;
+}
+
+.progress-track {
+    width: 100%;
+    height: 13px;
+    border-radius: 999px;
+    border: 1px solid var(--stroke);
+    background: rgba(15, 123, 108, 0.08);
+    overflow: hidden;
+}
+
+.progress-fill {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, #0f7b6c, #41ad9f);
+    transition: width 180ms ease;
+}
+
+.progress-label {
+    margin-top: 0.35rem;
+    font-weight: 700;
+    color: #185248;
+}
+
+.error-text {
+    margin-top: 0.6rem;
+    color: var(--danger);
+    font-weight: 600;
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.85rem;
+}
+
+.metric-card {
+    border-radius: 14px;
+    padding: 0.9rem;
+    border: 1px solid var(--stroke);
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow: var(--shadow);
+}
+
+.metric-card p {
+    margin: 0;
+    color: var(--ink-muted);
+}
+
+.metric-card strong {
+    display: inline-block;
+    margin-top: 0.2rem;
+    font-size: 2rem;
+}
+
+.results-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+}
+
+.results-wide {
+    grid-column: 1 / -1;
+}
+
+.table-wrap {
+    border: 1px solid var(--stroke);
+    border-radius: 12px;
+    overflow: auto;
+    min-height: 80px;
+    max-height: 380px;
+    background: white;
+}
+
+.table-wrap table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.table-wrap th,
+.table-wrap td {
+    padding: 0.55rem 0.65rem;
+    border-bottom: 1px solid #ece7dd;
+    text-align: left;
+}
+
+.table-wrap td.check-cell,
+.table-wrap th.check-cell {
+    width: 52px;
+    text-align: center;
+}
+
+.table-wrap input.table-input {
+    width: 100%;
+    min-width: 120px;
+    padding: 0.35rem 0.4rem;
+    border: 1px solid #d3c4ab;
+    border-radius: 8px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.84rem;
+}
+
+.hidden-panel {
+    display: none;
+}
+
+.table-wrap th {
+    position: sticky;
+    top: 0;
+    background: #f4ebda;
+    z-index: 1;
+}
+
+.table-empty {
+    padding: 0.85rem;
+    color: var(--ink-muted);
+}
+
+@keyframes float-in {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes rise-up {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (max-width: 900px) {
+    .results-grid {
+        grid-template-columns: 1fr;
+    }
+}

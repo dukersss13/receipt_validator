@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Receipt Validator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+        rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+
+<body>
+    <div class="backdrop"></div>
+
+    <main class="layout">
+        <section class="hero">
+            <p class="eyebrow">Receipt Validator</p>
+            <h1>AreVee</h1>
+            <p class="hero-copy">
+                Validate transactions, flag discrepancies and provide recommendations.
+            </p>
+        </section>
+
+        <section class="panel upload-panel">
+            <div class="panel-header">
+                <h2>Session & Inputs</h2>
+                <button id="new-session-btn" class="btn btn-muted">Create Session</button>
+            </div>
+
+            <div class="session-grid">
+                <div>
+                    <label>Live Session ID</label>
+                    <input id="session-id" type="text" readonly placeholder="Click Create Session" />
+                </div>
+                <div>
+                    <label>Load Existing Session ID</label>
+                    <input id="load-session-id" type="text" placeholder="Paste session_id to load" />
+                </div>
+                <div>
+                    <label>Workflow Status</label>
+                    <input id="workflow-status" type="text" readonly value="Idle" />
+                </div>
+            </div>
+
+            <div class="actions actions-compact">
+                <button id="load-session-btn" class="btn btn-muted">Load Session Inputs</button>
+            </div>
+
+            <div class="uploads-grid">
+                <label class="dropzone">
+                    <span>Transaction Files (PDF/Image)</span>
+                    <input id="transactions-input" type="file" multiple />
+                </label>
+                <label class="dropzone">
+                    <span>Proof Images (PNG/JPG/JPEG)</span>
+                    <input id="proofs-input" type="file" accept="image/*" multiple />
+                </label>
+            </div>
+
+            <div class="actions">
+                <button id="validate-btn" class="btn btn-primary">Run Validation</button>
+                <button id="clear-btn" class="btn btn-secondary">Clear</button>
+                <button id="download-btn" class="btn btn-tertiary" disabled>Download Validated CSV</button>
+            </div>
+        </section>
+
+        <section class="panel summary-panel">
+            <h2>Run Summary</h2>
+            <p id="summary-text">No validation has been executed yet.</p>
+            <div class="progress-shell" aria-live="polite">
+                <div id="progress-track" class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                    aria-valuenow="0">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+                <p id="progress-label" class="progress-label">0%</p>
+            </div>
+            <p id="error-text" class="error-text" hidden></p>
+        </section>
+
+        <section class="metrics-grid">
+            <article class="metric-card">
+                <p>Validated</p>
+                <strong id="metric-validated">0</strong>
+            </article>
+            <article class="metric-card">
+                <p>Discrepancies</p>
+                <strong id="metric-discrepancies">0</strong>
+            </article>
+            <article class="metric-card">
+                <p>Unmatched Txns</p>
+                <strong id="metric-unmatched-transactions">0</strong>
+            </article>
+            <article class="metric-card">
+                <p>Unmatched Proofs</p>
+                <strong id="metric-unmatched-proofs">0</strong>
+            </article>
+        </section>
+
+        <section class="results-grid">
+            <article class="panel">
+                <h3>Loaded Session Transactions (Inputs)</h3>
+                <div id="loaded-transactions-table" class="table-wrap"></div>
+            </article>
+
+            <article class="panel">
+                <h3>Loaded Session Proofs (Inputs)</h3>
+                <div id="loaded-proofs-table" class="table-wrap"></div>
+            </article>
+
+            <article class="panel">
+                <h3>Validated Transactions</h3>
+                <div id="validated-table" class="table-wrap"></div>
+            </article>
+
+            <article class="panel" id="discrepancies-panel">
+                <h3>Discrepancies</h3>
+                <div class="actions actions-compact">
+                    <button id="validate-discrepancies-btn" class="btn btn-primary" disabled>Add Selected to Validated</button>
+                </div>
+                <div id="discrepancies-table" class="table-wrap"></div>
+            </article>
+
+            <article class="panel" id="unmatched-transactions-panel">
+                <h3>Unmatched Transactions</h3>
+                <div id="unmatched-transactions-table" class="table-wrap"></div>
+            </article>
+
+            <article class="panel" id="unmatched-proofs-panel">
+                <h3>Unmatched Proofs</h3>
+                <div id="unmatched-proofs-table" class="table-wrap"></div>
+            </article>
+
+            <article class="panel results-wide" id="recommendations-panel">
+                <h3>Recommendations</h3>
+                <div class="actions actions-compact">
+                    <button id="accept-recommendations-btn" class="btn btn-primary" disabled>Accept Selected Recommendations</button>
+                </div>
+                <div id="recommendations-table" class="table-wrap"></div>
+            </article>
+        </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+
+</html>
