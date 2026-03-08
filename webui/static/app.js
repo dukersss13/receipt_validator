@@ -739,6 +739,8 @@ async function saveSession() {
 
     const snapshot = {
         summary: byId("summary-text").textContent,
+        loadedTransactions: state.loadedTransactions,
+        loadedProofs: state.loadedProofs,
         validatedTransactions: state.validatedTransactions,
         discrepancies: state.discrepancies,
         unmatchedTransactions: state.unmatchedTransactions,
@@ -785,8 +787,18 @@ async function runValidation() {
         sessionId = createdSessionId;
     }
 
-    if (!transactionFiles.length || !proofFiles.length) {
-        showError("Please upload at least one transaction file and one proof image.");
+    const hasUploads = transactionFiles.length > 0 || proofFiles.length > 0;
+    const hasLoadedInputs = state.loadedTransactions.length > 0 && state.loadedProofs.length > 0;
+
+    if (hasUploads && (!transactionFiles.length || !proofFiles.length)) {
+        showError("Upload both transaction and proof files, or upload neither to use saved inputs.");
+        return;
+    }
+
+    if (!hasUploads && !hasLoadedInputs) {
+        showError(
+            "Please upload transaction/proof files, or load a session with saved inputs first.",
+        );
         return;
     }
 
@@ -801,7 +813,9 @@ async function runValidation() {
 
     isValidationRunning = true;
     setStatus("Validating...");
-    byId("summary-text").textContent = "Validation in progress. Parsing files and matching records...";
+    byId("summary-text").textContent = hasUploads
+        ? "Validation in progress. Parsing files and matching records..."
+        : "Validation in progress using saved session inputs...";
     startProgress();
 
     try {
@@ -820,11 +834,15 @@ async function runValidation() {
         state.unmatchedTransactions = payload.unmatchedTransactions;
         state.unmatchedProofs = payload.unmatchedProofs;
         state.recommendations = payload.recommendations;
+        state.loadedTransactions = payload.transactions ?? state.loadedTransactions;
+        state.loadedProofs = payload.proofs ?? state.loadedProofs;
 
         byId("download-btn").disabled = payload.validatedTransactions.length === 0;
         byId("summary-text").textContent = payload.summary;
         updateMetrics(payload);
 
+        renderTable("loaded-transactions-table", state.loadedTransactions);
+        renderTable("loaded-proofs-table", state.loadedProofs);
         renderTable("validated-table", payload.validatedTransactions);
         renderDiscrepanciesTable();
         renderUnmatchedTransactionsTable();
@@ -880,12 +898,16 @@ async function loadSessionInputs() {
         }
 
         if (statePayload.state && typeof statePayload.state === "object") {
+            state.loadedTransactions = statePayload.state.loadedTransactions ?? payload.transactions;
+            state.loadedProofs = statePayload.state.loadedProofs ?? payload.proofs;
             state.validatedTransactions = statePayload.state.validatedTransactions ?? [];
             state.discrepancies = statePayload.state.discrepancies ?? [];
             state.unmatchedTransactions = statePayload.state.unmatchedTransactions ?? [];
             state.unmatchedProofs = statePayload.state.unmatchedProofs ?? [];
             state.recommendations = statePayload.state.recommendations ?? [];
 
+            renderTable("loaded-transactions-table", state.loadedTransactions);
+            renderTable("loaded-proofs-table", state.loadedProofs);
             renderTable("validated-table", state.validatedTransactions);
             renderDiscrepanciesTable();
             renderUnmatchedTransactionsTable();

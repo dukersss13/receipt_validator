@@ -308,6 +308,31 @@ def _format_input_rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
     return _frame_to_records(subset)
 
 
+def _records_to_input_frame(rows: Any) -> pd.DataFrame:
+    """Convert API-provided row dicts into normalized input DataFrame shape."""
+    if not isinstance(rows, list) or not rows:
+        return pd.DataFrame([], columns=["business_name", "total", "date", "currency"])
+
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return pd.DataFrame([], columns=["business_name", "total", "date", "currency"])
+
+    # Accept either normalized (snake_case) or display-style column names.
+    alias_map = {
+        "Business Name": "business_name",
+        "Total": "total",
+        "Date": "date",
+        "Currency": "currency",
+    }
+    frame = frame.rename(columns=alias_map)
+
+    for column in ["business_name", "total", "date", "currency"]:
+        if column not in frame.columns:
+            frame[column] = None
+
+    return frame[["business_name", "total", "date", "currency"]]
+
+
 def _merge_ingestion_costs(costs: list[dict[str, Any]]) -> dict[str, Any]:
     if not costs:
         return {}
@@ -387,6 +412,17 @@ def save_session_state(session_id: str):
         return jsonify({"error": "state must be an object."}), 400
 
     try:
+        transactions_rows = state.get("loadedTransactions")
+        proofs_rows = state.get("loadedProofs")
+
+        if isinstance(transactions_rows, list) and isinstance(proofs_rows, list):
+            # Keep session inputs aligned with what the user saved in UI state.
+            database.save_session_inputs(
+                session_id,
+                _records_to_input_frame(transactions_rows),
+                _records_to_input_frame(proofs_rows),
+            )
+
         database.save_session_state(session_id, state)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -422,78 +458,106 @@ def validate():
             400,
         )
 
-    if not transactions:
-        return jsonify({"error": "At least one transaction file is required."}), 400
+    use_uploaded_files = bool(transactions or proofs)
+    if use_uploaded_files and (not transactions or not proofs):
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "Provide both transactions and proofs when uploading new files, "
+                        "or upload neither to use saved session inputs."
+                    )
+                }
+            ),
+            400,
+        )
 
-    if not proofs:
-        return jsonify({"error": "At least one proof image is required."}), 400
-
-    transaction_paths = _save_uploaded_files(transactions)
-    proof_paths = _save_uploaded_files(proofs)
+    transaction_paths: list[str] = []
+    proof_paths: list[str] = []
+    if use_uploaded_files:
+        transaction_paths = _save_uploaded_files(transactions)
+        proof_paths = _save_uploaded_files(proofs)
 
     try:
         print(f"\n[Validation] Run started for session {session_id}\n")
-        transactions_reader = DataReader(
-            transactions=transaction_paths,
-            proofs=proof_paths,
-            database=database,
-        )
-        proofs_reader = DataReader(
-            transactions=transaction_paths,
-            proofs=proof_paths,
-            database=database,
-        )
+        ingestion_cost: dict[str, Any] = {}
 
-        print("\n[Validation] Reading Transactions and Proofs in parallel\n")
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            tx_future = executor.submit(
-                transactions_reader.load_data, DataType.TRANSACTIONS
+        if use_uploaded_files:
+            transactions_reader = DataReader(
+                transactions=transaction_paths,
+                proofs=proof_paths,
+                database=database,
             )
-            proof_future = executor.submit(proofs_reader.load_data, DataType.PROOFS)
-            transactions_df = tx_future.result()
-            proofs_df = proof_future.result()
+            proofs_reader = DataReader(
+                transactions=transaction_paths,
+                proofs=proof_paths,
+                database=database,
+            )
 
-        txn_cost = transactions_reader.get_ingestion_cost_summary()
-        print(
-            "\n[Validation] Reading Txn Cost: "
-            f"${txn_cost['estimatedTotalCostUsd']:.2f} "
-            f"({txn_cost['inputTokens']} in / {txn_cost['outputTokens']} out)"
-        )
+            print("\n[Validation] Reading Transactions and Proofs in parallel\n")
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                tx_future = executor.submit(
+                    transactions_reader.load_data, DataType.TRANSACTIONS
+                )
+                proof_future = executor.submit(proofs_reader.load_data, DataType.PROOFS)
+                transactions_df = tx_future.result()
+                proofs_df = proof_future.result()
 
-        proofs_cost = proofs_reader.get_ingestion_cost_summary()
-        proof_cost = {
-            "inputTokens": int(proofs_cost["inputTokens"]),
-            "outputTokens": int(proofs_cost["outputTokens"]),
-            "estimatedTotalCostUsd": round(
-                float(proofs_cost["estimatedTotalCostUsd"]), 2
-            ),
-        }
-        print(
-            "\n[Validation] Reading Proofs Cost: "
-            f"${proof_cost['estimatedTotalCostUsd']:.2f} "
-            f"({proof_cost['inputTokens']} in / {proof_cost['outputTokens']} out)"
-        )
+            txn_cost = transactions_reader.get_ingestion_cost_summary()
+            print(
+                "\n[Validation] Reading Txn Cost: "
+                f"${txn_cost['estimatedTotalCostUsd']:.2f} "
+                f"({txn_cost['inputTokens']} in / {txn_cost['outputTokens']} out)"
+            )
 
-        ingestion_cost = _merge_ingestion_costs([txn_cost, proofs_cost])
+            proofs_cost = proofs_reader.get_ingestion_cost_summary()
+            proof_cost = {
+                "inputTokens": int(proofs_cost["inputTokens"]),
+                "outputTokens": int(proofs_cost["outputTokens"]),
+                "estimatedTotalCostUsd": round(
+                    float(proofs_cost["estimatedTotalCostUsd"]), 2
+                ),
+            }
+            print(
+                "\n[Validation] Reading Proofs Cost: "
+                f"${proof_cost['estimatedTotalCostUsd']:.2f} "
+                f"({proof_cost['inputTokens']} in / {proof_cost['outputTokens']} out)"
+            )
 
-        log_entry = {
-            "ts": pd.Timestamp.utcnow().isoformat(),
-            "sessionId": session_id,
-            "ingestion": ingestion_cost,
-        }
-        log_dir = transactions_reader.validated_data_path
-        os.makedirs(log_dir, exist_ok=True)
-        with open(
-            os.path.join(log_dir, "ingestion_cost.log"), "a", encoding="utf-8"
-        ) as log_file:
-            import json
+            ingestion_cost = _merge_ingestion_costs([txn_cost, proofs_cost])
 
-            log_file.write(json.dumps(log_entry) + "\n")
+            log_entry = {
+                "ts": pd.Timestamp.utcnow().isoformat(),
+                "sessionId": session_id,
+                "ingestion": ingestion_cost,
+            }
+            log_dir = transactions_reader.validated_data_path
+            os.makedirs(log_dir, exist_ok=True)
+            with open(
+                os.path.join(log_dir, "ingestion_cost.log"), "a", encoding="utf-8"
+            ) as log_file:
+                import json
 
-        print(f"\nIngestion usage: {log_entry}\n")
+                log_file.write(json.dumps(log_entry) + "\n")
 
-        # Persist extracted user inputs by session_id for later retrieval.
-        database.save_session_inputs(session_id, transactions_df, proofs_df)
+            print(f"\nIngestion usage: {log_entry}\n")
+
+            # Persist extracted user inputs by session_id for later retrieval.
+            database.save_session_inputs(session_id, transactions_df, proofs_df)
+        else:
+            transactions_df, proofs_df = database.load_session_history(session_id)
+            if transactions_df.empty or proofs_df.empty:
+                return (
+                    jsonify(
+                        {
+                            "error": (
+                                "No saved inputs found for this session. "
+                                "Upload transactions and proofs first."
+                            )
+                        }
+                    ),
+                    400,
+                )
 
         validator = Validator(transactions_df, proofs_df)
         results = validator.validate()
@@ -503,6 +567,8 @@ def validate():
             "sessionId": session_id,
             "summary": summary_text,
             "ingestionCost": ingestion_cost,
+            "transactions": _format_input_rows(transactions_df),
+            "proofs": _format_input_rows(proofs_df),
             "validatedTransactions": _frame_to_records(results.validated_transactions),
             "discrepancies": _frame_to_records(results.discrepancies),
             "unmatchedTransactions": _frame_to_records(results.unmatched_transactions),
