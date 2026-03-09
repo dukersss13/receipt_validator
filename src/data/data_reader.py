@@ -12,6 +12,7 @@ import ast
 import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from functools import lru_cache
 
 from openai import OpenAI
 from langchain_community.document_loaders import PyPDFLoader
@@ -46,8 +47,13 @@ class DataReader:
         proofs: list[str] | None = None,
         config_path: str = "config.conf",
         database: DataBase | None = None,
+        parsed_config: object | None = None,
     ):
-        config = ConfigFactory.parse_file(config_path)
+        config = (
+            parsed_config
+            if parsed_config is not None
+            else DataReader._load_config_cached(config_path)
+        )
         data_path = config.get("data_path")
         self.transactions_data_path = data_path["transactions"]
         self.proofs_data_path = data_path["proofs"]
@@ -81,6 +87,12 @@ class DataReader:
         if transactions and proofs and len(transactions) and len(proofs):
             self.transactions_data_path = transactions
             self.proofs_data_path = proofs
+
+    @staticmethod
+    @lru_cache(maxsize=8)
+    def _load_config_cached(config_path: str):
+        """Cache parsed config to avoid repeated disk parsing per request."""
+        return ConfigFactory.parse_file(config_path)
 
     def load_data(self, data_type: DataType):
         """
@@ -385,57 +397,85 @@ class DataReader:
             f for f in all_files if Path(f).suffix.lower() in {".png", ".jpg", ".jpeg"}
         ]
 
-        if pdf_files:
-            pdf_frames: list[pd.DataFrame] = []
+        if pdf_files and image_files:
+            # PDF text extraction and image extraction are independent; run in parallel.
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                pdf_future = executor.submit(self._load_pdf_transaction_data, pdf_files)
+                image_future = executor.submit(
+                    self._load_image_transaction_data, image_files
+                )
+                pdf_data = pdf_future.result()
+                image_data = image_future.result()
 
-            if self.use_batch_api:
-                try:
-                    statement_texts = [
-                        DataReader.strip_sensitive_info(self._read_pdf_text(path))
-                        for path in pdf_files
-                    ]
-                    extracted = self.extract_statement_data_batch(statement_texts)
-                    for item in extracted:
-                        if not item:
-                            continue
-                        data_vec = ast.literal_eval(item)
-                        pdf_frames.append(DataReader.preprocess_data(data_vec))
-                except Exception as e:
-                    print(
-                        f"\nWarning: Batch PDF extraction failed; falling back. Error: {e}\n"
-                    )
-
-            if not pdf_frames:
-
-                def process_pdf(pdf_path: str) -> pd.DataFrame:
-                    try:
-                        extracted_data = self.extract_data_from_pdf(pdf_path)
-                        data_vec = ast.literal_eval(extracted_data)
-                        return DataReader.preprocess_data(data_vec)
-                    except Exception as e:
-                        print(f"\nWarning: Failed to process PDF {pdf_path}: {e}\n")
-                        return pd.DataFrame([])
-
-                with ThreadPoolExecutor(
-                    max_workers=min(self.io_max_workers, len(pdf_files))
-                ) as executor:
-                    pdf_frames = list(executor.map(process_pdf, pdf_files))
-
-            valid_pdf_frames = [frame for frame in pdf_frames if not frame.empty]
-            if valid_pdf_frames:
-                data = pd.concat([data, *valid_pdf_frames], axis=0)
-
-        if image_files:
-            try:
-                image_data = self.load_proofs_data(image_files)
-                data = pd.concat([data, image_data], axis=0)
-            except Exception as e:
-                print(f"\nWarning: Failed to process image files: {e}\n")
+            frames = [frame for frame in [pdf_data, image_data] if not frame.empty]
+            if frames:
+                data = pd.concat(frames, axis=0, ignore_index=True)
+        elif pdf_files:
+            data = self._load_pdf_transaction_data(pdf_files)
+        elif image_files:
+            data = self._load_image_transaction_data(image_files)
 
         end = time()
         print(f"\nTime to read transaction statements: {round(end - start, 2)}s\n")
 
         return data
+
+    def _load_pdf_transaction_data(self, pdf_files: list[str]) -> pd.DataFrame:
+        """Read transactions from PDF statements and normalize them into one frame."""
+        if not pdf_files:
+            return pd.DataFrame([])
+
+        pdf_frames: list[pd.DataFrame] = []
+
+        if self.use_batch_api:
+            try:
+                statement_texts = [
+                    DataReader.strip_sensitive_info(self._read_pdf_text(path))
+                    for path in pdf_files
+                ]
+                extracted = self.extract_statement_data_batch(statement_texts)
+                for item in extracted:
+                    if not item:
+                        continue
+                    data_vec = ast.literal_eval(item)
+                    pdf_frames.append(DataReader.preprocess_data(data_vec))
+            except Exception as e:
+                print(
+                    f"\nWarning: Batch PDF extraction failed; falling back. Error: {e}\n"
+                )
+
+        if not pdf_frames:
+
+            def process_pdf(pdf_path: str) -> pd.DataFrame:
+                try:
+                    extracted_data = self.extract_data_from_pdf(pdf_path)
+                    data_vec = ast.literal_eval(extracted_data)
+                    return DataReader.preprocess_data(data_vec)
+                except Exception as e:
+                    print(f"\nWarning: Failed to process PDF {pdf_path}: {e}\n")
+                    return pd.DataFrame([])
+
+            with ThreadPoolExecutor(
+                max_workers=min(self.io_max_workers, len(pdf_files))
+            ) as executor:
+                pdf_frames = list(executor.map(process_pdf, pdf_files))
+
+        valid_pdf_frames = [frame for frame in pdf_frames if not frame.empty]
+        if not valid_pdf_frames:
+            return pd.DataFrame([])
+
+        return pd.concat(valid_pdf_frames, axis=0, ignore_index=True)
+
+    def _load_image_transaction_data(self, image_files: list[str]) -> pd.DataFrame:
+        """Read transactions from uploaded images using the proof-image extraction path."""
+        if not image_files:
+            return pd.DataFrame([])
+
+        try:
+            return self.load_proofs_data(image_files)
+        except Exception as e:
+            print(f"\nWarning: Failed to process image files: {e}\n")
+            return pd.DataFrame([])
 
     @staticmethod
     def gather_files(data_path: str | list[str]) -> list[str]:
@@ -459,7 +499,7 @@ class DataReader:
         filtered_statement_text = DataReader.strip_sensitive_info(
             self._read_pdf_text(pdf_path)
         )
-        data = self.extract_data_from_image_texts(filtered_statement_text)
+        data = self.extract_data_from_statement_text(filtered_statement_text)
 
         return data
 
@@ -629,10 +669,8 @@ class DataReader:
 
         return self._run_chat_batch_requests(requests_payload)
 
-    def extract_data_from_image_texts(self, bank_statement_text: str) -> str:
-        """
-        Read statement text and extract transaction information.
-        """
+    def extract_data_from_statement_text(self, bank_statement_text: str) -> str:
+        """Read statement text and extract transaction information."""
         response = client.chat.completions.create(
             model=GPT_MODEL,
             messages=[
@@ -649,6 +687,10 @@ class DataReader:
         self._record_usage(response.usage, mode="standard")
 
         return response.choices[0].message.content
+
+    def extract_data_from_image_texts(self, bank_statement_text: str) -> str:
+        """Backward-compatible alias for statement text extraction."""
+        return self.extract_data_from_statement_text(bank_statement_text)
 
     def extract_statement_data_batch(self, statement_texts: list[str]) -> list[str]:
         requests_payload: list[dict] = []

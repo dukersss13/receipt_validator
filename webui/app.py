@@ -483,15 +483,18 @@ def validate():
         ingestion_cost: dict[str, Any] = {}
 
         if use_uploaded_files:
+            shared_config = DataReader._load_config_cached("config.conf")
             transactions_reader = DataReader(
                 transactions=transaction_paths,
                 proofs=proof_paths,
                 database=database,
+                parsed_config=shared_config,
             )
             proofs_reader = DataReader(
                 transactions=transaction_paths,
                 proofs=proof_paths,
                 database=database,
+                parsed_config=shared_config,
             )
 
             print("\n[Validation] Reading Transactions and Proofs in parallel\n")
@@ -575,6 +578,21 @@ def validate():
             "unmatchedProofs": _frame_to_records(results.unmatched_proofs),
             "recommendations": _frame_to_records(recommendations_df),
         }
+
+        # Auto-save full session state after each successful validation run.
+        database.save_session_state(
+            session_id,
+            {
+                "summary": summary_text,
+                "loadedTransactions": payload["transactions"],
+                "loadedProofs": payload["proofs"],
+                "validatedTransactions": payload["validatedTransactions"],
+                "discrepancies": payload["discrepancies"],
+                "unmatchedTransactions": payload["unmatchedTransactions"],
+                "unmatchedProofs": payload["unmatchedProofs"],
+                "recommendations": payload["recommendations"],
+            },
+        )
 
         return jsonify(payload)
     except Exception as exc:
