@@ -12,9 +12,8 @@ You can also run `pip install -r requirements.txt` in the terminal and run the a
 To start the application, run main.py in VSCode or `python3 main.py` in the terminal. 
 What's cool about this set up is you are also able to run the application in `DEBUG` mode if you are interested in stepping through the code line by line.
 
-### Gradio-Powered UI
-The Gradio UI URL should pop up in the terminal.
-![Screenshot 2025-05-12 at 11 21 42 AM](https://github.com/user-attachments/assets/71dc5c87-d816-46b8-8496-35250c53b536)
+### ArVee UI
+<img width="1443" height="1075" alt="image" src="https://github.com/user-attachments/assets/b059bdc5-0694-41b9-a640-7ee36de296e4" />
 
 ## Main Features
 ##### The demo shown will demonstrate 3 main features of RV:
