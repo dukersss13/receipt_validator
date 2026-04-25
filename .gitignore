@@ -8,6 +8,10 @@ pyrightconfig.json
 secrets/*
 !secrets/
 !secrets/.gitkeep
+.env
+.env.*
+!.env.example
+!.env.gemini.example
 
 # Data
 data/transactions/*

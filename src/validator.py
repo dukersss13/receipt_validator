@@ -351,7 +351,7 @@ class Validator:
                     candidate_pairs["__match_total_tx"]
                     - candidate_pairs["__match_total_pr"]
                 ).abs()
-                <= 0.01
+                <= 0.05
             ]
 
             if not candidate_pairs.empty:

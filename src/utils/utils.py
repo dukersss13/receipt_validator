@@ -1,7 +1,10 @@
 import os
 import uuid
 
-GPT_MODEL = "gpt-4o-mini"
+OPENAI_MODEL = "gpt-4o-mini"
+GEMINI_FLASH_LITE_MODEL = "gemini-2.5-flash-lite"
+# Backward-compatible alias used across the codebase.
+GPT_MODEL = OPENAI_MODEL
 
 
 def load_secret_file(name: str) -> str:
@@ -25,6 +28,24 @@ def setup_openai():
     """
     api_key = load_openai_key()
     os.environ["OPENAI_API_KEY"] = api_key
+
+
+def setup_gemini():
+    """
+    Sets env vars for Gemini API access.
+    """
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        try:
+            api_key = load_google_api_key()
+        except OSError:
+            api_key = ""
+
+    if api_key:
+        os.environ["GEMINI_API_KEY"] = api_key
+        # OpenAI-compatible Gemini endpoints accept api_key explicitly,
+        # but also honoring GOOGLE_API_KEY can help external tooling.
+        os.environ.setdefault("GOOGLE_API_KEY", api_key)
 
 
 def load_google_cse() -> str:

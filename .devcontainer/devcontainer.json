@@ -19,7 +19,6 @@
         "vscodevim.vim",
         "eamodio.gitlens",
         "ms-azuretools.vscode-docker",
-        "visualstudioexptteam.vscodeintellicode",
         "mhutchie.git-graph",
         "njpwerner.autodocstring",
         "Gruntfuggly.todo-tree",
@@ -46,7 +45,9 @@
       }
     }
   },
-  "forwardPorts": [3000],
+  "forwardPorts": [
+    3000
+  ],
   "remoteUser": "vscode",
   "features": {
     "git": "latest",

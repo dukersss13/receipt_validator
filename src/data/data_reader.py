@@ -22,12 +22,13 @@ from enum import Enum
 
 from src.prompts import RECEIPT_PROMPT, STATEMENT_PROMPT
 from src.utils.currency_conversion_agent import convert_currency_to_usd
-from src.utils.utils import setup_openai, GPT_MODEL
+from src.utils.utils import (
+    setup_openai,
+    setup_gemini,
+    OPENAI_MODEL,
+    GEMINI_FLASH_LITE_MODEL,
+)
 from src.data.database import DataBase
-
-
-setup_openai()
-client = OpenAI()
 
 
 class DataType(Enum):
@@ -74,14 +75,50 @@ class DataReader:
         self.batch_poll_seconds = int(config.get("llm.batch_poll_seconds", 2))
         self.batch_max_wait_seconds = int(config.get("llm.batch_max_wait_seconds", 10))
 
+        self.primary_llm_provider = (
+            str(config.get("llm.default_provider", "gemini_flash_lite")).strip().lower()
+        )
+        self.primary_model = str(
+            config.get("llm.primary_model", GEMINI_FLASH_LITE_MODEL)
+        )
+        self.fallback_model = str(config.get("llm.fallback_model", OPENAI_MODEL))
+        self.gemini_base_url = str(
+            config.get(
+                "llm.gemini_base_url",
+                "https://generativelanguage.googleapis.com/v1beta/openai/",
+            )
+        )
+
+        setup_openai()
+        self.openai_client = OpenAI()
+
+        setup_gemini()
+        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+        self.gemini_client = (
+            OpenAI(api_key=gemini_key, base_url=self.gemini_base_url)
+            if gemini_key
+            else None
+        )
+
+        if self.primary_llm_provider == "openai":
+            self.primary_client = self.openai_client
+            self.primary_model = self.fallback_model
+            self.fallback_client = self.gemini_client
+            self.fallback_model = GEMINI_FLASH_LITE_MODEL
+        else:
+            self.primary_client = self.gemini_client
+            self.fallback_client = self.openai_client
+
         self.ingestion_usage = {
-            "model": GPT_MODEL,
+            "model": self.primary_model,
             "input_tokens": 0,
             "output_tokens": 0,
             "llm_calls": 0,
             "batch_runs": 0,
             "standard_runs": 0,
             "fx_calls": 0,
+            "fallback_calls": 0,
+            "estimated_total_cost_usd": 0.0,
         }
 
         if transactions and proofs and len(transactions) and len(proofs):
@@ -126,6 +163,7 @@ class DataReader:
         rates = {
             # Keep this table current as pricing evolves.
             "gpt-4o-mini": 0.15,
+            "gemini-2.5-flash-lite": 0.10,
         }
         return rates.get(model_name, 0.15)
 
@@ -133,10 +171,17 @@ class DataReader:
     def _output_token_rate_per_million(model_name: str) -> float:
         rates = {
             "gpt-4o-mini": 0.60,
+            "gemini-2.5-flash-lite": 0.40,
         }
         return rates.get(model_name, 0.60)
 
-    def _record_usage(self, usage: object | None, mode: str) -> None:
+    def _record_usage(
+        self,
+        usage: object | None,
+        mode: str,
+        model_name: str,
+        is_fallback: bool = False,
+    ) -> None:
         if usage is None:
             return
 
@@ -151,7 +196,18 @@ class DataReader:
         else:
             self.ingestion_usage["standard_runs"] += 1
 
-    def _record_usage_from_body(self, body: dict, mode: str) -> None:
+        if is_fallback:
+            self.ingestion_usage["fallback_calls"] += 1
+
+        input_cost = (
+            input_tokens / 1_000_000
+        ) * DataReader._input_token_rate_per_million(model_name)
+        output_cost = (
+            output_tokens / 1_000_000
+        ) * DataReader._output_token_rate_per_million(model_name)
+        self.ingestion_usage["estimated_total_cost_usd"] += input_cost + output_cost
+
+    def _record_usage_from_body(self, body: dict, mode: str, model_name: str) -> None:
         usage = body.get("usage", {}) if isinstance(body, dict) else {}
         input_tokens = int(usage.get("prompt_tokens", 0) or 0)
         output_tokens = int(usage.get("completion_tokens", 0) or 0)
@@ -164,6 +220,14 @@ class DataReader:
             self.ingestion_usage["batch_runs"] += 1
         else:
             self.ingestion_usage["standard_runs"] += 1
+
+        input_cost = (
+            input_tokens / 1_000_000
+        ) * DataReader._input_token_rate_per_million(model_name)
+        output_cost = (
+            output_tokens / 1_000_000
+        ) * DataReader._output_token_rate_per_million(model_name)
+        self.ingestion_usage["estimated_total_cost_usd"] += input_cost + output_cost
 
     def get_ingestion_cost_summary(self) -> dict:
         model_name = self.ingestion_usage["model"]
@@ -185,9 +249,12 @@ class DataReader:
             "batchCalls": int(self.ingestion_usage["batch_runs"]),
             "standardCalls": int(self.ingestion_usage["standard_runs"]),
             "fxCalls": int(self.ingestion_usage["fx_calls"]),
+            "fallbackCalls": int(self.ingestion_usage["fallback_calls"]),
             "estimatedInputCostUsd": round(input_cost, 2),
             "estimatedOutputCostUsd": round(output_cost, 2),
-            "estimatedTotalCostUsd": round(input_cost + output_cost, 2),
+            "estimatedTotalCostUsd": round(
+                float(self.ingestion_usage["estimated_total_cost_usd"]), 2
+            ),
         }
 
     def log_ingestion_cost(self, session_id: str) -> dict:
@@ -227,7 +294,7 @@ class DataReader:
         terminal = {"completed", "failed", "cancelled", "expired"}
 
         while True:
-            batch = client.batches.retrieve(batch_id)
+            batch = self.openai_client.batches.retrieve(batch_id)
             if batch.status in terminal:
                 return batch
 
@@ -254,11 +321,13 @@ class DataReader:
             return str(content)
         return str(raw_content)
 
-    def _run_chat_batch_requests(self, requests_payload: list[dict]) -> list[str]:
+    def _run_chat_batch_requests(
+        self, requests_payload: list[dict], model_name: str
+    ) -> list[str]:
         if not requests_payload:
             return []
 
-        if not hasattr(client, "batches"):
+        if not hasattr(self.openai_client, "batches"):
             raise RuntimeError("OpenAI client does not support Batch API.")
 
         with NamedTemporaryFile(
@@ -271,9 +340,11 @@ class DataReader:
         output_text: str | None = None
         try:
             with open(input_file_path, "rb") as f_obj:
-                input_file = client.files.create(file=f_obj, purpose="batch")
+                input_file = self.openai_client.files.create(
+                    file=f_obj, purpose="batch"
+                )
 
-            batch = client.batches.create(
+            batch = self.openai_client.batches.create(
                 input_file_id=input_file.id,
                 endpoint="/v1/chat/completions",
                 completion_window=self.batch_completion_window,
@@ -288,7 +359,7 @@ class DataReader:
                     f"Batch failed with status {completed_batch.status}."
                 )
 
-            output = client.files.content(completed_batch.output_file_id)
+            output = self.openai_client.files.content(completed_batch.output_file_id)
             output_text = DataReader._serialize_batch_output(output)
         finally:
             try:
@@ -307,7 +378,7 @@ class DataReader:
             obj = json.loads(line)
             custom_id = str(obj.get("custom_id", ""))
             body = ((obj.get("response") or {}).get("body")) or {}
-            self._record_usage_from_body(body, mode="batch")
+            self._record_usage_from_body(body, mode="batch", model_name=model_name)
 
             choices = body.get("choices", []) if isinstance(body, dict) else []
             if not choices:
@@ -516,9 +587,41 @@ class DataReader:
         """
         Process multiple image payloads in parallel.
         """
-        if self.use_batch_api and image_payloads:
+        if not image_payloads:
+            return []
+
+        start_time = time()
+        start_cost = float(self.ingestion_usage["estimated_total_cost_usd"])
+        start_llm_calls = int(self.ingestion_usage["llm_calls"])
+        start_fallback_calls = int(self.ingestion_usage["fallback_calls"])
+
+        can_use_openai_batch = (
+            self.use_batch_api and self.primary_llm_provider == "openai"
+        )
+        if can_use_openai_batch and image_payloads:
             try:
-                return self.read_proofs_data_batch(image_payloads)
+                results = self.read_proofs_data_batch(image_payloads)
+                elapsed = time() - start_time
+                cost_delta = (
+                    float(self.ingestion_usage["estimated_total_cost_usd"]) - start_cost
+                )
+                llm_calls_delta = (
+                    int(self.ingestion_usage["llm_calls"]) - start_llm_calls
+                )
+                fallback_calls_delta = (
+                    int(self.ingestion_usage["fallback_calls"]) - start_fallback_calls
+                )
+                avg_latency = elapsed / max(1, len(image_payloads))
+                print(
+                    "\n[Ingestion] Image extraction summary: "
+                    f"images={len(image_payloads)}, "
+                    f"total_latency_s={elapsed:.2f}, "
+                    f"avg_latency_s={avg_latency:.2f}, "
+                    f"llm_calls={llm_calls_delta}, "
+                    f"fallback_calls={fallback_calls_delta}, "
+                    f"estimated_cost_usd={cost_delta:.6f}\n"
+                )
+                return results
             except Exception as e:
                 print(
                     f"\nWarning: Batch proof extraction failed; falling back. Error: {e}\n"
@@ -528,6 +631,25 @@ class DataReader:
             max_workers=min(self.llm_max_workers, max(1, len(image_payloads)))
         ) as executor:
             results = list(executor.map(self.read_proofs_data, image_payloads))
+
+        elapsed = time() - start_time
+        cost_delta = (
+            float(self.ingestion_usage["estimated_total_cost_usd"]) - start_cost
+        )
+        llm_calls_delta = int(self.ingestion_usage["llm_calls"]) - start_llm_calls
+        fallback_calls_delta = (
+            int(self.ingestion_usage["fallback_calls"]) - start_fallback_calls
+        )
+        avg_latency = elapsed / max(1, len(image_payloads))
+        print(
+            "\n[Ingestion] Image extraction summary: "
+            f"images={len(image_payloads)}, "
+            f"total_latency_s={elapsed:.2f}, "
+            f"avg_latency_s={avg_latency:.2f}, "
+            f"llm_calls={llm_calls_delta}, "
+            f"fallback_calls={fallback_calls_delta}, "
+            f"estimated_cost_usd={cost_delta:.6f}\n"
+        )
 
         return results
 
@@ -620,26 +742,64 @@ class DataReader:
         """
         Read proof image payload and extract receipt information.
         """
-        response = client.chat.completions.create(
-            model=GPT_MODEL,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": RECEIPT_PROMPT,
-                        },
-                        image_payload,
-                    ],
-                }
-            ],
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": RECEIPT_PROMPT,
+                    },
+                    image_payload,
+                ],
+            }
+        ]
+        return self._chat_completion_with_fallback(messages, max_tokens=300)
+
+    def _chat_completion_with_fallback(
+        self, messages: list[dict], max_tokens: int
+    ) -> str:
+        completion_kwargs = {
             **DataReader._sampling_kwargs(),
-            **DataReader._completion_token_kwargs(300),
+            **DataReader._completion_token_kwargs(max_tokens),
+        }
+
+        if self.primary_client is not None:
+            try:
+                response = self.primary_client.chat.completions.create(
+                    model=self.primary_model,
+                    messages=messages,
+                    **completion_kwargs,
+                )
+                self._record_usage(
+                    response.usage,
+                    mode="standard",
+                    model_name=self.primary_model,
+                    is_fallback=False,
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                print(
+                    f"\nWarning: Primary model {self.primary_model} failed; "
+                    f"falling back to {self.fallback_model}. Error: {e}\n"
+                )
+
+        if self.fallback_client is None:
+            raise RuntimeError(
+                f"No fallback client configured for model {self.fallback_model}."
+            )
+
+        response = self.fallback_client.chat.completions.create(
+            model=self.fallback_model,
+            messages=messages,
+            **completion_kwargs,
         )
-
-        self._record_usage(response.usage, mode="standard")
-
+        self._record_usage(
+            response.usage,
+            mode="standard",
+            model_name=self.fallback_model,
+            is_fallback=True,
+        )
         return response.choices[0].message.content
 
     def read_proofs_data_batch(self, image_payloads: list[dict]) -> list[str]:
@@ -651,7 +811,7 @@ class DataReader:
                     "method": "POST",
                     "url": "/v1/chat/completions",
                     "body": {
-                        "model": GPT_MODEL,
+                        "model": self.primary_model,
                         "messages": [
                             {
                                 "role": "user",
@@ -667,26 +827,20 @@ class DataReader:
                 }
             )
 
-        return self._run_chat_batch_requests(requests_payload)
+        return self._run_chat_batch_requests(
+            requests_payload, model_name=self.primary_model
+        )
 
     def extract_data_from_statement_text(self, bank_statement_text: str) -> str:
         """Read statement text and extract transaction information."""
-        response = client.chat.completions.create(
-            model=GPT_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {
-                    "role": "user",
-                    "content": STATEMENT_PROMPT + "\n\n" + bank_statement_text,
-                },
-            ],
-            **DataReader._sampling_kwargs(),
-            **DataReader._completion_token_kwargs(350),
-        )
-
-        self._record_usage(response.usage, mode="standard")
-
-        return response.choices[0].message.content
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {
+                "role": "user",
+                "content": STATEMENT_PROMPT + "\n\n" + bank_statement_text,
+            },
+        ]
+        return self._chat_completion_with_fallback(messages, max_tokens=350)
 
     def extract_data_from_image_texts(self, bank_statement_text: str) -> str:
         """Backward-compatible alias for statement text extraction."""
@@ -701,7 +855,7 @@ class DataReader:
                     "method": "POST",
                     "url": "/v1/chat/completions",
                     "body": {
-                        "model": GPT_MODEL,
+                        "model": self.primary_model,
                         "messages": [
                             {
                                 "role": "system",
@@ -718,4 +872,6 @@ class DataReader:
                 }
             )
 
-        return self._run_chat_batch_requests(requests_payload)
+        return self._run_chat_batch_requests(
+            requests_payload, model_name=self.primary_model
+        )
