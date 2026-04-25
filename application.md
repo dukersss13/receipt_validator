@@ -47,5 +47,6 @@ API calls are I/O-bound operations — the program spends most of its time waiti
 
 ### Final Results
 Download the validated records using `Download Records` button.
-![Screenshot 2025-05-12 at 11 29 30 AM](https://github.com/user-attachments/assets/5a2a1608-96a7-48e3-8242-cf2778c1f5e6)
+<img width="1405" height="1038" alt="image" src="https://github.com/user-attachments/assets/2873b4b5-d93a-42b2-8e12-adf78cb94f17" />
+
 
