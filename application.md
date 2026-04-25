@@ -28,7 +28,7 @@ What's cool about this set up is you are also able to run the application in `DE
 ## Application Run
 
 ### Files Upload
-![Screenshot 2025-05-12 at 12 20 29 PM](https://github.com/user-attachments/assets/3fc9647e-8c18-437d-942b-1d44371f2954)
+<img width="1422" height="414" alt="image" src="https://github.com/user-attachments/assets/9a53335e-23b3-4e28-a4dc-1d1bd6dffaae" />
 
 ### Validate
 After uploading the files, clicking `Validate` will start the validation process. The application starts reading in the uploaded transactions & receipt images.
