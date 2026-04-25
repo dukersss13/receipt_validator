@@ -28,7 +28,8 @@ What's cool about this set up is you are also able to run the application in `DE
 ## Application Run
 
 ### Files Upload
-<img width="1422" height="414" alt="image" src="https://github.com/user-attachments/assets/9a53335e-23b3-4e28-a4dc-1d1bd6dffaae" />
+<img width="1411" height="1042" alt="image" src="https://github.com/user-attachments/assets/61e2ae83-9d88-4df3-b761-fb6ac52a2cc9" />
+
 
 ### Validate
 After uploading the files, clicking `Validate` will start the validation process. The application starts reading in the uploaded transactions & receipt images.
@@ -42,7 +43,7 @@ API calls are also done multi-threadedly to improve performance.
 API calls are I/O-bound operations — the program spends most of its time waiting for network responses, not doing computation. Multithreading is well-suited for I/O-bound tasks because while one thread is waiting, another can proceed with its request.
 
 ### Validation Complete & Recommendations Provided
-![Screenshot 2025-05-12 at 12 18 29 PM](https://github.com/user-attachments/assets/74d83dcf-95c0-4286-a0c1-b6163531494e)
+<img width="1294" height="1136" alt="image" src="https://github.com/user-attachments/assets/af39c9f2-8e34-416f-a9fa-4798703e81f6" />
 
 ### Final Results
 Download the validated records using `Download Records` button.
