@@ -37,7 +37,7 @@ def setup_gemini():
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key:
         try:
-            api_key = load_google_api_key()
+            api_key = load_google_gemini_api_key()
         except OSError:
             api_key = ""
 
@@ -60,6 +60,13 @@ def load_google_api_key():
     Loads the google search engine ID
     """
     return load_secret_file("secrets/google_api_key")
+
+
+def load_google_gemini_api_key() -> str:
+    """
+    Loads the Gemini API key.
+    """
+    return load_secret_file("secrets/google_gemini_api_key")
 
 
 def setup_google_search():

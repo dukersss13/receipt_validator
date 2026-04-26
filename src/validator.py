@@ -3,8 +3,12 @@ import pandas as pd
 from time import time
 from dataclasses import dataclass
 import re
+from concurrent.futures import ThreadPoolExecutor
+
+from pyhocon import ConfigFactory
 
 from fuzzywuzzy import process, fuzz
+from src.categorize import TransactionCategorizer
 
 pd.set_option("display.max_columns", None)
 
@@ -29,10 +33,67 @@ class Validator:
         self,
         transactions: pd.DataFrame,
         proofs: pd.DataFrame,
-        setup_client: bool = True,
+        config_path: str = "config.conf",
+        parsed_config: object | None = None,
     ):
         self.transactions = transactions
         self.proofs = proofs
+        self.config = (
+            parsed_config
+            if parsed_config is not None
+            else ConfigFactory.parse_file(config_path)
+        )
+        self.categorize_cost: dict = {}
+
+    def _categorize_inputs(self) -> None:
+        """Categorize transaction/proof rows and track aggregate model usage."""
+        categorizer_tx = TransactionCategorizer(self.config)
+        categorizer_pr = TransactionCategorizer(self.config)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            tx_future = executor.submit(
+                categorizer_tx.categorize_dataframe,
+                self.transactions,
+            )
+            pr_future = executor.submit(
+                categorizer_pr.categorize_dataframe,
+                self.proofs,
+            )
+            tx_enriched = tx_future.result()
+            pr_enriched = pr_future.result()
+
+        self.transactions = tx_enriched.frame
+        self.proofs = pr_enriched.frame
+
+        costs = [tx_enriched.summary, pr_enriched.summary]
+        models = [str(cost.get("model", "unknown")) for cost in costs if cost]
+        self.categorize_cost = {
+            "model": "+".join(models) if models else "unknown",
+            "rowsProcessed": int(
+                sum(int(cost.get("rowsProcessed", 0) or 0) for cost in costs)
+            ),
+            "llmCalls": int(sum(int(cost.get("llmCalls", 0) or 0) for cost in costs)),
+            "fallbackCalls": int(
+                sum(int(cost.get("fallbackCalls", 0) or 0) for cost in costs)
+            ),
+            "inputTokens": int(
+                sum(int(cost.get("inputTokens", 0) or 0) for cost in costs)
+            ),
+            "outputTokens": int(
+                sum(int(cost.get("outputTokens", 0) or 0) for cost in costs)
+            ),
+            "estimatedTotalCostUsd": round(
+                sum(
+                    float(cost.get("estimatedTotalCostUsd", 0.0) or 0.0)
+                    for cost in costs
+                ),
+                6,
+            ),
+            "latencySeconds": round(
+                sum(float(cost.get("latencySeconds", 0.0) or 0.0) for cost in costs),
+                3,
+            ),
+        }
 
     @staticmethod
     def match_business_names(transaction_name: str, proofs: list[str], threshold=80):
@@ -110,14 +171,18 @@ class Validator:
             errors="ignore",
         )
 
-        validated.columns = [
-            "Transaction Business Name",
-            "Transaction Total",
-            "Transaction Date",
-            "Proof Business Name",
-            "Proof Total",
-            "Proof Date",
-        ]
+        validated = validated.rename(
+            columns={
+                "business_name_transaction": "Transaction Business Name",
+                "total_transaction": "Transaction Total",
+                "date_transaction": "Transaction Date",
+                "business_name_proof": "Proof Business Name",
+                "total_proof": "Proof Total",
+                "date_proof": "Proof Date",
+                "category_transaction": "Transaction Category",
+                "category_proof": "Proof Category",
+            }
+        )
         validated["Result"] = ["Validated"] * len(validated)
 
         return validated, discrepancies
@@ -189,6 +254,21 @@ class Validator:
         start = time()
         self.transactions = self.transactions.copy()
         self.proofs = self.proofs.copy()
+
+        try:
+            self._categorize_inputs()
+        except Exception as e:
+            print(f"Warning: Categorization failed and was skipped. Error: {e}")
+            self.categorize_cost = {
+                "model": "unavailable",
+                "rowsProcessed": 0,
+                "llmCalls": 0,
+                "fallbackCalls": 0,
+                "inputTokens": 0,
+                "outputTokens": 0,
+                "estimatedTotalCostUsd": 0.0,
+                "latencySeconds": 0.0,
+            }
 
         self.transactions["name_key"] = (
             self.transactions["business_name"].astype(str).str.strip().str.lower()
@@ -287,17 +367,23 @@ class Validator:
         unmatched_transactions = self.find_unmatched_transactions(used_tx_indices)
         unmatched_proofs = self.find_unmatched_proofs(used_proof_indices)
 
-        discrepancies.columns = [
-            "Transaction Business Name",
-            "Transaction Total",
-            "Transaction Date",
-            "Proof Business Name",
-            "Proof Total",
-            "Proof Date",
-            "Delta",
-        ]
+        discrepancies = discrepancies.rename(
+            columns={
+                "business_name_transaction": "Transaction Business Name",
+                "total_transaction": "Transaction Total",
+                "date_transaction": "Transaction Date",
+                "business_name_proof": "Proof Business Name",
+                "total_proof": "Proof Total",
+                "date_proof": "Proof Date",
+                "delta": "Delta",
+                "category_transaction": "Transaction Category",
+                "category_proof": "Proof Category",
+            }
+        )
 
         unmatched_cols = ["Business Name", "Total", "Date"]
+        if "category" in unmatched_transactions.columns:
+            unmatched_cols.append("Category")
         unmatched_transactions = unmatched_transactions.reset_index(drop=True)
         unmatched_proofs = unmatched_proofs.reset_index(drop=True)
         unmatched_transactions.columns = unmatched_cols

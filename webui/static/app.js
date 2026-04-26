@@ -6,11 +6,13 @@ const state = {
     recommendations: [],
     loadedTransactions: [],
     loadedProofs: [],
+    chatHistory: [],
 };
 
 let progressTimer = null;
 let progressValue = 0;
 let isValidationRunning = false;
+let greetingTimer = null;
 
 const byId = (id) => document.getElementById(id);
 
@@ -198,6 +200,96 @@ function updateResultPanelsVisibility() {
     );
     setPanelVisibility("unmatched-proofs-panel", state.unmatchedProofs.length > 0);
     setPanelVisibility("recommendations-panel", state.recommendations.length > 0);
+}
+
+function renderChatTranscript() {
+    const host = byId("chat-transcript");
+    if (!host) {
+        return;
+    }
+
+    host.innerHTML = "";
+    const rows = state.chatHistory || [];
+
+    if (!rows.length) {
+        const welcome = document.createElement("div");
+        welcome.className = "chat-welcome";
+        welcome.innerHTML =
+            "<strong>Hi, I\u2019m ArVee!</strong>" +
+            "<span>I\u2019m here to help with your finances. Try asking me questions like:</span>" +
+            '<ul class="chat-welcome-examples">' +
+            '<li data-q="How much did I spend on food this month?">\u201cHow much did I spend on food this month?\u201d</li>' +
+            '<li data-q="What category did I spend my most money on?">\u201cWhat category did I spend my most money on?\u201d</li>' +
+            '<li data-q="Show my top 5 spending categories">\u201cShow my top 5 spending categories\u201d</li>' +
+            "</ul>";
+        welcome.querySelectorAll(".chat-welcome-examples li").forEach((li) => {
+            li.addEventListener("click", () => {
+                const input = byId("chat-input");
+                if (input) {
+                    input.value = li.dataset.q;
+                    input.focus();
+                }
+            });
+        });
+        host.appendChild(welcome);
+        return;
+    }
+
+    rows.forEach((msg) => {
+        const item = document.createElement("div");
+        item.className = `chat-msg chat-msg-${msg.role}`;
+        item.textContent = msg.text;
+        host.appendChild(item);
+    });
+
+    host.scrollTop = host.scrollHeight;
+}
+
+function setChatPopupOpen(isOpen) {
+    const popup = byId("chat-popup");
+    const fab = byId("chat-fab");
+    const greeting = byId("chat-greeting");
+    if (!popup || !fab) {
+        return;
+    }
+
+    popup.hidden = !isOpen;
+    fab.setAttribute("aria-expanded", String(isOpen));
+
+    if (greeting) {
+        greeting.hidden = isOpen;
+    }
+
+    if (isOpen) {
+        renderChatTranscript();
+        byId("chat-input")?.focus();
+    }
+}
+
+function startGreetingFlash() {
+    const greeting = byId("chat-greeting");
+    if (!greeting) {
+        return;
+    }
+
+    const messages = [
+        "Hi, I\u2019m ArVee! Ask me about your finances.",
+        "Try: \u201cHow much did I spend on food?\u201d",
+        "Try: \u201cWhat\u2019s my top spending category?\u201d",
+        "I can answer questions about your transactions.",
+    ];
+    let index = 0;
+    greeting.textContent = messages[index];
+
+    clearInterval(greetingTimer);
+    greetingTimer = setInterval(() => {
+        greeting.style.opacity = "0";
+        setTimeout(() => {
+            index = (index + 1) % messages.length;
+            greeting.textContent = messages[index];
+            greeting.style.opacity = "";
+        }, 500);
+    }, 4500);
 }
 
 function renderDiscrepanciesTable() {
@@ -681,6 +773,7 @@ function clearAll({ keepSessionIds = false } = {}) {
     state.recommendations = [];
     state.loadedTransactions = [];
     state.loadedProofs = [];
+    state.chatHistory = [];
 
     byId("download-btn").disabled = true;
     byId("accept-recommendations-btn").disabled = true;
@@ -696,6 +789,7 @@ function clearAll({ keepSessionIds = false } = {}) {
     renderUnmatchedTransactionsTable();
     renderUnmatchedProofsTable();
     renderRecommendationsTable();
+    renderChatTranscript();
     updateResultPanelsVisibility();
 }
 
@@ -746,6 +840,7 @@ async function saveSession() {
         unmatchedTransactions: state.unmatchedTransactions,
         unmatchedProofs: state.unmatchedProofs,
         recommendations: state.recommendations,
+        chatHistory: state.chatHistory,
     };
 
     setStatus("Saving session...");
@@ -905,6 +1000,7 @@ async function loadSessionInputs() {
             state.unmatchedTransactions = statePayload.state.unmatchedTransactions ?? [];
             state.unmatchedProofs = statePayload.state.unmatchedProofs ?? [];
             state.recommendations = statePayload.state.recommendations ?? [];
+            state.chatHistory = statePayload.state.chatHistory ?? [];
 
             renderTable("loaded-transactions-table", state.loadedTransactions);
             renderTable("loaded-proofs-table", state.loadedProofs);
@@ -913,6 +1009,7 @@ async function loadSessionInputs() {
             renderUnmatchedTransactionsTable();
             renderUnmatchedProofsTable();
             renderRecommendationsTable();
+            renderChatTranscript();
 
             byId("summary-text").textContent =
                 statePayload.state.summary ||
@@ -927,6 +1024,63 @@ async function loadSessionInputs() {
     } catch (err) {
         setStatus("Error");
         showError(err.message);
+    }
+}
+
+async function sendChatMessage() {
+    const sessionId = byId("session-id")?.value.trim() || "";
+    const input = byId("chat-input");
+    const sendBtn = byId("chat-send-btn");
+    const message = (input?.value || "").trim();
+
+    if (!sessionId) {
+        showError("Create or load a session before chatting.");
+        return;
+    }
+
+    if (!message) {
+        return;
+    }
+
+    showError("");
+    setChatPopupOpen(true);
+    state.chatHistory.push({ role: "user", text: message });
+    renderChatTranscript();
+    input.value = "";
+
+    if (sendBtn) {
+        sendBtn.disabled = true;
+    }
+
+    try {
+        const response = await fetch("/api/chat/ask", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ sessionId, message }),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(payload.error || "Chat request failed.");
+        }
+
+        state.chatHistory.push({
+            role: "assistant",
+            text: payload.answer || "I could not generate an answer.",
+        });
+        renderChatTranscript();
+    } catch (err) {
+        state.chatHistory.push({
+            role: "assistant",
+            text: `Error: ${err.message}`,
+        });
+        renderChatTranscript();
+    } finally {
+        if (sendBtn) {
+            sendBtn.disabled = false;
+        }
     }
 }
 
@@ -977,5 +1131,24 @@ byId("download-btn").addEventListener("click", downloadValidatedPdf);
 byId("accept-recommendations-btn").addEventListener("click", acceptSelectedRecommendations);
 byId("validate-discrepancies-btn").addEventListener("click", validateSelectedDiscrepancies);
 byId("manual-match-btn").addEventListener("click", manualMatchSelectedUnmatchedRows);
+byId("chat-send-btn").addEventListener("click", sendChatMessage);
+byId("chat-fab").addEventListener("click", () => {
+    const popup = byId("chat-popup");
+    setChatPopupOpen(Boolean(popup?.hidden));
+});
+byId("chat-close-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    setChatPopupOpen(false);
+});
+byId("chat-input").addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+        return;
+    }
+    event.preventDefault();
+    sendChatMessage();
+});
+
+startGreetingFlash();
+setChatPopupOpen(false);
 
 clearAll();

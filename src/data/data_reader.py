@@ -658,9 +658,24 @@ class DataReader:
         """
         Preprocess data post ingestion.
         """
-        data = pd.DataFrame(
-            data_vector, columns=["business_name", "total", "date", "currency"]
-        )
+        expected_cols = ["business_name", "total", "date", "currency"]
+        data = pd.DataFrame(data_vector)
+
+        # Statement PDFs can produce 3-tuples (name, total, date).
+        # Normalize to the canonical 4-column schema by defaulting currency to USD.
+        if data.empty:
+            data = pd.DataFrame([], columns=expected_cols)
+        elif data.shape[1] == 3:
+            data.columns = expected_cols[:3]
+            data["currency"] = "USD"
+        elif data.shape[1] >= 4:
+            data = data.iloc[:, :4]
+            data.columns = expected_cols
+        else:
+            raise ValueError(
+                "Extracted data must contain at least business_name, total, and date."
+            )
+
         data["business_name"] = data["business_name"].astype(str).str.lower()
         data["total"] = data["total"].astype(float)
 
