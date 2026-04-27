@@ -146,21 +146,62 @@
                 </div>
             </article>
 
-            <article class="panel hidden-panel" id="loaded-transactions-panel">
-                <h3>Loaded Session Transactions (Inputs)</h3>
-                <div id="loaded-transactions-table" class="table-wrap"></div>
-            </article>
+        </section>
 
-            <article class="panel hidden-panel" id="loaded-proofs-panel">
-                <h3>Loaded Session Proofs (Inputs)</h3>
-                <div id="loaded-proofs-table" class="table-wrap"></div>
-            </article>
+        <section class="inputs-section">
+            <div class="inputs-heading">
+                <h2>Data Sources</h2>
+            </div>
+            <div class="inputs-grid">
+                <article class="panel" id="loaded-transactions-panel">
+                    <div class="data-source-head">
+                        <h3>Uploaded Transactions</h3>
+                        <div class="data-source-meta">
+                            <span id="loaded-transactions-count" class="row-badge">0 rows</span>
+                            <button id="loaded-transactions-toggle" type="button" class="btn btn-muted btn-mini"
+                                aria-expanded="false">Expand</button>
+                        </div>
+                    </div>
+                    <div id="loaded-transactions-body" class="data-source-body collapsed">
+                        <div id="loaded-transactions-table" class="table-wrap"></div>
+                    </div>
+                    <div class="data-source-actions">
+                        <button id="add-transactions-btn" type="button" class="btn btn-muted btn-mini">Add</button>
+                        <button id="clear-transactions-btn" type="button" class="btn btn-secondary btn-mini">Clear</button>
+                    </div>
+                </article>
 
+                <article class="panel" id="loaded-proofs-panel">
+                    <div class="data-source-head">
+                        <h3>Uploaded Proofs</h3>
+                        <div class="data-source-meta">
+                            <span id="loaded-proofs-count" class="row-badge">0 rows</span>
+                            <button id="loaded-proofs-toggle" type="button" class="btn btn-muted btn-mini"
+                                aria-expanded="false">Expand</button>
+                        </div>
+                    </div>
+                    <div id="loaded-proofs-body" class="data-source-body collapsed">
+                        <div id="loaded-proofs-table" class="table-wrap"></div>
+                    </div>
+                    <div class="data-source-actions">
+                        <button id="add-proofs-btn" type="button" class="btn btn-muted btn-mini">Add</button>
+                        <button id="clear-proofs-btn" type="button" class="btn btn-secondary btn-mini">Clear</button>
+                    </div>
+                </article>
+            </div>
         </section>
 
         <section id="chat-widget" class="chat-widget" aria-live="polite">
             <article id="chat-popup" class="chat-popup" hidden>
                 <header class="chat-popup-header">
+                    <button id="chat-back-btn" class="chat-back-btn" type="button" aria-label="Back to suggestions"
+                        title="Back to suggestions">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" width="16" height="16">
+                            <path d="M19 12H5"></path>
+                            <path d="M12 19l-7-7 7-7"></path>
+                        </svg>
+                    </button>
                     <svg viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="1.6" stroke-linecap="round"
                         stroke-linejoin="round" width="22" height="22">
                         <rect x="5" y="7" width="14" height="12" rx="3"></rect>

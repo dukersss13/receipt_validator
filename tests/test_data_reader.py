@@ -1,17 +1,25 @@
 import pytest
 import os
 
-from openai import OpenAI
+from google import genai
+from google.genai import types
 import pandas as pd
 from pdf2image import convert_from_path
 import pytesseract
 from PIL import Image
 
 
-from src.utils.utils import GPT_MODEL, setup_openai
+from src.utils.utils import GPT_MODEL, setup_gemini
 
-setup_openai()
-client = OpenAI()
+setup_gemini()
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
+
+
+def _has_gemini_key() -> bool:
+    return bool(os.getenv("GEMINI_API_KEY", "").strip()) or os.path.exists(
+        "secrets/google_gemini_api_key"
+    )
+
 
 pd.set_option("display.max_columns", None)
 
@@ -23,11 +31,14 @@ proofs_path = "data/proofs/"
 
 
 @pytest.mark.skipif(
-    os.getenv("GITHUB_ACTIONS") == "true", reason="Skipping on GitHub Actions"
+    os.getenv("GITHUB_ACTIONS") == "true" or not _has_gemini_key(),
+    reason="Skipping on GitHub Actions or without Gemini API key",
 )
 def test_statement_reading():
     # List all files in the directory
-    statements = [f for f in os.listdir(statements_path) if f.lower().endswith((".pdf"))]
+    statements = [
+        f for f in os.listdir(statements_path) if f.lower().endswith((".pdf"))
+    ]
 
     texts = []
 
@@ -40,7 +51,7 @@ def test_statement_reading():
         for img in images:
             extracted_text = pytesseract.image_to_string(img, config="--psm 6")
             texts.append(extracted_text)
-        
+
         texts = " ".join(texts)
         break
 
@@ -70,29 +81,34 @@ def test_statement_reading():
     results = []
     for text in texts:
         # Make the API request
-        response = client.chat.completions.create(
+        response = client.models.generate_content(
             model=GPT_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt + "\n\n" + text}
-            ],
-            temperature=0,
-            max_tokens=500
+            contents=prompt + "\n\n" + text,
+            config=types.GenerateContentConfig(
+                system_instruction="You are a helpful assistant.",
+                temperature=0,
+                max_output_tokens=500,
+            ),
         )
-    
-        results.append(response.choices[0].message.content)
+
+        results.append(str(getattr(response, "text", "") or ""))
 
     print(results)
-    
+
 
 @pytest.mark.skipif(
-    os.getenv("GITHUB_ACTIONS") == "true", reason="Skipping on GitHub Actions"
+    os.getenv("GITHUB_ACTIONS") == "true" or not _has_gemini_key(),
+    reason="Skipping on GitHub Actions or without Gemini API key",
 )
 def test_image_to_string_conversion():
-    
+
     # List all files in the directory
-    image_files = [f for f in os.listdir(proofs_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-    
+    image_files = [
+        f
+        for f in os.listdir(proofs_path)
+        if f.lower().endswith((".png", ".jpg", ".jpeg"))
+    ]
+
     texts = []
 
     # Process each image
@@ -100,10 +116,10 @@ def test_image_to_string_conversion():
         image_path = os.path.join(proofs_path, image_file)
         # Read the image using PIL
         img = Image.open(image_path)
-        
+
         # Convert image to text using pytesseract
-        extracted_text = pytesseract.image_to_string(img, config='--psm 6')
-        
+        extracted_text = pytesseract.image_to_string(img, config="--psm 6")
+
         texts.append(extracted_text)
 
     # The system message instructs the model on how to respond
@@ -119,17 +135,16 @@ def test_image_to_string_conversion():
     results = []
     for text in texts:
         # Make the API request
-        response = client.chat.completions.create(
-            model=GPT_MODEL,  # Use "gpt-4-turbo" or "gpt-4" depending on your access
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt + "\n\n" + text}
-            ],
-            temperature=0,
-            max_tokens=200
+        response = client.models.generate_content(
+            model=GPT_MODEL,
+            contents=prompt + "\n\n" + text,
+            config=types.GenerateContentConfig(
+                system_instruction="You are a helpful assistant.",
+                temperature=0,
+                max_output_tokens=200,
+            ),
         )
-    
-        results.append(response.choices[0].message.content)
+
+        results.append(str(getattr(response, "text", "") or ""))
 
     print(results)
-    

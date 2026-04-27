@@ -7,12 +7,30 @@ const state = {
     loadedTransactions: [],
     loadedProofs: [],
     chatHistory: [],
+    chatIsStreaming: false,
 };
 
 let progressTimer = null;
 let progressValue = 0;
 let isValidationRunning = false;
 let greetingTimer = null;
+const dataSourcePanelState = {
+    transactionsCollapsed: true,
+    proofsCollapsed: true,
+};
+
+const BUFFERING_PHRASES = [
+    "Let me see...",
+    "Let me look into it...",
+    "Checking your transactions...",
+    "One moment...",
+    "Looking that up...",
+    "Crunching the numbers...",
+];
+
+function randomBufferingPhrase() {
+    return BUFFERING_PHRASES[Math.floor(Math.random() * BUFFERING_PHRASES.length)];
+}
 
 const byId = (id) => document.getElementById(id);
 
@@ -164,6 +182,71 @@ function renderTable(elementId, rows) {
     container.appendChild(table);
 }
 
+function setDataSourceCollapsed(kind, collapsed) {
+    if (kind === "transactions") {
+        dataSourcePanelState.transactionsCollapsed = collapsed;
+    } else {
+        dataSourcePanelState.proofsCollapsed = collapsed;
+    }
+    updateDataSourceCard(kind);
+}
+
+function updateDataSourceCard(kind) {
+    const isTransactions = kind === "transactions";
+    const rows = isTransactions ? state.loadedTransactions : state.loadedProofs;
+    const bodyId = isTransactions ? "loaded-transactions-body" : "loaded-proofs-body";
+    const countId = isTransactions ? "loaded-transactions-count" : "loaded-proofs-count";
+    const toggleId = isTransactions ? "loaded-transactions-toggle" : "loaded-proofs-toggle";
+    const collapsed = isTransactions
+        ? dataSourcePanelState.transactionsCollapsed
+        : dataSourcePanelState.proofsCollapsed;
+
+    const body = byId(bodyId);
+    const count = byId(countId);
+    const toggle = byId(toggleId);
+
+    if (count) {
+        count.textContent = `${rows.length} rows`;
+    }
+    if (body) {
+        body.classList.toggle("collapsed", collapsed);
+    }
+    if (toggle) {
+        toggle.textContent = collapsed ? "Expand" : "Collapse";
+        toggle.setAttribute("aria-expanded", String(!collapsed));
+    }
+}
+
+function renderDataSourceTables() {
+    renderTable("loaded-transactions-table", state.loadedTransactions);
+    renderTable("loaded-proofs-table", state.loadedProofs);
+    updateDataSourceCard("transactions");
+    updateDataSourceCard("proofs");
+}
+
+function promptRerunAfterAdd() {
+    const txCount = byId("transactions-input")?.files?.length ?? 0;
+    const proofCount = byId("proofs-input")?.files?.length ?? 0;
+
+    if (txCount === 0 && proofCount === 0) {
+        return;
+    }
+
+    if (txCount === 0 || proofCount === 0) {
+        showError(
+            "Add files to both Transactions and Proofs, then re-run validation to refresh results.",
+        );
+        return;
+    }
+
+    const shouldRerun = globalThis.confirm(
+        "New files were added. Re-run validation now to update results?",
+    );
+    if (shouldRerun) {
+        runValidation();
+    }
+}
+
 function setPanelVisibility(panelId, visible) {
     const panel = byId(panelId);
     if (!panel) {
@@ -190,8 +273,8 @@ function hasMeaningfulRows(rows) {
 }
 
 function updateResultPanelsVisibility() {
-    setPanelVisibility("loaded-transactions-panel", state.loadedTransactions.length > 0);
-    setPanelVisibility("loaded-proofs-panel", state.loadedProofs.length > 0);
+    setPanelVisibility("loaded-transactions-panel", true);
+    setPanelVisibility("loaded-proofs-panel", true);
     setPanelVisibility("validated-panel", state.validatedTransactions.length > 0);
     setPanelVisibility("discrepancies-panel", state.discrepancies.length > 0);
     setPanelVisibility(
@@ -219,7 +302,7 @@ function renderChatTranscript() {
             "<span>I\u2019m here to help with your finances. Try asking me questions like:</span>" +
             '<ul class="chat-welcome-examples">' +
             '<li data-q="How much did I spend on food this month?">\u201cHow much did I spend on food this month?\u201d</li>' +
-            '<li data-q="What category did I spend my most money on?">\u201cWhat category did I spend my most money on?\u201d</li>' +
+            '<li data-q="What category did I spend the most money on?">\u201cWhat category did I spend the most money on?\u201d</li>' +
             '<li data-q="Show my top 5 spending categories">\u201cShow my top 5 spending categories\u201d</li>' +
             "</ul>";
         welcome.querySelectorAll(".chat-welcome-examples li").forEach((li) => {
@@ -227,7 +310,7 @@ function renderChatTranscript() {
                 const input = byId("chat-input");
                 if (input) {
                     input.value = li.dataset.q;
-                    input.focus();
+                    sendChatMessage();
                 }
             });
         });
@@ -238,6 +321,9 @@ function renderChatTranscript() {
     rows.forEach((msg) => {
         const item = document.createElement("div");
         item.className = `chat-msg chat-msg-${msg.role}`;
+        if (msg.pending) {
+            item.classList.add("chat-msg-pending");
+        }
         item.textContent = msg.text;
         host.appendChild(item);
     });
@@ -782,8 +868,9 @@ function clearAll({ keepSessionIds = false } = {}) {
     resetProgress();
 
     updateMetrics(emptyPayload);
-    renderTable("loaded-transactions-table", []);
-    renderTable("loaded-proofs-table", []);
+    dataSourcePanelState.transactionsCollapsed = true;
+    dataSourcePanelState.proofsCollapsed = true;
+    renderDataSourceTables();
     renderTable("validated-table", []);
     renderDiscrepanciesTable();
     renderUnmatchedTransactionsTable();
@@ -936,8 +1023,9 @@ async function runValidation() {
         byId("summary-text").textContent = payload.summary;
         updateMetrics(payload);
 
-        renderTable("loaded-transactions-table", state.loadedTransactions);
-        renderTable("loaded-proofs-table", state.loadedProofs);
+        dataSourcePanelState.transactionsCollapsed = true;
+        dataSourcePanelState.proofsCollapsed = true;
+        renderDataSourceTables();
         renderTable("validated-table", payload.validatedTransactions);
         renderDiscrepanciesTable();
         renderUnmatchedTransactionsTable();
@@ -980,9 +1068,9 @@ async function loadSessionInputs() {
         byId("load-session-id").value = payload.sessionId;
         state.loadedTransactions = payload.transactions;
         state.loadedProofs = payload.proofs;
-
-        renderTable("loaded-transactions-table", state.loadedTransactions);
-        renderTable("loaded-proofs-table", state.loadedProofs);
+        dataSourcePanelState.transactionsCollapsed = true;
+        dataSourcePanelState.proofsCollapsed = true;
+        renderDataSourceTables();
 
         const stateResponse = await fetch(
             `/api/session/${encodeURIComponent(payload.sessionId)}/state`,
@@ -1002,8 +1090,9 @@ async function loadSessionInputs() {
             state.recommendations = statePayload.state.recommendations ?? [];
             state.chatHistory = statePayload.state.chatHistory ?? [];
 
-            renderTable("loaded-transactions-table", state.loadedTransactions);
-            renderTable("loaded-proofs-table", state.loadedProofs);
+            dataSourcePanelState.transactionsCollapsed = true;
+            dataSourcePanelState.proofsCollapsed = true;
+            renderDataSourceTables();
             renderTable("validated-table", state.validatedTransactions);
             renderDiscrepanciesTable();
             renderUnmatchedTransactionsTable();
@@ -1051,35 +1140,121 @@ async function sendChatMessage() {
     if (sendBtn) {
         sendBtn.disabled = true;
     }
+    if (input) {
+        input.disabled = true;
+    }
+
+    state.chatIsStreaming = true;
+    const assistantIndex = state.chatHistory.length;
+    state.chatHistory.push({
+        role: "assistant",
+        text: randomBufferingPhrase(),
+        pending: true,
+    });
+    renderChatTranscript();
 
     try {
-        const response = await fetch("/api/chat/ask", {
+        const response = await fetch("/api/chat/ask/stream", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({ sessionId, message }),
         });
-
-        const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
             throw new Error(payload.error || "Chat request failed.");
         }
 
-        state.chatHistory.push({
-            role: "assistant",
-            text: payload.answer || "I could not generate an answer.",
-        });
-        renderChatTranscript();
+        if (!response.body) {
+            throw new Error("Streaming response body is unavailable.");
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let streamDone = false;
+
+        while (!streamDone) {
+            const { value, done } = await reader.read();
+            if (done) {
+                break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            const blocks = buffer.split("\n\n");
+            buffer = blocks.pop() || "";
+
+            for (const block of blocks) {
+                const lines = block.split("\n");
+                let eventName = "message";
+                const dataLines = [];
+
+                for (const line of lines) {
+                    if (line.startsWith("event:")) {
+                        eventName = line.slice(6).trim();
+                    } else if (line.startsWith("data:")) {
+                        dataLines.push(line.slice(5).trim());
+                    }
+                }
+
+                const raw = dataLines.join("\n");
+                const payload = raw ? JSON.parse(raw) : {};
+                const currentMsg = state.chatHistory[assistantIndex];
+
+                if (eventName === "token") {
+                    if (currentMsg) {
+                        if (currentMsg.pending) {
+                            currentMsg.pending = false;
+                            currentMsg.text = "";
+                        }
+                        currentMsg.text += payload.token || "";
+                        renderChatTranscript();
+                    }
+                } else if (eventName === "done") {
+                    if (currentMsg) {
+                        currentMsg.pending = false;
+                        if (!currentMsg.text.trim()) {
+                            currentMsg.text =
+                                payload.answer || "I could not generate an answer.";
+                        }
+                        renderChatTranscript();
+                    }
+                    streamDone = true;
+                } else if (eventName === "error") {
+                    throw new Error(payload.error || "Chat stream failed.");
+                }
+            }
+        }
+
+        const currentMsg = state.chatHistory[assistantIndex];
+        if (currentMsg) {
+            currentMsg.pending = false;
+            if (!currentMsg.text.trim()) {
+                currentMsg.text = "I could not generate an answer.";
+            }
+            renderChatTranscript();
+        }
     } catch (err) {
-        state.chatHistory.push({
-            role: "assistant",
-            text: `Error: ${err.message}`,
-        });
+        const currentMsg = state.chatHistory[assistantIndex];
+        if (currentMsg) {
+            currentMsg.pending = false;
+            currentMsg.text = `Error: ${err.message}`;
+        } else {
+            state.chatHistory.push({
+                role: "assistant",
+                text: `Error: ${err.message}`,
+            });
+        }
         renderChatTranscript();
     } finally {
+        state.chatIsStreaming = false;
         if (sendBtn) {
             sendBtn.disabled = false;
+        }
+        if (input) {
+            input.disabled = false;
+            input.focus();
         }
     }
 }
@@ -1136,6 +1311,11 @@ byId("chat-fab").addEventListener("click", () => {
     const popup = byId("chat-popup");
     setChatPopupOpen(Boolean(popup?.hidden));
 });
+byId("chat-back-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    state.chatHistory = [];
+    renderChatTranscript();
+});
 byId("chat-close-btn").addEventListener("click", (e) => {
     e.stopPropagation();
     setChatPopupOpen(false);
@@ -1148,7 +1328,54 @@ byId("chat-input").addEventListener("keydown", (event) => {
     sendChatMessage();
 });
 
+byId("loaded-transactions-toggle")?.addEventListener("click", () => {
+    setDataSourceCollapsed("transactions", !dataSourcePanelState.transactionsCollapsed);
+});
+byId("loaded-proofs-toggle")?.addEventListener("click", () => {
+    setDataSourceCollapsed("proofs", !dataSourcePanelState.proofsCollapsed);
+});
+byId("add-transactions-btn")?.addEventListener("click", () => {
+    byId("transactions-input")?.click();
+});
+byId("add-proofs-btn")?.addEventListener("click", () => {
+    byId("proofs-input")?.click();
+});
+byId("transactions-input")?.addEventListener("change", () => {
+    promptRerunAfterAdd();
+});
+byId("proofs-input")?.addEventListener("change", () => {
+    promptRerunAfterAdd();
+});
+byId("clear-transactions-btn")?.addEventListener("click", () => {
+    state.loadedTransactions = [];
+    if (byId("transactions-input")) {
+        byId("transactions-input").value = "";
+    }
+    dataSourcePanelState.transactionsCollapsed = true;
+    renderDataSourceTables();
+    updateResultPanelsVisibility();
+});
+byId("clear-proofs-btn")?.addEventListener("click", () => {
+    state.loadedProofs = [];
+    if (byId("proofs-input")) {
+        byId("proofs-input").value = "";
+    }
+    dataSourcePanelState.proofsCollapsed = true;
+    renderDataSourceTables();
+    updateResultPanelsVisibility();
+});
+
 startGreetingFlash();
 setChatPopupOpen(false);
 
 clearAll();
+
+// Auto-load a test session when ?testSession=<id> is in the URL.
+(function autoLoadTestSession() {
+    const params = new URLSearchParams(window.location.search);
+    const testSession = params.get("testSession");
+    if (testSession) {
+        byId("load-session-id").value = testSession;
+        loadSessionInputs();
+    }
+})();

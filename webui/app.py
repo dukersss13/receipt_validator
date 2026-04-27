@@ -3,13 +3,13 @@ import json
 import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from typing import Any
 
 import pandas as pd
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, Response, jsonify, render_template, request, send_file
 
 from src.data.database import DataBase
-from src.data.data_reader import DataReader, DataType
 from src.helper_agent import HelperAgent
 from src.validator import Validator
 from src.utils.utils import create_session_id
@@ -454,6 +454,9 @@ def get_session_state(session_id: str):
 
 @app.post("/api/validate")
 def validate():
+    # Lazy import to avoid loading PDF/LLM parser stack during app startup.
+    from src.data.data_reader import DataReader, DataType
+
     session_id = str(request.form.get("sessionId", "")).strip()
     transactions = request.files.getlist("transactions")
     proofs = request.files.getlist("proofs")
@@ -696,9 +699,120 @@ def chat_ask():
             )
 
         helper = HelperAgent()
-        result = helper.answer(message, validated_rows)
+        chat_history = state.get("chatHistory", [])
+        if not isinstance(chat_history, list):
+            chat_history = []
+        result = helper.ask(
+            message,
+            validated_rows,
+            chat_history=chat_history,
+        )
+        chat_history.extend(
+            [
+                {"role": "user", "text": message, "ts": datetime.utcnow().isoformat()},
+                {
+                    "role": "assistant",
+                    "text": result.get("answer", ""),
+                    "ts": datetime.utcnow().isoformat(),
+                },
+            ]
+        )
+        state["chatHistory"] = chat_history
+        database.save_session_state(session_id, state)
         return jsonify({"sessionId": session_id, "question": message, **result})
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
     except Exception as exc:
         return jsonify({"error": f"Chat failed: {exc}"}), 500
+
+
+def _sse(event: str, payload: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
+@app.post("/api/chat/ask/stream")
+def chat_ask_stream():
+    payload = request.get_json(silent=True) or {}
+    session_id = str(payload.get("sessionId", "")).strip()
+    message = str(payload.get("message", "")).strip()
+
+    if not session_id:
+        return jsonify({"error": "sessionId is required."}), 400
+
+    if not message:
+        return jsonify({"error": "message is required."}), 400
+
+    state = database.load_session_state(session_id) or {}
+    validated_rows = state.get("validatedTransactions", [])
+
+    if not isinstance(validated_rows, list) or not validated_rows:
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "No validated transactions found for this session. "
+                        "Run validation first."
+                    )
+                }
+            ),
+            400,
+        )
+
+    helper = HelperAgent()
+    chat_history = state.get("chatHistory", [])
+    if not isinstance(chat_history, list):
+        chat_history = []
+
+    def generate() -> Any:
+        assembled: list[str] = []
+        try:
+            yield _sse("start", {"sessionId": session_id})
+            for token in helper.stream_answer(
+                message,
+                validated_rows,
+                chat_history=chat_history,
+            ):
+                assembled.append(token)
+                yield _sse("token", {"token": token})
+
+            final_answer = "".join(assembled).strip()
+            if not final_answer:
+                final_answer = "I could not generate an answer."
+
+            chat_history.extend(
+                [
+                    {
+                        "role": "user",
+                        "text": message,
+                        "ts": datetime.utcnow().isoformat(),
+                    },
+                    {
+                        "role": "assistant",
+                        "text": final_answer,
+                        "ts": datetime.utcnow().isoformat(),
+                    },
+                ]
+            )
+            state["chatHistory"] = chat_history
+            database.save_session_state(session_id, state)
+
+            yield _sse(
+                "done",
+                {
+                    "answer": final_answer,
+                    "rowsScanned": len(validated_rows),
+                    "confidence": "high",
+                },
+            )
+        except Exception as exc:
+            yield _sse("error", {"error": f"Chat failed: {exc}"})
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
