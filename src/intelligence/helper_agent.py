@@ -1,19 +1,13 @@
 import re
-import os
 from datetime import date
-from functools import lru_cache
 from typing import Any, Callable, Iterator
 
 import pandas as pd
 from langchain.agents import create_agent
-from langchain_google_genai import ChatGoogleGenerativeAI
-from pyhocon import ConfigFactory
+from intelligence.llm_base import LLMBase
 
 
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
-
-
-class HelperAgent:
+class HelperAgent(LLMBase):
     """
     Answer natural-language questions over validated transaction rows.
 
@@ -42,23 +36,20 @@ class HelperAgent:
         Build the tool-calling agent used by the chat endpoint.
 
         Args:
-            model: Optional Gemini model name override. Defaults to the value
-                specified in *llm_config_path* under ``llm.helper_agent.model``.
             llm_config_path: Path to the HOCON config file that controls model
                 selection and sampling parameters.
         """
-        llm_cfg = self._load_llm_config_cached(llm_config_path)
+        super().__init__(
+            llm_config_path=llm_config_path,
+            config_section="helper_agent",
+            default_temperature=0.2,
+            default_top_p=1.0,
+            default_max_tokens=500,
+        )
 
-        # Sampling parameters – read from config with sensible fallbacks
-        self._temperature = float(llm_cfg.get("llm.helper_agent.temperature", 0.2))
-        self._top_p = float(llm_cfg.get("llm.helper_agent.top_p", 1.0))
-        self._max_tokens = int(llm_cfg.get("llm.helper_agent.max_tokens", 500))
-
-        # Allow the caller to pin a specific model; otherwise use the config default
-        selected_model = str(llm_cfg.get("llm.helper_agent.model", DEFAULT_GEMINI_MODEL))
-
-        self._model = self._init_chat_model(
-            model_name=selected_model,
+        self._model = self.init_chat_model(
+            model_name=self.model_name,
+            allow_test_key=True,
         )
         # Will be replaced on each ask/stream_answer call with fresh row data
         self._validated_rows: list[dict[str, Any]] = []
@@ -67,47 +58,6 @@ class HelperAgent:
             tools=[self._breakdown_spending_tool()],
             system_prompt=self._SYSTEM_PROMPT,
             name="Arvee",
-        )
-
-    @staticmethod
-    @lru_cache(maxsize=1)
-    def _load_llm_config_cached(config_path: str) -> Any:
-        """
-        Parse and cache the HOCON config file; subsequent calls return the cached result.
-
-        Args:
-            config_path: Filesystem path to the ``.conf`` (HOCON) configuration file.
-
-        Returns:
-            Parsed config object whose values are accessible via dot-notation keys.
-        """
-        return ConfigFactory.parse_file(config_path)
-
-    def _init_chat_model(
-        self,
-        model_name: str,
-    ) -> ChatGoogleGenerativeAI:
-        """
-        Instantiate the Gemini chat model with sampling parameters from the loaded config.
-
-        Args:
-            model_name: Gemini model identifier (e.g. ``"gemini-2.0-flash-lite"``).
-
-        Returns:
-            Configured ``ChatGoogleGenerativeAI`` instance ready for agent use.
-        """
-        # Prefer GEMINI_API_KEY, fall back to GOOGLE_API_KEY, then a placeholder for tests
-        api_key = (
-            os.getenv("GEMINI_API_KEY", "").strip()
-            or os.getenv("GOOGLE_API_KEY", "").strip()
-            or "test-key"
-        )
-        return ChatGoogleGenerativeAI(
-            model=model_name,
-            temperature=self._temperature,
-            top_p=self._top_p,
-            max_output_tokens=self._max_tokens,
-            google_api_key=api_key,
         )
 
     def _breakdown_spending_tool(self) -> Callable[..., str]:

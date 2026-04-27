@@ -1,7 +1,7 @@
 import os
 from types import SimpleNamespace
 
-from src.helper_agent import HelperAgent
+from intelligence.helper_agent import HelperAgent
 from ui_test import _mock_validated_transactions
 
 
