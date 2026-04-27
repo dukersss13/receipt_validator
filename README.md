@@ -40,7 +40,8 @@ The system consists of the following key components:
     * Users can download validated transaction outputs as CSV.
 
 6. **Architecture Diagram**
-<img width="1625" height="968" alt="image" src="https://github.com/user-attachments/assets/acd8076e-760e-456d-92c5-019028ff83f8" />
+<img width="1626" height="967" alt="image" src="https://github.com/user-attachments/assets/61532616-8543-4471-ac28-c63a5b4835c7" />
+
 
 
 7. **LangGraph Visualization**
@@ -75,6 +76,4 @@ Each session can be saved and loaded via a Session ID (`session_id`), and extrac
 
 
  ## 📌 TODO
- Improve image OCR robustness
-
- Support more languages/currencies
+Extend ArVee HelperAgent Capability
