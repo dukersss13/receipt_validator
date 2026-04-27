@@ -6,23 +6,39 @@ from concurrent.futures import ThreadPoolExecutor
 
 from src.data.database import DataBase
 from src.data.data_reader import DataReader, DataType
-from src.validator import Validator
+from intelligence.validator import Validator
 from src.style.css import interface_theme
 from src.utils.utils import create_session_id
 
 
 class Interface:
     """
-    Class to handle the Gradio interface for the Receipt Validator application.
+    Gradio UI controller for the Receipt Validator application.
+
+    Owns a ``DataReader`` and a ``DataBase`` instance, coordinates data ingestion,
+    validation, and history loading, and wires all UI callbacks.
     """
 
     def __init__(self):
+        """
+        Initialise the interface by constructing a ``DataReader`` and reusing its database.
+        """
         self.data_reader = DataReader()
         self.database: DataBase = self.data_reader.database
 
     @staticmethod
     def create_empty_df(columns=["Business Name", "Total", "Date"]) -> pd.DataFrame:
-        # Create empty placeholder df
+        """
+        Create an empty placeholder DataFrame with the given column names.
+
+        Args:
+            columns: List of column name strings. Defaults to
+                ``["Business Name", "Total", "Date"]``.
+
+        Returns:
+            Empty ``pd.DataFrame`` with the specified columns and no rows.
+        """
+        # Used to pre-populate Gradio Dataframe components before any data is loaded
         return pd.DataFrame([], columns=columns)
 
     def run_validation(
@@ -34,13 +50,21 @@ class Interface:
         progress=gr.Progress(),
     ) -> tuple[gr.Dataframe]:
         """
-        Run the validation process.
+        Orchestrate the full validation pipeline and return updated Gradio component states.
 
-        :param state: Gradio State
-        :param transactions: list of transactions
-        :param proofs: list of proofs
+        Loads transaction and proof data (from uploaded files or existing session state),
+        runs the ``Validator``, generates recommendations, and updates the Gradio state
+        dict with the results.
 
-        :return: the results
+        Args:
+            state: Gradio ``State`` dict holding the current session's DataFrames.
+            session_id: Active session ID string used for database persistence.
+            transactions: Uploaded transaction file list (or ``None`` to reuse state).
+            proofs: Uploaded proof file list (or ``None`` to reuse state).
+            progress: Gradio ``Progress`` tracker injected automatically.
+
+        Returns:
+            Tuple of ``gr.update()`` calls for each output component.
         """
         total_steps = 8
         step_increment = 1 / total_steps
@@ -153,18 +177,26 @@ class Interface:
     @staticmethod
     def is_not_empty(df: pd.DataFrame) -> bool:
         """
-        Check if the df is empty
+        Return ``True`` when *df* is a non-empty DataFrame.
+
+        Args:
+            df: The DataFrame to check.
+
+        Returns:
+            ``True`` if the DataFrame contains at least one row; ``False`` otherwise.
         """
         return not df.empty
 
     @staticmethod
     def save_df_as_csv(df: pd.DataFrame):
         """
-        Save a DataFrame as a CSV file in a temporary location.
-        Parameters:
-        df (pandas.DataFrame): The DataFrame to be saved as a CSV file.
+        Save a DataFrame to a temporary CSV file and return the file path.
+
+        Args:
+            df: The DataFrame to serialise.
+
         Returns:
-        str: The file path of the saved CSV file.
+            Absolute path to the temporary ``.csv`` file.
         """
         with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as temp_file:
             df.to_csv(temp_file.name, index=False)
@@ -173,11 +205,13 @@ class Interface:
     @staticmethod
     def download_records(validated_records: pd.DataFrame):
         """
-        Save the given DataFrame as a CSV file and return the file path.
+        Serialise validated records to a temporary CSV file for download.
+
         Args:
-            validated_records (pandas.DataFrame): The DataFrame to be saved as a CSV file.
+            validated_records: DataFrame of validated transaction rows.
+
         Returns:
-            str: The file path of the saved CSV file.
+            Absolute path to the temporary ``.csv`` file.
         """
         csv_path = Interface.save_df_as_csv(validated_records)
 
@@ -186,9 +220,11 @@ class Interface:
     @staticmethod
     def generate_new_session():
         """
-        Generates a new session by creating a unique session ID.
+        Generate a new session by creating a unique session ID.
+
         Returns:
-            tuple: A tuple containing the new session ID twice.
+            A tuple ``(session_id, session_id)`` where both elements are the same new
+            UUID string — one for display and one for the Gradio State.
         """
         new_id = create_session_id()
 
@@ -196,8 +232,15 @@ class Interface:
 
     def load_history(self, session_id: str):
         """
-        Load the history of transactions and proofs for a given session ID.
-        Returns two DataFrames: transactions and proofs.
+        Load the transaction and proof history for a given session ID.
+
+        Args:
+            session_id: The external session ID string entered by the user.
+
+        Returns:
+            A tuple of two ``gr.update()`` calls — one for the transactions component
+            and one for the proofs component — populated with the loaded DataFrames.
+            On error, both components display an error message string.
         """
         try:
             transactions_df, proofs_df = self.database.load_session_history(session_id)
@@ -212,7 +255,11 @@ class Interface:
 
     def run_interface(self):
         """
-        Start the gradio UI interface
+        Build and launch the Gradio UI.
+
+        Constructs all Gradio components, wires button callbacks, and calls
+        ``ui.launch()`` to start the web server. Blocks until the server is
+        stopped.
         """
         custom_theme = gr.themes.Base()
 

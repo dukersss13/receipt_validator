@@ -5,7 +5,7 @@ import pandas as pd
 
 # Assume these are already implemented and imported
 from src.data.data_reader import DataReader, DataType
-from src.validator import Validator
+from intelligence.validator import Validator
 from src.utils.currency_conversion_agent import convert_currency_to_usd
 
 
