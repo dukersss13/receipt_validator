@@ -1,17 +1,10 @@
 import json
-import os
 from dataclasses import dataclass
-from functools import lru_cache
 from time import time
-from typing import Any
 
 import pandas as pd
-from google import genai
 from google.genai import types
-from pyhocon import ConfigFactory
-
-
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
+from intelligence.llm_base import LLMBase
 
 
 CATEGORIZE_CATEGORIES = [
@@ -41,7 +34,7 @@ class CategorizeResult:
     summary: dict
 
 
-class TransactionCategorizer:
+class TransactionCategorizer(LLMBase):
     """
     Categorize transaction rows using a Gemini LLM.
 
@@ -58,16 +51,15 @@ class TransactionCategorizer:
             llm_config_path: Path to the HOCON file controlling model selection
                 and sampling parameters.
         """
-        llm_cfg = self._load_llm_config_cached(llm_config_path)
-        # Model selection and sampling parameters read from llm config
-        self.gemini_model = str(
-            llm_cfg.get("llm.categorization.model", DEFAULT_GEMINI_MODEL)
+        super().__init__(
+            llm_config_path=llm_config_path,
+            config_section="categorization",
+            default_temperature=0.0,
+            default_top_p=1.0,
+            default_max_tokens=1200,
         )
-        self.temperature = float(llm_cfg.get("llm.categorization.temperature", 0.0))
-        self.top_p = float(llm_cfg.get("llm.categorization.top_p", 1.0))
-        self.max_tokens = int(llm_cfg.get("llm.categorization.max_tokens", 1200))
 
-        self.primary_model = self.gemini_model
+        self.primary_model = self.model_name
 
         # Allow categorization to be disabled entirely via config
         self.enabled = bool(
@@ -79,13 +71,7 @@ class TransactionCategorizer:
             )
         )
 
-        gemini_key = (
-            os.getenv("GEMINI_API_KEY", "").strip()
-            or os.getenv("GOOGLE_API_KEY", "").strip()
-        )
-        # Only instantiate the client when a real key is present
-        self.gemini_client = genai.Client(api_key=gemini_key) if gemini_key else None
-        self.primary_client = self.gemini_client
+        self.primary_client = self.init_genai_client()
 
         # Running totals for usage reporting
         self.usage = {
@@ -98,20 +84,6 @@ class TransactionCategorizer:
             "latencySeconds": 0.0,
             "rowsProcessed": 0,
         }
-
-    @staticmethod
-    @lru_cache(maxsize=1)
-    def _load_llm_config_cached(config_path: str) -> Any:
-        """
-        Parse and cache the HOCON LLM config file; subsequent calls return the cached result.
-
-        Args:
-            config_path: Filesystem path to the ``.conf`` (HOCON) configuration file.
-
-        Returns:
-            Parsed config object whose values are accessible via dot-notation keys.
-        """
-        return ConfigFactory.parse_file(config_path)
 
     @staticmethod
     def _input_token_rate_per_million(model_name: str) -> float:

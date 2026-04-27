@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from src.data.database import DataBase
 from src.data.data_reader import DataReader, DataType
-from src.validator import Validator
+from intelligence.validator import Validator
 from src.style.css import interface_theme
 from src.utils.utils import create_session_id
 

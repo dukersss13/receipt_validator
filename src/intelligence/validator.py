@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pyhocon import ConfigFactory
 
 from fuzzywuzzy import process, fuzz
-from src.categorize import TransactionCategorizer
+from intelligence.categorize import TransactionCategorizer
 
 pd.set_option("display.max_columns", None)
 

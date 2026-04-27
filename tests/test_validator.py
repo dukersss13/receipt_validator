@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from src.validator import Results, Validator
+from intelligence.validator import Results, Validator
 import os
 
 

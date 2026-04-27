@@ -13,19 +13,16 @@ from typing import Any
 from pathlib import Path
 from functools import lru_cache
 
-from google import genai
 from google.genai import types
 from langchain_community.document_loaders import PyPDFLoader
 from pyhocon import ConfigFactory
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 
-from src.prompts import RECEIPT_PROMPT, STATEMENT_PROMPT
+from intelligence.llm_base import LLMBase
+from prompts.data_reader_prompts import RECEIPT_PROMPT, STATEMENT_PROMPT
 from src.utils.currency_conversion_agent import convert_currency_to_usd
 from src.data.database import DataBase
-
-
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 
 class DataType(Enum):
@@ -33,7 +30,7 @@ class DataType(Enum):
     PROOFS = "proofs"
 
 
-class DataReader:
+class DataReader(LLMBase):
     """
     Ingest transaction statements and proof images prior to the validation pipeline.
 
@@ -92,29 +89,20 @@ class DataReader:
         self.batch_poll_seconds = int(config.get("llm.batch_poll_seconds", 2))
         self.batch_max_wait_seconds = int(config.get("llm.batch_max_wait_seconds", 10))
 
-        llm_cfg = DataReader._load_llm_config_cached(llm_config_path)
+        super().__init__(
+            llm_config_path=llm_config_path,
+            config_section="data_ingestion",
+            default_temperature=0.0,
+            default_top_p=1.0,
+            default_max_tokens=350,
+        )
+
         self.primary_llm_provider = "gemini"
-        self.gemini_model = str(
-            llm_cfg.get("llm.data_ingestion.model", DEFAULT_GEMINI_MODEL)
-        )
-        self.ingestion_temperature = float(
-            llm_cfg.get("llm.data_ingestion.temperature", 0.0)
-        )
-        self.ingestion_top_p = float(llm_cfg.get("llm.data_ingestion.top_p", 1.0))
-        self.ingestion_max_tokens = int(
-            llm_cfg.get("llm.data_ingestion.max_tokens", 350)
-        )
-
-        self.primary_model = self.gemini_model
+        self.primary_model = self.model_name
         # No fallback model is configured for native Gemini mode
-        self.fallback_model = self.gemini_model
+        self.fallback_model = self.model_name
 
-        gemini_key = (
-            os.getenv("GEMINI_API_KEY", "").strip()
-            or os.getenv("GOOGLE_API_KEY", "").strip()
-        )
-        self.gemini_client = genai.Client(api_key=gemini_key) if gemini_key else None
-        self.primary_client = self.gemini_client
+        self.primary_client = self.init_genai_client()
         self.fallback_client = None
 
         # Native Gemini migration: disable legacy OpenAI-style JSONL batch flow.
@@ -143,20 +131,6 @@ class DataReader:
     def _load_config_cached(config_path: str) -> Any:
         """
         Parse and cache the app HOCON config; subsequent calls return the cached result.
-
-        Args:
-            config_path: Filesystem path to the ``.conf`` configuration file.
-
-        Returns:
-            Parsed config object accessible via dot-notation keys.
-        """
-        return ConfigFactory.parse_file(config_path)
-
-    @staticmethod
-    @lru_cache(maxsize=8)
-    def _load_llm_config_cached(config_path: str) -> Any:
-        """
-        Parse and cache the LLM HOCON config; subsequent calls return the cached result.
 
         Args:
             config_path: Filesystem path to the ``.conf`` configuration file.
@@ -201,9 +175,9 @@ class DataReader:
 
         Returns:
             Dict with a single ``max_tokens`` key whose value is
-            ``min(max_tokens, self.ingestion_max_tokens)``.
+            ``min(max_tokens, self.max_tokens)``.
         """
-        return {"max_tokens": min(max_tokens, self.ingestion_max_tokens)}
+        return {"max_tokens": min(max_tokens, self.max_tokens)}
 
     def _sampling_kwargs(self) -> dict[str, float]:
         """
@@ -213,8 +187,8 @@ class DataReader:
             Dict with ``temperature`` and ``top_p`` keys sourced from the LLM config.
         """
         return {
-            "temperature": self.ingestion_temperature,
-            "top_p": self.ingestion_top_p,
+            "temperature": self.temperature,
+            "top_p": self.top_p,
         }
 
     @staticmethod
@@ -767,7 +741,7 @@ class DataReader:
         start_llm_calls = int(self.ingestion_usage["llm_calls"])
         start_fallback_calls = int(self.ingestion_usage["fallback_calls"])
 
-        can_use_batch_api = self.use_batch_api and self.gemini_client is not None
+        can_use_batch_api = self.use_batch_api and self.primary_client is not None
         if can_use_batch_api and image_payloads:
             try:
                 results = self.read_proofs_data_batch(image_payloads)
@@ -1129,9 +1103,9 @@ class DataReader:
             RuntimeError: If the Gemini request fails and no fallback is available.
         """
         completion_kwargs = types.GenerateContentConfig(
-            temperature=self.ingestion_temperature,
-            top_p=self.ingestion_top_p,
-            max_output_tokens=min(max_tokens, self.ingestion_max_tokens),
+            temperature=self.temperature,
+            top_p=self.top_p,
+            max_output_tokens=min(max_tokens, self.max_tokens),
         )
 
         contents, system_instruction = DataReader._build_gemini_contents(messages)

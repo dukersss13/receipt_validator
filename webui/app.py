@@ -10,8 +10,8 @@ import pandas as pd
 from flask import Flask, Response, jsonify, render_template, request, send_file
 
 from src.data.database import DataBase
-from src.helper_agent import HelperAgent
-from src.validator import Validator
+from intelligence.helper_agent import HelperAgent
+from intelligence.validator import Validator
 from src.utils.utils import create_session_id
 
 
