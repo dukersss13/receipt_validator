@@ -59,8 +59,8 @@ To get started, you will need to install:
 2. [Docker](https://www.docker.com/products/docker-desktop/) 
 3. Generate a Gemini API key and store it under **secrets/google_gemini_api_key** (or set `GEMINI_API_KEY`).
 
-### RV in Action 💻
-Refer to [this](https://github.com/dukersss13/receipt_validator/blob/main/application.md) to see the application in action.
+### ArVee in Action 💻
+Refer to [this](https://github.com/dukersss13/receipt_validator/blob/main/application.md) to see the application's UI and workflow.
 
 ### Custom Website UI
 This repository now includes a custom website UI powered by Flask.
