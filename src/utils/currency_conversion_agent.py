@@ -17,7 +17,20 @@ class CurrencyConversionState(pd.DataFrame):
 
 
 def _normalize_date(date_str: str) -> str:
-    """Normalize input dates to YYYY-MM-DD for exchange rate API calls."""
+    """
+    Normalise a date string of various formats to ``YYYY-MM-DD`` for exchange rate API calls.
+
+    Tries ``%m-%d-%Y`` first, then falls back through a list of other common formats.
+
+    Args:
+        date_str: Input date string in any of the supported formats.
+
+    Returns:
+        Date string formatted as ``"YYYY-MM-DD"``.
+
+    Raises:
+        ValueError: If the date string does not match any recognised format.
+    """
     try:
         parsed_date = datetime.strptime(date_str, "%m-%d-%Y")
     except ValueError:
@@ -34,6 +47,15 @@ def _normalize_date(date_str: str) -> str:
 
 
 def _build_params(entry: dict) -> dict:
+    """
+    Build the query-parameter dict for an exchangerate.host ``/convert`` API call.
+
+    Args:
+        entry: Transaction dict containing ``currency``, ``total``, and ``date`` keys.
+
+    Returns:
+        Dict of query parameters ready to pass to ``requests.get()``.
+    """
     return {
         "access_key": access_key,
         "from": str(entry["currency"]).upper(),
@@ -45,7 +67,18 @@ def _build_params(entry: dict) -> dict:
 
 def convert_currency_to_usd(entry: dict) -> float:
     """
-    Converts a given amount in foreign currency to USD using the exchange rate on the specified date.
+    Convert a transaction amount from a foreign currency to USD.
+
+    Uses the historical exchange rate for the transaction date via the
+    exchangerate.host API. USD entries are returned unchanged without an API call.
+
+    Args:
+        entry: Dict containing ``currency`` (ISO 4217 code), ``total`` (numeric
+            amount), and ``date`` (date string in any supported format).
+
+    Returns:
+        The converted amount in USD rounded to 2 decimal places, or ``-1`` if
+        the API call was unsuccessful.
     """
     currency = str(entry.get("currency", "USD")).upper()
     amount = float(entry.get("total", 0.0))
@@ -58,6 +91,7 @@ def convert_currency_to_usd(entry: dict) -> float:
     response = requests.get(CONVERT_URL, params=params, timeout=20)
     data = response.json()
 
+    # Return -1 as a sentinel for failed API responses to distinguish from zero
     if not data.get("success", False):
         currency_val = -1
     else:
@@ -67,14 +101,36 @@ def convert_currency_to_usd(entry: dict) -> float:
 
 
 async def convert_currency_to_usd_async(entry: dict) -> float:
-    """Async wrapper for currency conversion using non-blocking thread delegation."""
+    """
+    Async wrapper for currency conversion using a non-blocking thread delegation.
+
+    Args:
+        entry: Transaction dict with ``currency``, ``total``, and ``date`` keys.
+
+    Returns:
+        The converted USD amount as returned by ``convert_currency_to_usd()``.
+    """
     return await asyncio.to_thread(convert_currency_to_usd, entry)
 
 
 async def convert_entries_to_usd_async(
     entries: list[dict], max_concurrency: int = 8
 ) -> list[float]:
-    """Convert many entries concurrently with bounded fan-out."""
+    """
+    Convert many transaction entries to USD concurrently with bounded fan-out.
+
+    Uses a semaphore to cap the number of simultaneous exchange-rate API calls
+    and avoids overwhelming the external service.
+
+    Args:
+        entries: List of transaction dicts each containing ``currency``, ``total``,
+            and ``date`` keys.
+        max_concurrency: Maximum number of concurrent conversion requests.
+            Defaults to 8.
+
+    Returns:
+        List of converted USD amounts in the same order as *entries*.
+    """
     semaphore = asyncio.Semaphore(max(1, max_concurrency))
 
     async def run_with_limit(entry: dict) -> float:

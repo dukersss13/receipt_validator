@@ -1,22 +1,19 @@
 import pandas as pd
 import pytest
 
-from mock_documents import create_mock_documents
 from src.validator import Results, Validator
 import os
 
 
 @pytest.fixture
-def mock_documents():
-    transactions, proofs = create_mock_documents(num=3)
-
-    return transactions, proofs
+def mock_documents(sample_transactions_df, sample_proofs_df):
+    return sample_transactions_df.copy(), sample_proofs_df.copy()
 
 
 def test_validator(mock_documents):
     # Testing the Validator's validate function
     transactions, proofs = mock_documents
-    validator = Validator(transactions, proofs, setup_client=False)
+    validator = Validator(transactions, proofs)
     results: Results = validator.validate()
 
     validated_transactions = results.validated_transactions
@@ -47,7 +44,7 @@ def test_find_discrepancies():
         }
     )
 
-    validator = Validator(transactions, proofs, setup_client=False)
+    validator = Validator(transactions, proofs)
     results = validator.validate()
     discrepancies = results.discrepancies
 
@@ -75,7 +72,7 @@ def test_unmatched_transactions():
         }
     )
 
-    validator = Validator(transactions, proofs, setup_client=False)
+    validator = Validator(transactions, proofs)
     results: Results = validator.validate()
 
     discrepancies = results.discrepancies
@@ -107,7 +104,7 @@ def test_unmatched_proofs():
         }
     )
 
-    validator = Validator(transactions, proofs, setup_client=False)
+    validator = Validator(transactions, proofs)
     results = validator.validate()
 
     discrepancies = results.discrepancies
@@ -132,7 +129,7 @@ def test_validate_handles_empty_proofs_without_crashing():
     )
     proofs = pd.DataFrame(columns=["business_name", "total", "date"])
 
-    validator = Validator(transactions, proofs, setup_client=False)
+    validator = Validator(transactions, proofs)
     results = validator.validate()
 
     assert len(results.validated_transactions) == 0
@@ -213,7 +210,7 @@ def test_validate_matches_when_date_formats_differ():
         }
     )
 
-    validator = Validator(transactions, proofs, setup_client=False)
+    validator = Validator(transactions, proofs)
     results = validator.validate()
 
     assert len(results.validated_transactions) == 1
@@ -222,7 +219,7 @@ def test_validate_matches_when_date_formats_differ():
 
 
 def test_no_recommendations_without_unmatched_transactions():
-    validator = Validator(pd.DataFrame([]), pd.DataFrame([]), setup_client=False)
+    validator = Validator(pd.DataFrame([]), pd.DataFrame([]))
     results = Results(
         validated_transactions=pd.DataFrame([]),
         discrepancies=pd.DataFrame([]),
@@ -254,7 +251,7 @@ def test_validate_matches_with_noisy_date_text():
         }
     )
 
-    validator = Validator(transactions, proofs, setup_client=False)
+    validator = Validator(transactions, proofs)
     results = validator.validate()
 
     assert len(results.validated_transactions) == 1
@@ -263,7 +260,7 @@ def test_validate_matches_with_noisy_date_text():
 
 
 def test_recommend_when_unmatched_date_and_totals_match_even_if_names_differ():
-    validator = Validator(pd.DataFrame([]), pd.DataFrame([]), setup_client=False)
+    validator = Validator(pd.DataFrame([]), pd.DataFrame([]))
     unmatched_transactions = pd.DataFrame(
         [
             {
@@ -294,7 +291,7 @@ def test_recommend_when_unmatched_date_and_totals_match_even_if_names_differ():
 
 
 def test_recommend_when_unmatched_dates_within_two_days_and_totals_within_cent():
-    validator = Validator(pd.DataFrame([]), pd.DataFrame([]), setup_client=False)
+    validator = Validator(pd.DataFrame([]), pd.DataFrame([]))
     unmatched_transactions = pd.DataFrame(
         [
             {

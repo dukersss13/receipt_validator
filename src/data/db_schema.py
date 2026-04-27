@@ -8,6 +8,14 @@ Base = declarative_base()
 
 
 class Session(Base):
+    """
+    ORM model representing a user validation session.
+
+    A session groups a set of transaction and proof records uploaded together
+    for a single validation run. It also optionally stores UI state to support
+    session resume.
+    """
+
     __tablename__ = "sessions"
 
     id = Column(Integer, primary_key=True)
@@ -30,6 +38,10 @@ class Session(Base):
 
 
 class Transaction(Base):
+    """
+    ORM model representing a single transaction row from a bank or card statement.
+    """
+
     __tablename__ = "transactions"
 
     id = Column(Integer, primary_key=True)
@@ -48,6 +60,12 @@ class Transaction(Base):
 
 
 class Proof(Base):
+    """
+    ORM model representing a single receipt or proof-of-purchase row.
+
+    A proof may optionally be linked to a matched ``Transaction`` after validation.
+    """
+
     __tablename__ = "proofs"
 
     id = Column(Integer, primary_key=True)
@@ -65,6 +83,13 @@ class Proof(Base):
 
 
 class SessionState(Base):
+    """
+    ORM model storing serialised frontend/UI state for a session.
+
+    The ``payload`` column holds a JSON-encoded dict that the web app uses to
+    restore the UI when a user resumes a previous session.
+    """
+
     __tablename__ = "session_states"
 
     id = Column(Integer, primary_key=True)

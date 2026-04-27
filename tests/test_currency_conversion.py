@@ -2,14 +2,6 @@ import pandas as pd
 import os
 import pytest
 
-from langchain_openai import ChatOpenAI
-from src.utils.utils import setup_openai
-
-
-
-setup_openai()
-model = ChatOpenAI(model="gpt-4o")
-
 foreign_currency_path = "data/foreign_currency"
 
 
@@ -21,15 +13,16 @@ def detect_foreign_currency(data: pd.DataFrame):
 
     return foreign_currencies
 
+
 @pytest.mark.skipif(
     "GITHUB_ACTIONS" in os.environ,
-    reason="Skipping currency conversion test on GitHub Actions"
+    reason="Skipping currency conversion test on GitHub Actions",
 )
 def test_currency_conversion_agent():
     # Test the currency conversion agent with a sample receipt text
 
     # Work on Currency Conversion Agent
-    # Tools: 
+    # Tools:
     # 1. Build Agents Graph for Image to Text, Currency Detection, and Currency Conversion
     from src.graph import run_graph
 

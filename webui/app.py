@@ -1,14 +1,16 @@
 import io
+import json
 import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from typing import Any
 
 import pandas as pd
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, Response, jsonify, render_template, request, send_file
 
 from src.data.database import DataBase
-from src.data.data_reader import DataReader, DataType
+from src.helper_agent import HelperAgent
 from src.validator import Validator
 from src.utils.utils import create_session_id
 
@@ -298,7 +300,13 @@ def _format_input_rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
     if frame is None or frame.empty:
         return []
 
-    columns = ["business_name", "total", "date", "currency"]
+    columns = [
+        "business_name",
+        "total",
+        "date",
+        "currency",
+        "category",
+    ]
     existing_columns = [col for col in columns if col in frame.columns]
     subset = frame[existing_columns].copy()
 
@@ -446,6 +454,9 @@ def get_session_state(session_id: str):
 
 @app.post("/api/validate")
 def validate():
+    # Lazy import to avoid loading PDF/LLM parser stack during app startup.
+    from src.data.data_reader import DataReader, DataType
+
     session_id = str(request.form.get("sessionId", "")).strip()
     transactions = request.files.getlist("transactions")
     proofs = request.files.getlist("proofs")
@@ -481,9 +492,10 @@ def validate():
     try:
         print(f"\n[Validation] Run started for session {session_id}\n")
         ingestion_cost: dict[str, Any] = {}
+        categorize_cost: dict[str, Any] = {}
+        shared_config = DataReader._load_config_cached("config.conf")
 
         if use_uploaded_files:
-            shared_config = DataReader._load_config_cached("config.conf")
             transactions_reader = DataReader(
                 transactions=transaction_paths,
                 proofs=proof_paths,
@@ -539,14 +551,10 @@ def validate():
             with open(
                 os.path.join(log_dir, "ingestion_cost.log"), "a", encoding="utf-8"
             ) as log_file:
-                import json
-
                 log_file.write(json.dumps(log_entry) + "\n")
 
             print(f"\nIngestion usage: {log_entry}\n")
 
-            # Persist extracted user inputs by session_id for later retrieval.
-            database.save_session_inputs(session_id, transactions_df, proofs_df)
         else:
             transactions_df, proofs_df = database.load_session_history(session_id)
             if transactions_df.empty or proofs_df.empty:
@@ -562,16 +570,52 @@ def validate():
                     400,
                 )
 
-        validator = Validator(transactions_df, proofs_df)
+        validator = Validator(
+            transactions_df,
+            proofs_df,
+            parsed_config=shared_config,
+        )
         results = validator.validate()
         summary_text, recommendations_df = validator.analyze_results(results)
+        categorize_cost = validator.categorize_cost
+        enriched_transactions_df = validator.transactions
+        enriched_proofs_df = validator.proofs
+
+        print(
+            "\n[Validation] Categorize Cost: "
+            f"${float(categorize_cost.get('estimatedTotalCostUsd', 0.0)):.6f} "
+            f"({int(categorize_cost.get('inputTokens', 0))} in / "
+            f"{int(categorize_cost.get('outputTokens', 0))} out), "
+            f"latency={float(categorize_cost.get('latencySeconds', 0.0)):.3f}s\n"
+        )
+
+        log_dir = str(shared_config.get("data_path.validated", "data/validated"))
+        os.makedirs(log_dir, exist_ok=True)
+        with open(
+            os.path.join(log_dir, "categorize_cost.log"), "a", encoding="utf-8"
+        ) as log_file:
+            log_file.write(
+                json.dumps(
+                    {
+                        "ts": pd.Timestamp.utcnow().isoformat(),
+                        "sessionId": session_id,
+                        "categorize": categorize_cost,
+                    }
+                )
+                + "\n"
+            )
+
+        if use_uploaded_files:
+            # Persist canonical extracted inputs in DB; categorization is preserved in session state.
+            database.save_session_inputs(session_id, transactions_df, proofs_df)
 
         payload = {
             "sessionId": session_id,
             "summary": summary_text,
             "ingestionCost": ingestion_cost,
-            "transactions": _format_input_rows(transactions_df),
-            "proofs": _format_input_rows(proofs_df),
+            "categorizeCost": categorize_cost,
+            "transactions": _format_input_rows(enriched_transactions_df),
+            "proofs": _format_input_rows(enriched_proofs_df),
             "validatedTransactions": _frame_to_records(results.validated_transactions),
             "discrepancies": _frame_to_records(results.discrepancies),
             "unmatchedTransactions": _frame_to_records(results.unmatched_transactions),
@@ -580,10 +624,12 @@ def validate():
         }
 
         # Auto-save full session state after each successful validation run.
+        existing_state = database.load_session_state(session_id) or {}
         database.save_session_state(
             session_id,
             {
                 "summary": summary_text,
+                "categorizeCost": categorize_cost,
                 "loadedTransactions": payload["transactions"],
                 "loadedProofs": payload["proofs"],
                 "validatedTransactions": payload["validatedTransactions"],
@@ -591,6 +637,7 @@ def validate():
                 "unmatchedTransactions": payload["unmatchedTransactions"],
                 "unmatchedProofs": payload["unmatchedProofs"],
                 "recommendations": payload["recommendations"],
+                "chatHistory": existing_state.get("chatHistory", []),
             },
         )
 
@@ -619,4 +666,153 @@ def export_validated():
         as_attachment=True,
         download_name="validated_transactions.pdf",
         mimetype="application/pdf",
+    )
+
+
+@app.post("/api/chat/ask")
+def chat_ask():
+    payload = request.get_json(silent=True) or {}
+    session_id = str(payload.get("sessionId", "")).strip()
+    message = str(payload.get("message", "")).strip()
+
+    if not session_id:
+        return jsonify({"error": "sessionId is required."}), 400
+
+    if not message:
+        return jsonify({"error": "message is required."}), 400
+
+    try:
+        state = database.load_session_state(session_id) or {}
+        validated_rows = state.get("validatedTransactions", [])
+
+        if not isinstance(validated_rows, list) or not validated_rows:
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            "No validated transactions found for this session. "
+                            "Run validation first."
+                        )
+                    }
+                ),
+                400,
+            )
+
+        helper = HelperAgent()
+        chat_history = state.get("chatHistory", [])
+        if not isinstance(chat_history, list):
+            chat_history = []
+        result = helper.ask(
+            message,
+            validated_rows,
+            chat_history=chat_history,
+        )
+        chat_history.extend(
+            [
+                {"role": "user", "text": message, "ts": datetime.utcnow().isoformat()},
+                {
+                    "role": "assistant",
+                    "text": result.get("answer", ""),
+                    "ts": datetime.utcnow().isoformat(),
+                },
+            ]
+        )
+        state["chatHistory"] = chat_history
+        database.save_session_state(session_id, state)
+        return jsonify({"sessionId": session_id, "question": message, **result})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        return jsonify({"error": f"Chat failed: {exc}"}), 500
+
+
+def _sse(event: str, payload: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
+@app.post("/api/chat/ask/stream")
+def chat_ask_stream():
+    payload = request.get_json(silent=True) or {}
+    session_id = str(payload.get("sessionId", "")).strip()
+    message = str(payload.get("message", "")).strip()
+
+    if not session_id:
+        return jsonify({"error": "sessionId is required."}), 400
+
+    if not message:
+        return jsonify({"error": "message is required."}), 400
+
+    state = database.load_session_state(session_id) or {}
+    validated_rows = state.get("validatedTransactions", [])
+
+    if not isinstance(validated_rows, list) or not validated_rows:
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "No validated transactions found for this session. "
+                        "Run validation first."
+                    )
+                }
+            ),
+            400,
+        )
+
+    helper = HelperAgent()
+    chat_history = state.get("chatHistory", [])
+    if not isinstance(chat_history, list):
+        chat_history = []
+
+    def generate() -> Any:
+        assembled: list[str] = []
+        try:
+            yield _sse("start", {"sessionId": session_id})
+            for token in helper.stream_answer(
+                message,
+                validated_rows,
+                chat_history=chat_history,
+            ):
+                assembled.append(token)
+                yield _sse("token", {"token": token})
+
+            final_answer = "".join(assembled).strip()
+            if not final_answer:
+                final_answer = "I could not generate an answer."
+
+            chat_history.extend(
+                [
+                    {
+                        "role": "user",
+                        "text": message,
+                        "ts": datetime.utcnow().isoformat(),
+                    },
+                    {
+                        "role": "assistant",
+                        "text": final_answer,
+                        "ts": datetime.utcnow().isoformat(),
+                    },
+                ]
+            )
+            state["chatHistory"] = chat_history
+            database.save_session_state(session_id, state)
+
+            yield _sse(
+                "done",
+                {
+                    "answer": final_answer,
+                    "rowsScanned": len(validated_rows),
+                    "confidence": "high",
+                },
+            )
+        except Exception as exc:
+            yield _sse("error", {"error": f"Chat failed: {exc}"})
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )

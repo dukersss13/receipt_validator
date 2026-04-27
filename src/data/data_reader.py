@@ -3,18 +3,18 @@ import base64
 import numpy as np
 import pandas as pd
 from time import time
-import time as wall_time
 import mimetypes
 from PIL import Image
 import io
 import re
 import ast
 import json
+from typing import Any
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from functools import lru_cache
 
-from openai import OpenAI
+from google import genai
+from google.genai import types
 from langchain_community.document_loaders import PyPDFLoader
 from pyhocon import ConfigFactory
 from concurrent.futures import ThreadPoolExecutor
@@ -22,13 +22,10 @@ from enum import Enum
 
 from src.prompts import RECEIPT_PROMPT, STATEMENT_PROMPT
 from src.utils.currency_conversion_agent import convert_currency_to_usd
-from src.utils.utils import (
-    setup_openai,
-    setup_gemini,
-    OPENAI_MODEL,
-    GEMINI_FLASH_LITE_MODEL,
-)
 from src.data.database import DataBase
+
+
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 
 class DataType(Enum):
@@ -38,8 +35,11 @@ class DataType(Enum):
 
 class DataReader:
     """
-    Data Reader class ingests transactions and proofs images
-    prior to the validation process.
+    Ingest transaction statements and proof images prior to the validation pipeline.
+
+    Supports PDF bank statements and image receipts. All extraction is routed through
+    a native Gemini client. Results are normalised to a four-column DataFrame schema
+    (``business_name``, ``total``, ``date``, ``currency``) before being returned.
     """
 
     def __init__(
@@ -47,9 +47,26 @@ class DataReader:
         transactions: list[str] | None = None,
         proofs: list[str] | None = None,
         config_path: str = "config.conf",
+        llm_config_path: str = "llm_config.conf",
         database: DataBase | None = None,
         parsed_config: object | None = None,
     ):
+        """
+        Initialize the DataReader with optional file paths and config overrides.
+
+        Args:
+            transactions: List of file paths to transaction files (PDF or image).
+                When provided alongside *proofs*, overrides the config data path.
+            proofs: List of file paths to proof image files.
+                When provided alongside *transactions*, overrides the config data path.
+            config_path: Path to the HOCON app config file. Ignored when
+                *parsed_config* is supplied.
+            llm_config_path: Path to the HOCON LLM config file.
+            database: Optional pre-constructed ``DataBase`` instance. Allows
+                dependency injection for tests or shared sessions.
+            parsed_config: Pre-parsed config object. Takes precedence over
+                *config_path* to avoid redundant disk I/O.
+        """
         config = (
             parsed_config
             if parsed_config is not None
@@ -75,40 +92,35 @@ class DataReader:
         self.batch_poll_seconds = int(config.get("llm.batch_poll_seconds", 2))
         self.batch_max_wait_seconds = int(config.get("llm.batch_max_wait_seconds", 10))
 
-        self.primary_llm_provider = (
-            str(config.get("llm.default_provider", "gemini_flash_lite")).strip().lower()
+        llm_cfg = DataReader._load_llm_config_cached(llm_config_path)
+        self.primary_llm_provider = "gemini"
+        self.gemini_model = str(
+            llm_cfg.get("llm.data_ingestion.model", DEFAULT_GEMINI_MODEL)
         )
-        self.primary_model = str(
-            config.get("llm.primary_model", GEMINI_FLASH_LITE_MODEL)
+        self.ingestion_temperature = float(
+            llm_cfg.get("llm.data_ingestion.temperature", 0.0)
         )
-        self.fallback_model = str(config.get("llm.fallback_model", OPENAI_MODEL))
-        self.gemini_base_url = str(
-            config.get(
-                "llm.gemini_base_url",
-                "https://generativelanguage.googleapis.com/v1beta/openai/",
-            )
-        )
-
-        setup_openai()
-        self.openai_client = OpenAI()
-
-        setup_gemini()
-        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
-        self.gemini_client = (
-            OpenAI(api_key=gemini_key, base_url=self.gemini_base_url)
-            if gemini_key
-            else None
+        self.ingestion_top_p = float(llm_cfg.get("llm.data_ingestion.top_p", 1.0))
+        self.ingestion_max_tokens = int(
+            llm_cfg.get("llm.data_ingestion.max_tokens", 350)
         )
 
-        if self.primary_llm_provider == "openai":
-            self.primary_client = self.openai_client
-            self.primary_model = self.fallback_model
-            self.fallback_client = self.gemini_client
-            self.fallback_model = GEMINI_FLASH_LITE_MODEL
-        else:
-            self.primary_client = self.gemini_client
-            self.fallback_client = self.openai_client
+        self.primary_model = self.gemini_model
+        # No fallback model is configured for native Gemini mode
+        self.fallback_model = self.gemini_model
 
+        gemini_key = (
+            os.getenv("GEMINI_API_KEY", "").strip()
+            or os.getenv("GOOGLE_API_KEY", "").strip()
+        )
+        self.gemini_client = genai.Client(api_key=gemini_key) if gemini_key else None
+        self.primary_client = self.gemini_client
+        self.fallback_client = None
+
+        # Native Gemini migration: disable legacy OpenAI-style JSONL batch flow.
+        self.use_batch_api = False
+
+        # Running totals for cost/usage reporting
         self.ingestion_usage = {
             "model": self.primary_model,
             "input_tokens": 0,
@@ -121,22 +133,52 @@ class DataReader:
             "estimated_total_cost_usd": 0.0,
         }
 
+        # Allow callers to supply explicit file lists instead of directory paths
         if transactions and proofs and len(transactions) and len(proofs):
             self.transactions_data_path = transactions
             self.proofs_data_path = proofs
 
     @staticmethod
     @lru_cache(maxsize=8)
-    def _load_config_cached(config_path: str):
-        """Cache parsed config to avoid repeated disk parsing per request."""
+    def _load_config_cached(config_path: str) -> Any:
+        """
+        Parse and cache the app HOCON config; subsequent calls return the cached result.
+
+        Args:
+            config_path: Filesystem path to the ``.conf`` configuration file.
+
+        Returns:
+            Parsed config object accessible via dot-notation keys.
+        """
         return ConfigFactory.parse_file(config_path)
 
-    def load_data(self, data_type: DataType):
+    @staticmethod
+    @lru_cache(maxsize=8)
+    def _load_llm_config_cached(config_path: str) -> Any:
         """
-        Read (preprocess) data given data type
+        Parse and cache the LLM HOCON config; subsequent calls return the cached result.
 
-        :param data_type: type of data, transactions or proofs
-        :return: data in a df format
+        Args:
+            config_path: Filesystem path to the ``.conf`` configuration file.
+
+        Returns:
+            Parsed config object accessible via dot-notation keys.
+        """
+        return ConfigFactory.parse_file(config_path)
+
+    def load_data(self, data_type: DataType) -> pd.DataFrame:
+        """
+        Load and preprocess either transactions or proofs data from the configured paths.
+
+        Args:
+            data_type: ``DataType.TRANSACTIONS`` or ``DataType.PROOFS``.
+
+        Returns:
+            Normalised DataFrame with columns ``business_name``, ``total``,
+            ``date``, and ``currency``.
+
+        Raises:
+            ValueError: If *data_type* is not a recognised ``DataType`` value.
         """
         if data_type == DataType.TRANSACTIONS:
             print("\n[Ingestion] Reading Transactions...\n")
@@ -150,30 +192,63 @@ class DataReader:
         # Keep currency for persistence and conversion pipeline.
         return processed_data
 
-    @staticmethod
-    def _completion_token_kwargs(max_tokens: int) -> dict:
-        return {"max_tokens": max_tokens}
+    def _completion_token_kwargs(self, max_tokens: int) -> dict[str, int]:
+        """
+        Build a ``max_tokens`` kwarg dict capped to the configured ingestion limit.
 
-    @staticmethod
-    def _sampling_kwargs() -> dict:
-        return {"temperature": 0.0}
+        Args:
+            max_tokens: Requested token budget for this particular call.
+
+        Returns:
+            Dict with a single ``max_tokens`` key whose value is
+            ``min(max_tokens, self.ingestion_max_tokens)``.
+        """
+        return {"max_tokens": min(max_tokens, self.ingestion_max_tokens)}
+
+    def _sampling_kwargs(self) -> dict[str, float]:
+        """
+        Return the sampling parameter dict for LLM completion calls.
+
+        Returns:
+            Dict with ``temperature`` and ``top_p`` keys sourced from the LLM config.
+        """
+        return {
+            "temperature": self.ingestion_temperature,
+            "top_p": self.ingestion_top_p,
+        }
 
     @staticmethod
     def _input_token_rate_per_million(model_name: str) -> float:
+        """
+        Return the input token cost in USD per one million tokens for a given model.
+
+        Args:
+            model_name: Gemini model identifier string.
+
+        Returns:
+            Cost per million input tokens in USD. Defaults to 0.10 for unknown models.
+        """
         rates = {
             # Keep this table current as pricing evolves.
-            "gpt-4o-mini": 0.15,
             "gemini-2.5-flash-lite": 0.10,
         }
-        return rates.get(model_name, 0.15)
+        return rates.get(model_name, 0.10)
 
     @staticmethod
     def _output_token_rate_per_million(model_name: str) -> float:
+        """
+        Return the output token cost in USD per one million tokens for a given model.
+
+        Args:
+            model_name: Gemini model identifier string.
+
+        Returns:
+            Cost per million output tokens in USD. Defaults to 0.40 for unknown models.
+        """
         rates = {
-            "gpt-4o-mini": 0.60,
             "gemini-2.5-flash-lite": 0.40,
         }
-        return rates.get(model_name, 0.60)
+        return rates.get(model_name, 0.40)
 
     def _record_usage(
         self,
@@ -182,11 +257,30 @@ class DataReader:
         model_name: str,
         is_fallback: bool = False,
     ) -> None:
+        """
+        Accumulate token counts and estimated cost from a single LLM response.
+
+        Args:
+            usage: The usage metadata object attached to the Gemini response, or
+                ``None`` if the response did not include usage information.
+            mode: ``"batch"`` or ``"standard"`` — determines which call counter to increment.
+            model_name: Model identifier used for per-model cost lookup.
+            is_fallback: Whether this call was made on the fallback model path.
+        """
         if usage is None:
             return
 
-        input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
-        output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+        # Support both OpenAI-style and Gemini-style attribute names
+        input_tokens = int(
+            getattr(usage, "prompt_tokens", None)
+            or getattr(usage, "prompt_token_count", 0)
+            or 0
+        )
+        output_tokens = int(
+            getattr(usage, "completion_tokens", None)
+            or getattr(usage, "candidates_token_count", 0)
+            or 0
+        )
         self.ingestion_usage["input_tokens"] += input_tokens
         self.ingestion_usage["output_tokens"] += output_tokens
         self.ingestion_usage["llm_calls"] += 1
@@ -208,6 +302,14 @@ class DataReader:
         self.ingestion_usage["estimated_total_cost_usd"] += input_cost + output_cost
 
     def _record_usage_from_body(self, body: dict, mode: str, model_name: str) -> None:
+        """
+        Accumulate token usage from a raw response body dict (legacy batch path).
+
+        Args:
+            body: Parsed JSON response body dict; expects an ``"usage"`` key.
+            mode: ``"batch"`` or ``"standard"``.
+            model_name: Model identifier used for per-model cost lookup.
+        """
         usage = body.get("usage", {}) if isinstance(body, dict) else {}
         input_tokens = int(usage.get("prompt_tokens", 0) or 0)
         output_tokens = int(usage.get("completion_tokens", 0) or 0)
@@ -229,7 +331,8 @@ class DataReader:
         ) * DataReader._output_token_rate_per_million(model_name)
         self.ingestion_usage["estimated_total_cost_usd"] += input_cost + output_cost
 
-    def get_ingestion_cost_summary(self) -> dict:
+    def get_ingestion_cost_summary(self) -> dict[str, Any]:
+        """Return normalized token/cost metrics for the current ingestion run."""
         model_name = self.ingestion_usage["model"]
         input_tokens = int(self.ingestion_usage["input_tokens"])
         output_tokens = int(self.ingestion_usage["output_tokens"])
@@ -258,6 +361,15 @@ class DataReader:
         }
 
     def log_ingestion_cost(self, session_id: str) -> dict:
+        """
+        Append the current ingestion cost summary to the session log file and return it.
+
+        Args:
+            session_id: External session identifier included in the log entry.
+
+        Returns:
+            The cost summary dict as returned by ``get_ingestion_cost_summary()``.
+        """
         summary = self.get_ingestion_cost_summary()
         log_entry = {
             "ts": pd.Timestamp.utcnow().isoformat(),
@@ -275,6 +387,18 @@ class DataReader:
 
     @staticmethod
     def _extract_text_content(message_content: object) -> str:
+        """
+        Extract a plain-text string from a message content value.
+
+        Handles string content, lists of text/dict items (OpenAI-style multi-part
+        content), and arbitrary objects by falling back to ``str()``.
+
+        Args:
+            message_content: Raw content from a message dict.
+
+        Returns:
+            Concatenated text extracted from the content.
+        """
         if isinstance(message_content, str):
             return message_content
 
@@ -290,23 +414,32 @@ class DataReader:
         return str(message_content)
 
     def _poll_batch_until_done(self, batch_id: str):
-        started = wall_time.time()
-        terminal = {"completed", "failed", "cancelled", "expired"}
+        """
+        Poll a batch job until it completes (disabled for native Gemini mode).
 
-        while True:
-            batch = self.openai_client.batches.retrieve(batch_id)
-            if batch.status in terminal:
-                return batch
+        Args:
+            batch_id: The batch job identifier to poll.
 
-            if (wall_time.time() - started) > self.batch_max_wait_seconds:
-                raise TimeoutError(
-                    f"Batch {batch_id} did not finish within {self.batch_max_wait_seconds}s"
-                )
-
-            wall_time.sleep(max(1, self.batch_poll_seconds))
+        Raises:
+            RuntimeError: Always — batch API is disabled in native Gemini mode.
+        """
+        _ = batch_id
+        raise RuntimeError("Batch API is disabled for native Gemini ingestion mode.")
 
     @staticmethod
     def _serialize_batch_output(raw_content: object) -> str:
+        """
+        Convert a raw batch response object to a plain string.
+
+        Tries ``text``, ``read()``, and ``content`` attributes in order before
+        falling back to ``str()``.
+
+        Args:
+            raw_content: The raw response object from a batch API call.
+
+        Returns:
+            A UTF-8 string representation of the response content.
+        """
         if hasattr(raw_content, "text"):
             return str(raw_content.text)
         if hasattr(raw_content, "read"):
@@ -324,79 +457,34 @@ class DataReader:
     def _run_chat_batch_requests(
         self, requests_payload: list[dict], model_name: str
     ) -> list[str]:
-        if not requests_payload:
-            return []
+        """
+        Execute a batch of chat completion requests (disabled for native Gemini mode).
 
-        if not hasattr(self.openai_client, "batches"):
-            raise RuntimeError("OpenAI client does not support Batch API.")
+        Args:
+            requests_payload: List of request dicts to submit as a batch.
+            model_name: Model identifier to use for the batch job.
 
-        with NamedTemporaryFile(
-            mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
-        ) as tmp:
-            for item in requests_payload:
-                tmp.write(json.dumps(item) + "\n")
-            input_file_path = tmp.name
-
-        output_text: str | None = None
-        try:
-            with open(input_file_path, "rb") as f_obj:
-                input_file = self.openai_client.files.create(
-                    file=f_obj, purpose="batch"
-                )
-
-            batch = self.openai_client.batches.create(
-                input_file_id=input_file.id,
-                endpoint="/v1/chat/completions",
-                completion_window=self.batch_completion_window,
-            )
-
-            completed_batch = self._poll_batch_until_done(batch.id)
-            if (
-                completed_batch.status != "completed"
-                or not completed_batch.output_file_id
-            ):
-                raise RuntimeError(
-                    f"Batch failed with status {completed_batch.status}."
-                )
-
-            output = self.openai_client.files.content(completed_batch.output_file_id)
-            output_text = DataReader._serialize_batch_output(output)
-        finally:
-            try:
-                os.remove(input_file_path)
-            except OSError:
-                pass
-
-        lines = (
-            [line for line in output_text.splitlines() if line.strip()]
-            if output_text
-            else []
-        )
-        by_id: dict[str, str] = {}
-
-        for line in lines:
-            obj = json.loads(line)
-            custom_id = str(obj.get("custom_id", ""))
-            body = ((obj.get("response") or {}).get("body")) or {}
-            self._record_usage_from_body(body, mode="batch", model_name=model_name)
-
-            choices = body.get("choices", []) if isinstance(body, dict) else []
-            if not choices:
-                by_id[custom_id] = ""
-                continue
-
-            msg_content = (choices[0].get("message") or {}).get("content", "")
-            by_id[custom_id] = DataReader._extract_text_content(msg_content)
-
-        outputs: list[str] = []
-        for req in requests_payload:
-            outputs.append(by_id.get(str(req.get("custom_id", "")), ""))
-
-        return outputs
+        Raises:
+            RuntimeError: Always — batch API is disabled in native Gemini mode.
+        """
+        _ = requests_payload
+        _ = model_name
+        raise RuntimeError("Batch API is disabled for native Gemini ingestion mode.")
 
     def load_proofs_data(self, data_path: str | list[str]) -> pd.DataFrame:
         """
-        Loads proof data from the specified path.
+        Extract receipt data from image files at *data_path*.
+
+        Images are encoded to base64, sent to the Gemini vision API concurrently,
+        and then normalised into a four-column DataFrame. Non-USD totals are
+        converted to USD via the exchange-rate API.
+
+        Args:
+            data_path: Either a directory path (str) or a list of image file paths.
+
+        Returns:
+            Normalised DataFrame with columns ``business_name``, ``total``,
+            ``date``, and ``currency`` (all in USD after conversion).
         """
         print("\n[Ingestion] Starting proof extraction\n")
         start = time()
@@ -428,6 +516,18 @@ class DataReader:
 
     @staticmethod
     def strip_sensitive_info(text):
+        """
+        Redact personally identifiable information from statement text before LLM submission.
+
+        Replaces emails, phone numbers, dates, zip codes, credit card numbers,
+        account numbers, addresses, and full names with placeholder tokens.
+
+        Args:
+            text: Raw text extracted from a bank/card statement PDF.
+
+        Returns:
+            The input text with PII replaced by ``[EMAIL]``, ``[PHONE]``, etc.
+        """
         text = re.sub(r"\b[\w\.-]+@[\w\.-]+\.\w+\b", "[EMAIL]", text)
         text = re.sub(
             r"\b(?:\+?1[-.\s]?)*\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b",
@@ -456,7 +556,18 @@ class DataReader:
 
     def load_transaction_data(self, data_path: str | list[str]) -> pd.DataFrame:
         """
-        Loads transaction data from PDFs and image files in a given path or list of file paths.
+        Load transaction data from PDF statements and/or image files.
+
+        PDF and image files are detected automatically. When both are present they
+        are processed concurrently and their results concatenated. PII is stripped
+        from PDF text before it is sent to the LLM.
+
+        Args:
+            data_path: Either a directory path (str) or a list of file paths.
+
+        Returns:
+            Normalised DataFrame with columns ``business_name``, ``total``,
+            ``date``, and ``currency``.
         """
         print("\n[Ingestion] Starting transaction extraction\n")
         start = time()
@@ -492,7 +603,20 @@ class DataReader:
         return data
 
     def _load_pdf_transaction_data(self, pdf_files: list[str]) -> pd.DataFrame:
-        """Read transactions from PDF statements and normalize them into one frame."""
+        """
+        Extract transactions from a list of PDF statement files.
+
+        Attempts the standard per-file extraction path (parallel via thread pool).
+        The legacy batch path is retained but will only run when ``use_batch_api``
+        is True, which is currently always False in native Gemini mode.
+
+        Args:
+            pdf_files: List of absolute paths to PDF files.
+
+        Returns:
+            Concatenated normalised DataFrame of all extracted transactions,
+            or an empty DataFrame if no files could be processed.
+        """
         if not pdf_files:
             return pd.DataFrame([])
 
@@ -538,7 +662,15 @@ class DataReader:
         return pd.concat(valid_pdf_frames, axis=0, ignore_index=True)
 
     def _load_image_transaction_data(self, image_files: list[str]) -> pd.DataFrame:
-        """Read transactions from uploaded images using the proof-image extraction path."""
+        """
+        Extract transactions from image files by delegating to the proof extraction path.
+
+        Args:
+            image_files: List of absolute paths to image files (.png, .jpg, .jpeg).
+
+        Returns:
+            Normalised DataFrame of extracted transactions, or an empty DataFrame on failure.
+        """
         if not image_files:
             return pd.DataFrame([])
 
@@ -550,6 +682,18 @@ class DataReader:
 
     @staticmethod
     def gather_files(data_path: str | list[str]) -> list[str]:
+        """
+        Resolve a data path to a flat list of file paths.
+
+        Args:
+            data_path: A single file path, a directory path, or a list of file paths.
+
+        Returns:
+            List of resolved file path strings.
+
+        Raises:
+            ValueError: If *data_path* is neither a string path nor a list.
+        """
         if isinstance(data_path, str):
             p = Path(data_path)
             if p.is_file():
@@ -565,7 +709,16 @@ class DataReader:
 
     def extract_data_from_pdf(self, pdf_path: str) -> str:
         """
-        Extracts data from a PDF file located at the specified path.
+        Extract structured transaction data from a single PDF file.
+
+        Reads raw text from the PDF, strips PII, then sends the sanitised text
+        to the statement extraction LLM prompt.
+
+        Args:
+            pdf_path: Absolute path to the PDF file.
+
+        Returns:
+            Raw LLM response string (Python list literal) containing extracted rows.
         """
         filtered_statement_text = DataReader.strip_sensitive_info(
             self._read_pdf_text(pdf_path)
@@ -576,6 +729,15 @@ class DataReader:
 
     @staticmethod
     def _read_pdf_text(pdf_path: str) -> str:
+        """
+        Concatenate the raw text content of all pages in a PDF file.
+
+        Args:
+            pdf_path: Absolute path to the PDF file.
+
+        Returns:
+            Plain text string with all page contents joined together.
+        """
         loader = PyPDFLoader(pdf_path)
         docs = loader.load()
         text = ""
@@ -585,7 +747,17 @@ class DataReader:
 
     def batch_read_data(self, image_payloads: list[dict]) -> list[str]:
         """
-        Process multiple image payloads in parallel.
+        Process multiple image payloads concurrently and return extracted text responses.
+
+        Attempts the batch API path first (currently disabled) and falls back to
+        per-image parallel extraction via a thread pool.
+
+        Args:
+            image_payloads: List of image payload dicts as produced by
+                ``create_image_payload()``.
+
+        Returns:
+            List of raw LLM response strings, one per input payload.
         """
         if not image_payloads:
             return []
@@ -595,10 +767,8 @@ class DataReader:
         start_llm_calls = int(self.ingestion_usage["llm_calls"])
         start_fallback_calls = int(self.ingestion_usage["fallback_calls"])
 
-        can_use_openai_batch = (
-            self.use_batch_api and self.primary_llm_provider == "openai"
-        )
-        if can_use_openai_batch and image_payloads:
+        can_use_batch_api = self.use_batch_api and self.gemini_client is not None
+        if can_use_batch_api and image_payloads:
             try:
                 results = self.read_proofs_data_batch(image_payloads)
                 elapsed = time() - start_time
@@ -656,11 +826,39 @@ class DataReader:
     @staticmethod
     def preprocess_data(data_vector: np.ndarray) -> pd.DataFrame:
         """
-        Preprocess data post ingestion.
+        Normalise a raw extraction result into the canonical four-column DataFrame.
+
+        Handles both 3-tuple rows (name, total, date) from PDF statements and
+        4-tuple rows (name, total, date, currency) from image receipts.
+
+        Args:
+            data_vector: List or array of row tuples/lists as returned by the LLM.
+
+        Returns:
+            A DataFrame with columns ``business_name``, ``total``, ``date``,
+            and ``currency``. Business names are lowercased; totals are cast to float.
+
+        Raises:
+            ValueError: If rows contain fewer than three fields.
         """
-        data = pd.DataFrame(
-            data_vector, columns=["business_name", "total", "date", "currency"]
-        )
+        expected_cols = ["business_name", "total", "date", "currency"]
+        data = pd.DataFrame(data_vector)
+
+        # Statement PDFs can produce 3-tuples (name, total, date).
+        # Normalize to the canonical 4-column schema by defaulting currency to USD.
+        if data.empty:
+            data = pd.DataFrame([], columns=expected_cols)
+        elif data.shape[1] == 3:
+            data.columns = expected_cols[:3]
+            data["currency"] = "USD"
+        elif data.shape[1] >= 4:
+            data = data.iloc[:, :4]
+            data.columns = expected_cols
+        else:
+            raise ValueError(
+                "Extracted data must contain at least business_name, total, and date."
+            )
+
         data["business_name"] = data["business_name"].astype(str).str.lower()
         data["total"] = data["total"].astype(float)
 
@@ -671,7 +869,17 @@ class DataReader:
         data_path: str | list[str], max_workers: int = 8
     ) -> list[dict]:
         """
-        Create image payload.
+        Build a list of base64-encoded image payload dicts ready for the LLM.
+
+        Only files whose MIME type starts with ``image/`` are included. Encoding
+        is done in parallel using a thread pool.
+
+        Args:
+            data_path: Directory path (str) or list of absolute file paths.
+            max_workers: Maximum number of threads for concurrent encoding.
+
+        Returns:
+            List of ``{"type": "image_url", "image_url": {"url": "data:..."}}`` dicts.
         """
         image_payload = []
         is_dir = isinstance(data_path, str)
@@ -700,10 +908,22 @@ class DataReader:
     @staticmethod
     def reduce_image_size(image_path, max_size=2 * 1024 * 1024):
         """
-        Reduce an image's size to be under max_size (default 2MB) without saving to disk.
+        Compress an image in-memory until it falls below *max_size* bytes.
+
+        Iteratively reduces JPEG quality by 5 points per pass, then falls back to
+        resizing by 5% per pass if quality reduction alone is insufficient.
+        The image is never written to disk.
+
+        Args:
+            image_path: Path to the source image file.
+            max_size: Maximum acceptable file size in bytes. Defaults to 2 MB.
+
+        Returns:
+            ``io.BytesIO`` buffer positioned at byte 0 containing the compressed image.
         """
         img = Image.open(image_path)
 
+        # Convert palette/alpha modes to RGB for JPEG compatibility
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
 
@@ -733,14 +953,146 @@ class DataReader:
     @staticmethod
     def encode_image(image_path: str):
         """
-        Function to encode the image.
+        Encode an image file to a base64 string after size reduction.
+
+        Args:
+            image_path: Path to the source image file.
+
+        Returns:
+            Base64-encoded UTF-8 string of the (possibly compressed) image.
         """
         img_bytes = DataReader.reduce_image_size(image_path)
         return base64.b64encode(img_bytes.read()).decode("utf-8")
 
+    @staticmethod
+    def _parse_data_url_image(url: str) -> tuple[bytes, str]:
+        """
+        Decode a data-URL image string into raw bytes and its MIME type.
+
+        Args:
+            url: Data URL string of the form ``data:<mime>;base64,<data>``.
+
+        Returns:
+            A tuple ``(image_bytes, mime_type)``.
+
+        Raises:
+            ValueError: If *url* does not start with ``"data:"``.
+        """
+        if not isinstance(url, str) or not url.startswith("data:"):
+            raise ValueError("Unsupported image URL payload for Gemini request.")
+
+        header, encoded = url.split(",", 1)
+        mime_type = header.split(";", 1)[0].replace("data:", "", 1)
+        return base64.b64decode(encoded), mime_type
+
+    @staticmethod
+    def _build_gemini_contents(messages: list[dict]) -> tuple[list[types.Part], str]:
+        """
+        Convert an OpenAI-style message list into Gemini ``Part`` objects and a system prompt.
+
+        System messages are collected into a single string returned as the second
+        element. User messages are converted to ``Part.from_text`` or
+        ``Part.from_bytes`` (for image_url items).
+
+        Args:
+            messages: List of ``{"role": ..., "content": ...}`` message dicts.
+
+        Returns:
+            A tuple ``(parts, system_instruction)`` where *parts* is a list of
+            ``types.Part`` objects and *system_instruction* is the merged system text.
+        """
+        parts: list[types.Part] = []
+        system_texts: list[str] = []
+
+        for msg in messages:
+            role = str(msg.get("role", "")).strip().lower()
+            content = msg.get("content", "")
+
+            if role == "system":
+                # Collect system instructions separately for the system_instruction kwarg
+                text = DataReader._extract_text_content(content).strip()
+                if text:
+                    system_texts.append(text)
+                continue
+
+            if isinstance(content, str):
+                if content.strip():
+                    parts.append(types.Part.from_text(text=content))
+                continue
+
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, str):
+                        if item.strip():
+                            parts.append(types.Part.from_text(text=item))
+                        continue
+
+                    if not isinstance(item, dict):
+                        continue
+
+                    if item.get("type") == "text":
+                        text_val = str(item.get("text", "") or "").strip()
+                        if text_val:
+                            parts.append(types.Part.from_text(text=text_val))
+                    elif item.get("type") == "image_url":
+                        img_url = ((item.get("image_url") or {}).get("url")) or ""
+                        image_bytes, mime_type = DataReader._parse_data_url_image(
+                            str(img_url)
+                        )
+                        parts.append(
+                            types.Part.from_bytes(
+                                data=image_bytes,
+                                mime_type=mime_type,
+                            )
+                        )
+
+        return parts, "\n".join(system_texts).strip()
+
+    @staticmethod
+    def _response_text(response: object) -> str:
+        """
+        Extract the text string from a Gemini ``GenerateContentResponse``.
+
+        Tries the top-level ``text`` attribute first, then iterates over candidates
+        and their parts to find any non-empty text chunk.
+
+        Args:
+            response: A Gemini ``GenerateContentResponse`` object.
+
+        Returns:
+            The first non-empty text found, or an empty string if none is present.
+        """
+        text = str(getattr(response, "text", "") or "").strip()
+        if text:
+            return text
+
+        # Fall back to iterating candidates when the top-level text attribute is empty
+        candidates = getattr(response, "candidates", None) or []
+        for candidate in candidates:
+            content = getattr(candidate, "content", None)
+            cparts = getattr(content, "parts", None) if content is not None else None
+            if not cparts:
+                continue
+            chunk = []
+            for part in cparts:
+                part_text = str(getattr(part, "text", "") or "")
+                if part_text:
+                    chunk.append(part_text)
+            merged = "".join(chunk).strip()
+            if merged:
+                return merged
+
+        return ""
+
     def read_proofs_data(self, image_payload: dict) -> str:
         """
-        Read proof image payload and extract receipt information.
+        Send a single encoded image payload to the Gemini vision API and return the extracted text.
+
+        Args:
+            image_payload: A single image payload dict produced by ``create_image_payload()``.
+
+        Returns:
+            Raw LLM response string (Python list literal) containing receipt data.
         """
         messages = [
             {
@@ -759,80 +1111,81 @@ class DataReader:
     def _chat_completion_with_fallback(
         self, messages: list[dict], max_tokens: int
     ) -> str:
-        completion_kwargs = {
-            **DataReader._sampling_kwargs(),
-            **DataReader._completion_token_kwargs(max_tokens),
-        }
+        """
+        Submit a message list to the primary Gemini model and return the text response.
+
+        Builds ``GenerateContentConfig`` from the current sampling parameters, converts
+        the OpenAI-style message list to Gemini ``Part`` objects, and records usage.
+        Raises ``RuntimeError`` if the primary client is unavailable or the request fails.
+
+        Args:
+            messages: List of ``{"role": ..., "content": ...}`` message dicts.
+            max_tokens: Maximum number of output tokens requested for this call.
+
+        Returns:
+            Text response string from the model.
+
+        Raises:
+            RuntimeError: If the Gemini request fails and no fallback is available.
+        """
+        completion_kwargs = types.GenerateContentConfig(
+            temperature=self.ingestion_temperature,
+            top_p=self.ingestion_top_p,
+            max_output_tokens=min(max_tokens, self.ingestion_max_tokens),
+        )
+
+        contents, system_instruction = DataReader._build_gemini_contents(messages)
+        # Attach system instruction when present; not all prompts include one
+        if system_instruction:
+            completion_kwargs.system_instruction = system_instruction
 
         if self.primary_client is not None:
             try:
-                response = self.primary_client.chat.completions.create(
+                response = self.primary_client.models.generate_content(
                     model=self.primary_model,
-                    messages=messages,
-                    **completion_kwargs,
+                    contents=contents,
+                    config=completion_kwargs,
                 )
                 self._record_usage(
-                    response.usage,
+                    getattr(response, "usage_metadata", None),
                     mode="standard",
                     model_name=self.primary_model,
                     is_fallback=False,
                 )
-                return response.choices[0].message.content
+                return DataReader._response_text(response)
             except Exception as e:
                 print(
-                    f"\nWarning: Primary model {self.primary_model} failed; "
-                    f"falling back to {self.fallback_model}. Error: {e}\n"
+                    f"\nWarning: Gemini model {self.primary_model} request failed. "
+                    f"Error: {e}\n"
                 )
 
-        if self.fallback_client is None:
-            raise RuntimeError(
-                f"No fallback client configured for model {self.fallback_model}."
-            )
-
-        response = self.fallback_client.chat.completions.create(
-            model=self.fallback_model,
-            messages=messages,
-            **completion_kwargs,
+        raise RuntimeError(
+            f"Gemini request failed for model {self.primary_model} and no fallback is enabled."
         )
-        self._record_usage(
-            response.usage,
-            mode="standard",
-            model_name=self.fallback_model,
-            is_fallback=True,
-        )
-        return response.choices[0].message.content
 
     def read_proofs_data_batch(self, image_payloads: list[dict]) -> list[str]:
-        requests_payload: list[dict] = []
-        for idx, image_payload in enumerate(image_payloads):
-            requests_payload.append(
-                {
-                    "custom_id": f"receipt-{idx}",
-                    "method": "POST",
-                    "url": "/v1/chat/completions",
-                    "body": {
-                        "model": self.primary_model,
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": RECEIPT_PROMPT},
-                                    image_payload,
-                                ],
-                            }
-                        ],
-                        **DataReader._sampling_kwargs(),
-                        **DataReader._completion_token_kwargs(300),
-                    },
-                }
-            )
+        """
+        Batch extraction endpoint for proof images (disabled for native Gemini mode).
 
-        return self._run_chat_batch_requests(
-            requests_payload, model_name=self.primary_model
-        )
+        Args:
+            image_payloads: List of image payload dicts.
+
+        Raises:
+            RuntimeError: Always — batch API is disabled in native Gemini mode.
+        """
+        _ = image_payloads
+        raise RuntimeError("Batch API is disabled for native Gemini ingestion mode.")
 
     def extract_data_from_statement_text(self, bank_statement_text: str) -> str:
-        """Read statement text and extract transaction information."""
+        """
+        Extract structured transaction rows from sanitised bank statement text.
+
+        Args:
+            bank_statement_text: PII-stripped plain text from a bank/card statement.
+
+        Returns:
+            Raw LLM response string (Python list literal) containing extracted rows.
+        """
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {
@@ -843,35 +1196,26 @@ class DataReader:
         return self._chat_completion_with_fallback(messages, max_tokens=350)
 
     def extract_data_from_image_texts(self, bank_statement_text: str) -> str:
-        """Backward-compatible alias for statement text extraction."""
+        """
+        Backward-compatible alias for ``extract_data_from_statement_text``.
+
+        Args:
+            bank_statement_text: PII-stripped plain text from a bank/card statement.
+
+        Returns:
+            Raw LLM response string (Python list literal) containing extracted rows.
+        """
         return self.extract_data_from_statement_text(bank_statement_text)
 
     def extract_statement_data_batch(self, statement_texts: list[str]) -> list[str]:
-        requests_payload: list[dict] = []
-        for idx, statement_text in enumerate(statement_texts):
-            requests_payload.append(
-                {
-                    "custom_id": f"statement-{idx}",
-                    "method": "POST",
-                    "url": "/v1/chat/completions",
-                    "body": {
-                        "model": self.primary_model,
-                        "messages": [
-                            {
-                                "role": "system",
-                                "content": "You are a helpful assistant.",
-                            },
-                            {
-                                "role": "user",
-                                "content": STATEMENT_PROMPT + "\n\n" + statement_text,
-                            },
-                        ],
-                        **DataReader._sampling_kwargs(),
-                        **DataReader._completion_token_kwargs(350),
-                    },
-                }
-            )
+        """
+        Batch statement extraction endpoint (disabled for native Gemini mode).
 
-        return self._run_chat_batch_requests(
-            requests_payload, model_name=self.primary_model
-        )
+        Args:
+            statement_texts: List of PII-stripped statement text strings.
+
+        Raises:
+            RuntimeError: Always — batch API is disabled in native Gemini mode.
+        """
+        _ = statement_texts
+        raise RuntimeError("Batch API is disabled for native Gemini ingestion mode.")
