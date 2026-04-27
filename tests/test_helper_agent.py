@@ -1,24 +1,13 @@
-import os
-from types import SimpleNamespace
-
 from intelligence.helper_agent import HelperAgent
 from ui_test import _mock_validated_transactions
 
 
-def _init_terminal_chat_agent() -> HelperAgent:
-    helper = HelperAgent()
+helper = HelperAgent()
 
-    # If no API key exists, use local fake graph so terminal mode still works.
-    has_key = bool(os.getenv("GEMINI_API_KEY", "").strip()) or bool(
-        os.getenv("GOOGLE_API_KEY", "").strip()
-    )
-
-    return helper
 
 
 def _run_terminal_chat() -> None:
     validated_rows = _mock_validated_transactions(30)
-    helper = _init_terminal_chat_agent()
     chat_history: list[dict[str, str]] = []
 
     print("Terminal chat mode started.")
