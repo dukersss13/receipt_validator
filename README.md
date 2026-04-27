@@ -40,7 +40,7 @@ The system consists of the following key components:
     * Users can download validated transaction outputs as CSV.
 
 6. **Architecture Diagram**
-<img width="1626" height="967" alt="image" src="https://github.com/user-attachments/assets/61532616-8543-4471-ac28-c63a5b4835c7" />
+<img width="1698" height="813" alt="image" src="https://github.com/user-attachments/assets/78a89fe2-5629-4a7f-9d3c-7a1a4ed5877e" />
 
 
 
