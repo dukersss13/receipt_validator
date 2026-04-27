@@ -30,9 +30,9 @@ The system consists of the following key components:
 4.  **Validation + Intelligence (`src/intelligence/validator.py`, `src/intelligence/categorize.py`, `src/intelligence/helper_agent.py`):
     * **TransactionCategorizer:** Uses Gemini to assign categories to transaction/proof rows.
     * **Validator:** Performs fuzzy business-name matching, date normalization, amount reconciliation, and discrepancy/unmatched analysis.
-    * **HelperAgent:** Tool-calling assistant (`breakdown_spending`) for conversational analysis over validated rows.
-    * **Current HelperAgent Scope:** Provides aggregation-based insights only (for example: sum/total spending, average spending per category, and timeframe-based summaries/trends).
-    * **In-Chat Memory:** Maintains conversation context within the active chat, so follow-up questions can reference prior turns in the current conversation.
+    * **ArVee HelperAgent:** Tool-calling assistant (`breakdown_spending`) for conversational analysis over validated rows.
+    * **Current Agent Scope:** Provides aggregation-based insights only (for example: sum/total spending, average spending per category, and timeframe-based summaries/trends).
+    * **In-Chat Memory:** Maintains conversation context within the active chat, so follow-up questions can reference prior turns in the current conversation. ArVee HelperAgent always has context over **validated transactions** at current time, so feel free to ask him anything!
 
 5.  **Web/UI & Persistence (`webui/`, `src/data/database.py`):**
     * Flask web app provides upload, validation, result tables, and chat endpoints.
