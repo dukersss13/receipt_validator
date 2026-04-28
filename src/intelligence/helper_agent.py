@@ -1,11 +1,40 @@
 import re
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Any, Iterator
 
 import pandas as pd
 from langchain.agents import create_agent
 from langchain_core.tools import BaseTool, tool
 from src.intelligence.llm_base import LLMBase
+
+
+@dataclass(slots=True)
+class AgentInput:
+    """Schema for HelperAgent request payloads."""
+
+    question: str
+    validated_rows: list[dict[str, Any]]
+    chat_history: list[dict[str, Any]] | None = None
+
+
+@dataclass(slots=True)
+class AgentOutput:
+    """Schema for HelperAgent response payloads."""
+
+    answer: str
+    rowsScanned: int
+    toolUsed: bool
+    confidence: str = "high"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return the output in the existing API response shape."""
+        return {
+            "answer": self.answer,
+            "rowsScanned": self.rowsScanned,
+            "toolUsed": self.toolUsed,
+            "confidence": self.confidence,
+        }
 
 
 class HelperAgent(LLMBase):
@@ -16,17 +45,17 @@ class HelperAgent(LLMBase):
     synchronous ``ask`` method and a streaming ``stream_answer`` generator.
     """
 
-    _SYSTEM_PROMPT = (
-        "You are ArVee, a concise personal finance assistant focused on validated transactions only."
-        "Answer spending questions using validated transactions and computed values only. "
-        "If the user is unclear, ask for clarification."
-        "If the user does not specify a time frame, default to this month. "
-        "If results are multiple, present results as a numbered list. "
-        "If data is missing or a filter returns no rows, say so clearly and suggest a nearby alternative question. "
-        "Do not invent transactions, dates, categories, or amounts. "
-        "Answer directly to the user in second person. Never use first-person phrasing (for example: I, me, my, mine, we, our, us). "
-        "Keep responses natural, friendly, short, direct, and numeric when possible."
-    )
+    _SYSTEM_PROMPT = """
+        You are ArVee, a concise personal finance assistant focused on validated transactions only.
+        Answer spending questions using validated transactions and computed values only.
+        If the user is unclear, ask for clarification.
+        If the user does not specify a time frame, default to this month.
+        If results are multiple, present results as a numbered list.
+        If data is missing or a filter returns no rows, say so clearly and suggest a nearby alternative question.
+        Do not invent transactions, dates, categories, or amounts.
+        Answer directly to the user in second person. Never use first-person phrasing (for example: I, me, my, mine, we, our, us).
+        Keep responses natural, friendly, short, direct, and numeric when possible.
+        """
 
     def __init__(
         self,
@@ -42,7 +71,7 @@ class HelperAgent(LLMBase):
         super().__init__(
             llm_config_path=llm_config_path,
             config_section="helper_agent",
-            default_temperature=0.2,
+            default_temperature=0.1,
             default_top_p=1.0,
             default_max_tokens=500,
         )
@@ -55,7 +84,10 @@ class HelperAgent(LLMBase):
         self._validated_rows: list[dict[str, Any]] = []
         self._agent = create_agent(
             model=self._model,
-            tools=[self._breakdown_spending_tool()],
+            tools=[
+                self._breakdown_spending_tool(),
+                self._compare_spending_periods_tool(),
+            ],
             system_prompt=self._SYSTEM_PROMPT,
             name="Arvee",
         )
@@ -172,6 +204,200 @@ class HelperAgent(LLMBase):
 
         return spending_breakdown
 
+    def _compare_spending_periods_tool(self) -> BaseTool:
+        """
+        Build and return the ``compare_spending_periods`` tool for the agent.
+
+        Returns:
+            A LangChain tool that compares two user-requested periods.
+        """
+        agent_ref = self
+
+        @tool
+        def compare_spending_periods(
+            period_1: str = "this_month",
+            period_2: str = "last_month",
+            category: str = "",
+            aggregation_method: str = "sum",
+            weekly_average: bool = False,
+        ) -> str:
+            """
+            Use this tool to compare spending between two periods.
+
+            Call this tool when the user asks for:
+            - "this month vs last month" spending
+            - "this month vs N months ago" spending
+            - changes/increase/decrease between two periods
+            - average spent per week comparisons (set ``weekly_average`` to True)
+
+            Period formats supported:
+            - this_month
+            - last_month
+            - N_months_ago (for example: 2_months_ago)
+            - YYYY-MM (for example: 2026-04)
+
+            Args:
+                period_1: First comparison period token.
+                period_2: Second comparison period token.
+                category: Optional category filter applied to both periods.
+                aggregation_method: "sum" or "average".
+                weekly_average: If True, compare average spend per week instead of period-level values.
+
+            Returns:
+                A text summary showing both period values and change.
+            """
+            frame = HelperAgent._to_frame(agent_ref._validated_rows)
+            if frame.empty:
+                return "No validated transactions are available yet."
+
+            start_1, end_1, label_1 = HelperAgent._resolve_period(period_1)
+            start_2, end_2, label_2 = HelperAgent._resolve_period(period_2)
+
+            scoped_1 = HelperAgent._slice_period(frame, start_1, end_1, category)
+            scoped_2 = HelperAgent._slice_period(frame, start_2, end_2, category)
+
+            if scoped_1.empty or scoped_2.empty:
+                return "Insufficient data for one or both requested periods."
+
+            value_1 = HelperAgent._aggregate_spend(
+                scoped_1,
+                aggregation_method=aggregation_method,
+                weekly_average=weekly_average,
+            )
+            value_2 = HelperAgent._aggregate_spend(
+                scoped_2,
+                aggregation_method=aggregation_method,
+                weekly_average=weekly_average,
+            )
+
+            delta = value_1 - value_2
+            if value_2 == 0:
+                percent_part = "change: n/a (baseline is $0.00)"
+            else:
+                percent = (delta / value_2) * 100.0
+                percent_part = f"change: {percent:+.1f}%"
+
+            metric_label = "weekly average" if weekly_average else "value"
+            prefix = f" for {category}" if category else ""
+            return (
+                f"Comparison{prefix} ({metric_label}):\n"
+                f"- {label_1}: ${value_1:,.2f}\n"
+                f"- {label_2}: ${value_2:,.2f}\n"
+                f"- absolute change: ${delta:,.2f} ({label_1} - {label_2})\n"
+                f"- {percent_part}"
+            )
+
+        return compare_spending_periods
+
+    @staticmethod
+    def _resolve_period(period_token: str) -> tuple[date, date, str]:
+        """Resolve a period token into a [start, end] date range and label."""
+        today = date.today()
+        token = str(period_token or "this_month").strip().lower()
+
+        if token == "this_month":
+            start = date(today.year, today.month, 1)
+            return start, today, "this month"
+
+        if token == "last_month":
+            first_of_this_month = date(today.year, today.month, 1)
+            end = first_of_this_month - timedelta(days=1)
+            start = date(end.year, end.month, 1)
+            return start, end, "last month"
+
+        months_ago_match = re.match(r"^(\d+)_months?_ago$", token)
+        if months_ago_match:
+            offset = int(months_ago_match.group(1))
+            start, end = HelperAgent._month_range_from_offset(offset)
+            return start, end, f"{offset} months ago"
+
+        iso_month_match = re.match(r"^(\d{4})-(\d{2})$", token)
+        if iso_month_match:
+            year = int(iso_month_match.group(1))
+            month = int(iso_month_match.group(2))
+            start = date(year, month, 1)
+            if month == 12:
+                next_month = date(year + 1, 1, 1)
+            else:
+                next_month = date(year, month + 1, 1)
+            end = next_month - timedelta(days=1)
+            return start, end, token
+
+        start = date(today.year, today.month, 1)
+        return start, today, "this month"
+
+    @staticmethod
+    def _month_range_from_offset(months_ago: int) -> tuple[date, date]:
+        """Return the first and last date of the month *months_ago* from today."""
+        if months_ago <= 0:
+            months_ago = 0
+
+        today = date.today()
+        year = today.year
+        month = today.month - months_ago
+        while month <= 0:
+            month += 12
+            year -= 1
+
+        start = date(year, month, 1)
+        if month == 12:
+            next_month = date(year + 1, 1, 1)
+        else:
+            next_month = date(year, month + 1, 1)
+        end = next_month - timedelta(days=1)
+        return start, end
+
+    @staticmethod
+    def _slice_period(
+        frame: pd.DataFrame,
+        start: date,
+        end: date,
+        category: str,
+    ) -> pd.DataFrame:
+        """Filter transactions by date range and optional category."""
+        scoped = frame[
+            (frame["Transaction Date"].dt.date >= start)
+            & (frame["Transaction Date"].dt.date <= end)
+        ].copy()
+
+        if category:
+            token = category.lower()
+            scoped = scoped[
+                scoped["Transaction Category"]
+                .str.lower()
+                .str.contains(re.escape(token), na=False)
+            ]
+
+        return scoped
+
+    @staticmethod
+    def _aggregate_spend(
+        scoped: pd.DataFrame,
+        aggregation_method: str,
+        weekly_average: bool,
+    ) -> float:
+        """Aggregate spend for a period, optionally normalized by week count."""
+        method = (aggregation_method or "sum").strip().lower()
+        if method in {"avg", "mean"}:
+            method = "average"
+        elif method in {"total"}:
+            method = "sum"
+        elif method not in {"sum", "average"}:
+            method = "sum"
+
+        if method == "average":
+            base_value = float(scoped["Transaction Total"].mean())
+        else:
+            base_value = float(scoped["Transaction Total"].sum())
+
+        if not weekly_average:
+            return base_value
+
+        week_count = int(scoped["Transaction Date"].dt.isocalendar().week.nunique())
+        if week_count <= 0:
+            return 0.0
+        return base_value / week_count
+
     def ask(
         self,
         question: str,
@@ -191,18 +417,28 @@ class HelperAgent(LLMBase):
             A dict with keys ``answer`` (str), ``rowsScanned`` (int),
             ``toolUsed`` (bool), and ``confidence`` (str).
         """
+        output = self.ask_with_schema(
+            AgentInput(
+                question=question,
+                validated_rows=validated_rows,
+                chat_history=chat_history,
+            )
+        )
+        return output.to_dict()
+
+    def ask_with_schema(self, payload: AgentInput) -> AgentOutput:
+        """Invoke the agent using ``AgentInput`` and return ``AgentOutput``."""
         # Make the current transaction data available to the tool closure
-        self._validated_rows = validated_rows
-        messages = self._build_messages(question, chat_history)
+        self._validated_rows = payload.validated_rows
+        messages = self._build_messages(payload.question, payload.chat_history)
         result = self._agent.invoke({"messages": messages})
         messages = result.get("messages", [])
         answer = self._extract_answer(messages)
-        return {
-            "answer": answer,
-            "rowsScanned": len(validated_rows),
-            "toolUsed": self._used_tool(messages),
-            "confidence": "high",
-        }
+        return AgentOutput(
+            answer=answer,
+            rowsScanned=len(payload.validated_rows),
+            toolUsed=self._used_tool(messages),
+        )
 
     def stream_answer(
         self,
