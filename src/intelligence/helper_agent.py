@@ -1,9 +1,10 @@
 import re
 from datetime import date
-from typing import Any, Callable, Iterator
+from typing import Any, Iterator
 
 import pandas as pd
 from langchain.agents import create_agent
+from langchain_core.tools import BaseTool, tool
 from src.intelligence.llm_base import LLMBase
 
 
@@ -16,12 +17,11 @@ class HelperAgent(LLMBase):
     """
 
     _SYSTEM_PROMPT = (
-        "You are ArVee, a concise personal finance assistant focused on validated transactions only. "
-        "Always use available tools before answering questions about spend, totals, categories, counts, averages, "
-        "or rankings. Use breakdown_spending for totals/count/avg/top-N and category filters. "
-        "When calling breakdown_spending, set category, aggregation_method (sum or average), and top_n from the user's query. "
-        "If the user does not specify a time frame, default this_month to true. "
-        "For top-N queries with N>1, present results as a numbered list. "
+        "You are ArVee, a concise personal finance assistant focused on validated transactions only."
+        "Answer spending questions using validated transactions and computed values only. "
+        "If the user is unclear, ask for clarification."
+        "If the user does not specify a time frame, default to this month. "
+        "If results are multiple, present results as a numbered list. "
         "If data is missing or a filter returns no rows, say so clearly and suggest a nearby alternative question. "
         "Do not invent transactions, dates, categories, or amounts. "
         "Answer directly to the user in second person. Never use first-person phrasing (for example: I, me, my, mine, we, our, us). "
@@ -60,27 +60,41 @@ class HelperAgent(LLMBase):
             name="Arvee",
         )
 
-    def _breakdown_spending_tool(self) -> Callable[..., str]:
+    def _breakdown_spending_tool(self) -> BaseTool:
         """
-        Build and return the ``breakdown_spending`` tool function for the agent.
+        Build and return the ``spending_breakdown`` tool function for the agent.
 
         The inner function is registered as a LangChain tool and is called by the
         agent for category-specific totals, averages, and top-N ranked categories.
         Supported aggregations are ``sum`` and ``average``.
 
         Returns:
-            A callable that the agent invokes to analyse ``self._validated_rows``.
+            A LangChain tool that the agent invokes to analyse ``self._validated_rows``.
         """
         # Capture self so the inner function can access live row data without being a method
         agent_ref = self
 
-        def breakdown_spending(
+        @tool
+        def spending_breakdown(
             category: str = "",
             this_month: bool = True,
             aggregation_method: str = "sum",
             top_n: int = 0,
         ) -> str:
-            """Analyze validated transactions and return a spending breakdown.
+            """
+            Use this tool for spending analytics over validated transactions.
+
+            Call this tool when the user asks for:
+            - total spend
+            - average spend
+            - category-filtered spend
+            - top-N categories by spend or average spend
+
+            Default behavior:
+            - if no timeframe is specified, keep ``this_month`` as True
+            - leave ``category`` empty to include all categories
+            - use ``aggregation_method`` as ``sum`` unless average is requested
+            - set ``top_n`` only when a ranked top-N result is requested
 
             Args:
                 category: Optional spending category to filter by (e.g. 'food', 'travel', 'grocery').
@@ -156,7 +170,7 @@ class HelperAgent(LLMBase):
                 suffix = (" " + " ".join(scope_parts)) if scope_parts else ""
                 return f"Total spend{suffix}: ${total:,.2f}"
 
-        return breakdown_spending
+        return spending_breakdown
 
     def ask(
         self,
@@ -398,7 +412,7 @@ class HelperAgent(LLMBase):
     @staticmethod
     def _to_frame(validated_rows: list[dict[str, Any]]) -> pd.DataFrame:
         """
-        Normalise validated-row records into a typed DataFrame ready for analysis.
+        Normalize validated-row records into a typed DataFrame ready for analysis.
 
         Ensures the four expected columns are always present, coerces numeric and
         date columns to their proper dtypes, and drops rows where either value
