@@ -19,7 +19,7 @@ from pyhocon import ConfigFactory
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 
-from intelligence.llm_base import LLMBase
+from src.intelligence.llm_base import LLMBase
 from prompts.data_reader_prompts import RECEIPT_PROMPT, STATEMENT_PROMPT
 from src.utils.currency_conversion_agent import convert_currency_to_usd
 from src.data.database import DataBase
@@ -43,8 +43,8 @@ class DataReader(LLMBase):
         self,
         transactions: list[str] | None = None,
         proofs: list[str] | None = None,
-        config_path: str = "config.conf",
-        llm_config_path: str = "llm_config.conf",
+        config_path: str = "config/config.conf",
+        llm_config_path: str = "config/llm_config.conf",
         database: DataBase | None = None,
         parsed_config: object | None = None,
     ):

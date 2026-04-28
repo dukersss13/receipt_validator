@@ -79,10 +79,18 @@ class LLMBase:
         Raises:
             ValueError: If no key is found and ``allow_test_key`` is False.
         """
-        api_key = (
-            os.getenv("GEMINI_API_KEY", "").strip()
-            or os.getenv("GOOGLE_API_KEY", "").strip()
-        )
+        api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if not api_key:
+            # Local dev fallback: read the dedicated Gemini secret file directly.
+            try:
+                with open("secrets/google_gemini_api_key", "r", encoding="utf-8") as f:
+                    api_key = f.read().strip()
+            except OSError:
+                api_key = ""
+
+        if not api_key:
+            api_key = os.getenv("GOOGLE_API_KEY", "").strip()
+
         if api_key:
             return api_key
         if allow_test_key:

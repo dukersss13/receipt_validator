@@ -4,7 +4,7 @@ from time import time
 
 import pandas as pd
 from google.genai import types
-from intelligence.llm_base import LLMBase
+from src.intelligence.llm_base import LLMBase
 
 
 CATEGORIZE_CATEGORIES = [
@@ -42,7 +42,7 @@ class TransactionCategorizer(LLMBase):
     cumulative token usage and estimated cost across all LLM calls.
     """
 
-    def __init__(self, config: object, llm_config_path: str = "llm_config.conf"):
+    def __init__(self, config: object, llm_config_path: str = "config/llm_config.conf"):
         """
         Initialize the categorizer from app and LLM configuration objects.
 

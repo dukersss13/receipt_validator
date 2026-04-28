@@ -15,7 +15,7 @@ The system consists of the following key components:
 
 2.  **Shared LLM Foundation (`src/intelligence/llm_base.py`):**
     * **LLMBase:** A common base class used by LLM-powered components.
-    * Loads section-specific model config from `llm_config.conf` (`llm.<section>.*`).
+    * Loads section-specific model config from `config/llm_config.conf` (`llm.<section>.*`).
     * Initializes Gemini chat/client objects consistently.
     * Provides shared helpers like API-key resolution and streaming/text extraction utilities.
 
@@ -60,7 +60,7 @@ To get started, you will need to install:
 3. Generate a Gemini API key and store it under **secrets/google_gemini_api_key** (or set `GEMINI_API_KEY`).
 
 ### ArVee in Action 💻
-Refer to [this](https://github.com/dukersss13/receipt_validator/blob/main/application.md) to see the application's UI and workflow.
+Refer to [this](md/application.md) to see the application's UI and workflow.
 
 ### Custom Website UI
 This repository now includes a custom website UI powered by Flask.

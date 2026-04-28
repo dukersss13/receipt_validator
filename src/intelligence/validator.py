@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pyhocon import ConfigFactory
 
 from fuzzywuzzy import process, fuzz
-from intelligence.categorize import TransactionCategorizer
+from src.intelligence.categorize import TransactionCategorizer
 
 pd.set_option("display.max_columns", None)
 
@@ -50,7 +50,7 @@ class Validator:
         self,
         transactions: pd.DataFrame,
         proofs: pd.DataFrame,
-        config_path: str = "config.conf",
+        config_path: str = "config/config.conf",
         parsed_config: object | None = None,
     ):
         """
@@ -558,6 +558,8 @@ class Validator:
         if unmatched_transactions.empty or unmatched_proofs.empty:
             return pd.DataFrame([])
 
+        name_similarity_threshold = 0.65
+
         tx = unmatched_transactions.copy()
         pr = unmatched_proofs.copy()
 
@@ -608,12 +610,22 @@ class Validator:
                     candidate_pairs["__match_total_tx"]
                     - candidate_pairs["__match_total_pr"]
                 ).abs()
-                candidate_pairs["__name_similarity"] = candidate_pairs.apply(
-                    lambda row: Validator._name_similarity(
-                        row["Business Name_tx"], row["Business Name_pr"]
-                    ),
-                    axis=1,
+                candidate_pairs["__name_similarity"] = (
+                    candidate_pairs.apply(
+                        lambda row: Validator._name_similarity(
+                            row["Business Name_tx"], row["Business Name_pr"]
+                        ),
+                        axis=1,
+                    )
+                    / 100.0
                 )
+
+                candidate_pairs = candidate_pairs[
+                    candidate_pairs["__name_similarity"] >= name_similarity_threshold
+                ]
+
+                if candidate_pairs.empty:
+                    return pd.DataFrame([])
 
                 candidate_pairs = candidate_pairs.sort_values(
                     by=["__date_distance", "__total_delta", "__name_similarity"],

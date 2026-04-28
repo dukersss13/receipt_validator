@@ -1,9 +1,8 @@
-from intelligence.helper_agent import HelperAgent
+from src.intelligence.helper_agent import HelperAgent
 from ui_test import _mock_validated_transactions
 
 
 helper = HelperAgent()
-
 
 
 def _run_terminal_chat() -> None:

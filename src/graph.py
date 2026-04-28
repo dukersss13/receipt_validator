@@ -5,7 +5,7 @@ import pandas as pd
 
 # Assume these are already implemented and imported
 from src.data.data_reader import DataReader, DataType
-from intelligence.validator import Validator
+from src.intelligence.validator import Validator
 from src.utils.currency_conversion_agent import convert_currency_to_usd
 
 
@@ -18,7 +18,7 @@ class Stage(str, Enum):
     CONVERT_CURRENCY = "convert_currency"
     VALIDATE = "validate"
     ANALYZE_RESULTS = "analyze_results"
-    
+
 
 class GraphState(TypedDict):
     reader: DataReader
@@ -36,6 +36,7 @@ def init_reader(state: GraphState) -> dict:
 
     return {"reader": DataReader()}
 
+
 def init_validator(state: GraphState) -> dict:
     """
     Initializes the Validator.
@@ -43,6 +44,7 @@ def init_validator(state: GraphState) -> dict:
     print("---Initializing Validator---")
     # Assuming Validator initialization does not require any parameters
     return {"validator": Validator(state["transaction_df"], state["proof_df"])}
+
 
 def load_transactions(state: GraphState) -> dict:
     """
@@ -53,6 +55,7 @@ def load_transactions(state: GraphState) -> dict:
 
     return {"transaction_df": df}
 
+
 def load_proofs(state: GraphState) -> dict:
     """
     Loads the proofs data into a DataFrame.
@@ -62,15 +65,17 @@ def load_proofs(state: GraphState) -> dict:
 
     return {"proof_df": df}
 
+
 def detect_foreign_currency(state: GraphState) -> dict:
     """
     Detects the currency for each row in the proof_df.
     """
     print("---Detecting Currencies---")
-    df = state["proof_df"].copy() # Use a copy to avoid mutation side-effects
+    df = state["proof_df"].copy()  # Use a copy to avoid mutation side-effects
     df["foreign_currency"] = df["currency"] != "USD"
 
     return {"proof_df": df}
+
 
 def convert_currency(state: GraphState) -> dict:
     """
@@ -87,7 +92,8 @@ def convert_currency(state: GraphState) -> dict:
 
     df = pd.concat([usd, foreign_currency], axis=0, ignore_index=True)
 
-    return {"proof_df": df}    
+    return {"proof_df": df}
+
 
 # --- Conditional Edge Logic ---
 def should_convert_currency(state: GraphState) -> Literal["convert", "skip"]:
@@ -104,6 +110,7 @@ def should_convert_currency(state: GraphState) -> Literal["convert", "skip"]:
         print("No foreign currency detected. Skipping conversion.")
         return "skip"
 
+
 def validate(state: GraphState) -> dict:
     """
     Validates the transactions and proofs.
@@ -114,6 +121,7 @@ def validate(state: GraphState) -> dict:
 
     return {"results": validation_results}
 
+
 def analyze_results(state: GraphState) -> dict:
     """
     Analyzes the validation results.
@@ -121,7 +129,7 @@ def analyze_results(state: GraphState) -> dict:
     print("---Analyzing Validation Results---")
     results = state["results"]
     analysis, recommendations = state["validator"].analyze_results(results)
-    
+
     return {"analysis": analysis, "recommendations": recommendations}
 
 

@@ -4,7 +4,7 @@ from typing import Any, Callable, Iterator
 
 import pandas as pd
 from langchain.agents import create_agent
-from intelligence.llm_base import LLMBase
+from src.intelligence.llm_base import LLMBase
 
 
 class HelperAgent(LLMBase):
@@ -30,7 +30,7 @@ class HelperAgent(LLMBase):
 
     def __init__(
         self,
-        llm_config_path: str = "llm_config.conf",
+        llm_config_path: str = "config/llm_config.conf",
     ) -> None:
         """
         Build the tool-calling agent used by the chat endpoint.

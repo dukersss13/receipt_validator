@@ -10,8 +10,8 @@ import pandas as pd
 from flask import Flask, Response, jsonify, render_template, request, send_file
 
 from src.data.database import DataBase
-from intelligence.helper_agent import HelperAgent
-from intelligence.validator import Validator
+from src.intelligence.helper_agent import HelperAgent
+from src.intelligence.validator import Validator
 from src.utils.utils import create_session_id
 
 
@@ -493,7 +493,7 @@ def validate():
         print(f"\n[Validation] Run started for session {session_id}\n")
         ingestion_cost: dict[str, Any] = {}
         categorize_cost: dict[str, Any] = {}
-        shared_config = DataReader._load_config_cached("config.conf")
+        shared_config = DataReader._load_config_cached("config/config.conf")
 
         if use_uploaded_files:
             transactions_reader = DataReader(

@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from intelligence.categorize import TransactionCategorizer
+from src.intelligence.categorize import TransactionCategorizer
 
 
 @pytest.mark.skipif(
