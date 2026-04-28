@@ -1,62 +1,18 @@
 import re
 import json
 import logging
-from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Iterator
 
 import pandas as pd
 from langchain.agents import create_agent
 from langchain_core.tools import BaseTool, tool
+from src.intelligence.agent_schema import AgentInput, AgentOutput
 from src.intelligence.llm_base import LLMBase
+from src.prompts.arvee_prompts import ARVEE_ANSWER_PROMPT, ARVEE_SYSTEM_PROMPT
 
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(slots=True)
-class AgentInput:
-    """Typed request payload for HelperAgent invocations.
-
-    Attributes:
-        question: Raw user question to answer.
-        validated_rows: Normalized validated transaction rows available for tools.
-        chat_history: Optional prior turns in ``{"role", "text"}`` shape.
-    """
-
-    question: str
-    validated_rows: list[dict[str, Any]]
-    chat_history: list[dict[str, Any]] | None = None
-
-
-@dataclass(slots=True)
-class AgentOutput:
-    """Typed response payload returned by HelperAgent.
-
-    Attributes:
-        answer: Final natural-language answer shown to the user.
-        rowsScanned: Number of validated rows available for analysis.
-        toolUsed: Whether at least one tool was called in the agent run.
-        confidence: Coarse confidence label for UI consumption.
-    """
-
-    answer: str
-    rowsScanned: int
-    toolUsed: bool
-    confidence: str = "high"
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert the dataclass output into the legacy dict response shape.
-
-        Returns:
-            A JSON-serializable dict used by existing API/UI call sites.
-        """
-        return {
-            "answer": self.answer,
-            "rowsScanned": self.rowsScanned,
-            "toolUsed": self.toolUsed,
-            "confidence": self.confidence,
-        }
 
 
 class HelperAgent(LLMBase):
@@ -66,22 +22,6 @@ class HelperAgent(LLMBase):
     Wraps a LangChain tool-calling agent backed by Gemini. Exposes both a
     synchronous ``ask`` method and a streaming ``stream_answer`` generator.
     """
-
-    _SYSTEM_PROMPT = """
-        You are ArVee, a personal finance assistant focused only on validated transactions.
-
-        Follow these rules:
-        1. Use tools for every numeric claim, including totals, averages, rankings, and period comparisons.
-        2. For single-period spending questions, use spending_breakdown.
-        3. For period-versus-period questions (for example: vs, compared to, increase, decrease, month-over-month), 
-           use compare_spending_periods.
-        4. If the user does not specify a timeframe, default to this month.
-        5. If the request is ambiguous, ask one concise clarification question before answering.
-        6. Do not invent transactions, dates, categories, or amounts.
-        7. Answer in second person and avoid first-person phrasing.
-        8. Use a numbered list when returning multiple results.
-        9. Keep a witty tone; if a category spend is above $50 in tool outputs, add one playful roast line.
-        """
 
     def __init__(
         self,
@@ -115,7 +55,7 @@ class HelperAgent(LLMBase):
                 self._breakdown_spending_tool(),
                 self._compare_spending_periods_tool(),
             ],
-            system_prompt=self._SYSTEM_PROMPT,
+            system_prompt=ARVEE_SYSTEM_PROMPT,
             name="Arvee",
         )
 
@@ -552,7 +492,7 @@ class HelperAgent(LLMBase):
         answer = self._build_agent_answer(
             question=payload.question,
             chat_history=payload.chat_history,
-            messages=agent_output,
+            agent_output=agent_output,
         )
 
         # Preserve legacy response metadata contract for downstream consumers.
@@ -733,11 +673,85 @@ class HelperAgent(LLMBase):
 
         return ""
 
+    @staticmethod
+    def _extract_tools_output(agent_output: list[Any]) -> tuple[list[str], str]:
+        """Extract synthesis-ready tool outputs and a fallback answer text.
+
+        Uses only the most recent tool message. If that tool content is JSON and
+        includes ``results``, only ``results`` is passed to synthesis.
+
+        Args:
+            agent_output: Messages returned by the tool-calling agent run.
+
+        Returns:
+            Tuple of ``(tool_outputs, fallback_text)`` where ``tool_outputs`` are
+            synthesis-ready tool strings and ``fallback_text`` is the plain text
+            from the last agent message (if any).
+        """
+        tool_outputs: list[str] = []
+        for msg in reversed(agent_output):
+            msg_type = str(getattr(msg, "type", "")).lower()
+            if "tool" not in msg_type:
+                continue
+
+            msg_text = HelperAgent._content_to_text(getattr(msg, "content", ""))
+            if not msg_text:
+                continue
+
+            # Prefer a compact tool payload for synthesis: only pass "results" when present.
+            try:
+                payload = json.loads(msg_text)
+            except Exception:
+                tool_outputs.append(msg_text)
+                break
+
+            if isinstance(payload, dict) and "results" in payload:
+                tool_outputs.append(json.dumps(payload.get("results", [])))
+            else:
+                tool_outputs.append(msg_text)
+            break
+
+        fallback_text = ""
+        if agent_output:
+            fallback_text = HelperAgent._content_to_text(
+                getattr(agent_output[-1], "content", "")
+            ).strip()
+
+        return tool_outputs, fallback_text
+
+    @staticmethod
+    def _get_latest_chat_history(
+        chat_history: list[dict[str, Any]] | None,
+        limit: int = 10,
+    ) -> list[str]:
+        """Return the latest valid chat-history lines for synthesis context.
+
+        Args:
+            chat_history: Prior conversation turns in ``{"role", "text"}`` shape.
+            limit: Maximum number of latest turns to include.
+
+        Returns:
+            List of ``"role: text"`` lines containing only valid user/assistant turns.
+        """
+        history_lines: list[str] = []
+        if not isinstance(chat_history, list) or not chat_history:
+            return history_lines
+
+        for item in chat_history[-limit:]:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role", "")).strip().lower()
+            text = str(item.get("text", "") or "").strip()
+            if role in {"user", "assistant"} and text:
+                history_lines.append(f"{role}: {text}")
+
+        return history_lines
+
     def _build_agent_answer(
         self,
         question: str,
         chat_history: list[dict[str, Any]] | None,
-        messages: list[Any],
+        agent_output: list[Any],
     ) -> str:
         """
         Build the final user-facing answer from context and tool outputs.
@@ -749,51 +763,24 @@ class HelperAgent(LLMBase):
         Args:
             question: Original user question.
             chat_history: Prior conversation turns.
-            messages: Messages produced by the tool-calling run.
+            agent_output: Messages produced by the tool-calling run.
 
         Returns:
             Final synthesized answer string.
         """
-        tool_outputs: list[str] = []
-        for msg in messages:
-            msg_type = str(getattr(msg, "type", "")).lower()
-            if "tool" not in msg_type:
-                continue
-            msg_text = self._content_to_text(getattr(msg, "content", ""))
-            if msg_text:
-                tool_outputs.append(msg_text)
+        tool_outputs, fallback_text = self._extract_tools_output(agent_output)
 
         if not tool_outputs:
-            if messages:
-                fallback_text = self._content_to_text(
-                    getattr(messages[-1], "content", "")
-                ).strip()
-                if fallback_text:
-                    return fallback_text
+            if fallback_text:
+                return fallback_text
             return ""
 
-        history_lines: list[str] = []
-        if isinstance(chat_history, list) and chat_history:
-            for item in chat_history[-10:]:
-                if not isinstance(item, dict):
-                    continue
-                role = str(item.get("role", "")).strip().lower()
-                text = str(item.get("text", "") or "").strip()
-                if role in {"user", "assistant"} and text:
-                    history_lines.append(f"{role}: {text}")
+        history_lines = self._get_latest_chat_history(chat_history, limit=10)
 
         synthesis_messages: list[dict[str, str]] = [
             {
                 "role": "system",
-                "content": """
-                You are ArVee. Build a final answer for the user using ONLY the provided tool outputs.
-                If any category value in the tool outputs is above $50, include exactly one playful roast line.
-                Put a space between the answer and the roast. Only add a roast if the amount is over $100.
-                Do not call tools. Do not invent values.
-                If tool output indicates no_data/no_results/insufficient_data,
-                say that clearly and suggest one concrete next question.
-                
-                """,
+                "content": ARVEE_ANSWER_PROMPT,
             },
             {
                 "role": "user",
@@ -818,26 +805,22 @@ class HelperAgent(LLMBase):
         except Exception:
             pass
 
-        if messages:
-            fallback_text = self._content_to_text(
-                getattr(messages[-1], "content", "")
-            ).strip()
-            if fallback_text:
-                return fallback_text
+        if fallback_text:
+            return fallback_text
         return ""
 
     @staticmethod
-    def _used_tool(messages: list[Any]) -> bool:
+    def _used_tool(agent_output: list[Any]) -> bool:
         """
         Return True if any tool-call message is present in the agent's message list.
 
         Args:
-            messages: The ``messages`` list returned by ``agent.invoke()``.
+            agent_output: The ``agent_output`` list returned by ``agent.invoke()``.
 
         Returns:
             ``True`` if the agent invoked at least one tool; ``False`` otherwise.
         """
-        for msg in messages:
+        for msg in agent_output:
             if "tool" in str(getattr(msg, "type", "")).lower():
                 return True
         return False
@@ -853,9 +836,9 @@ class HelperAgent(LLMBase):
 
         Args:
             validated_rows: List of transaction dicts as stored in the session.
-                Each dict should contain ``Transaction Business Name``,
-                ``Transaction Total``, ``Transaction Date``, and
-                ``Transaction Category`` keys.
+                Each dict should contain Transaction Business Name,
+                Transaction Total, Transaction Date, and
+                Transaction Category keys.
 
         Returns:
             A clean DataFrame with the four expected columns, or an empty
