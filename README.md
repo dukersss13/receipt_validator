@@ -62,6 +62,10 @@ To get started, you will need to install:
 ### ArVee in Action 💻
 Refer to [this](md/application.md) to see the application's UI and workflow.
 
+## ArVee Agent
+
+For a focused overview of ArVee HelperAgent architecture, tool-calling flow, and functionality, see [md/arvee_agent.md](md/arvee_agent.md).
+
 ### Custom Website UI
 This repository now includes a custom website UI powered by Flask.
 

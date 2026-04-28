@@ -15,6 +15,20 @@ ArVee is built around a small, tool-calling agent architecture:
 ### ArVee Agent in the UI
 <img width="1540" height="1137" alt="Screenshot 2026-04-27 at 9 48 51 PM" src="https://github.com/user-attachments/assets/1a6a409b-77bd-4dc1-95ab-19364f533eb6" />
 
+### How Tools Are Called (Simple)
+
+ArVee uses one main tool: `breakdown_spending`.
+
+1. The user asks a question (example: "How much did I spend on food this month?").
+2. `HelperAgent.ask()` stores the current validated rows and sends the message list to the LLM agent.
+3. Inside `create_agent(...)`, the LLM decides whether to call `breakdown_spending` based on the prompt.
+4. If called, the tool runs Python logic over the validated rows (filter, group, aggregate) and returns a text result.
+5. The LLM uses that tool result to produce the final answer.
+
+In short: the model chooses when to call the tool, and the tool computes reliable numbers from your validated data.
+
+### Architecture Image Placeholder
+
 
 ---
 
