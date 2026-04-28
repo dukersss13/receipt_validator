@@ -1,4 +1,6 @@
 import re
+import json
+import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Iterator
@@ -9,9 +11,18 @@ from langchain_core.tools import BaseTool, tool
 from src.intelligence.llm_base import LLMBase
 
 
+logger = logging.getLogger(__name__)
+
+
 @dataclass(slots=True)
 class AgentInput:
-    """Schema for HelperAgent request payloads."""
+    """Typed request payload for HelperAgent invocations.
+
+    Attributes:
+        question: Raw user question to answer.
+        validated_rows: Normalized validated transaction rows available for tools.
+        chat_history: Optional prior turns in ``{"role", "text"}`` shape.
+    """
 
     question: str
     validated_rows: list[dict[str, Any]]
@@ -20,7 +31,14 @@ class AgentInput:
 
 @dataclass(slots=True)
 class AgentOutput:
-    """Schema for HelperAgent response payloads."""
+    """Typed response payload returned by HelperAgent.
+
+    Attributes:
+        answer: Final natural-language answer shown to the user.
+        rowsScanned: Number of validated rows available for analysis.
+        toolUsed: Whether at least one tool was called in the agent run.
+        confidence: Coarse confidence label for UI consumption.
+    """
 
     answer: str
     rowsScanned: int
@@ -28,7 +46,11 @@ class AgentOutput:
     confidence: str = "high"
 
     def to_dict(self) -> dict[str, Any]:
-        """Return the output in the existing API response shape."""
+        """Convert the dataclass output into the legacy dict response shape.
+
+        Returns:
+            A JSON-serializable dict used by existing API/UI call sites.
+        """
         return {
             "answer": self.answer,
             "rowsScanned": self.rowsScanned,
@@ -46,15 +68,19 @@ class HelperAgent(LLMBase):
     """
 
     _SYSTEM_PROMPT = """
-        You are ArVee, a concise personal finance assistant focused on validated transactions only.
-        Answer spending questions using validated transactions and computed values only.
-        If the user is unclear, ask for clarification.
-        If the user does not specify a time frame, default to this month.
-        If results are multiple, present results as a numbered list.
-        If data is missing or a filter returns no rows, say so clearly and suggest a nearby alternative question.
-        Do not invent transactions, dates, categories, or amounts.
-        Answer directly to the user in second person. Never use first-person phrasing (for example: I, me, my, mine, we, our, us).
-        Keep responses natural, friendly, short, direct, and numeric when possible.
+        You are ArVee, a personal finance assistant focused only on validated transactions.
+
+        Follow these rules:
+        1. Use tools for every numeric claim, including totals, averages, rankings, and period comparisons.
+        2. For single-period spending questions, use spending_breakdown.
+        3. For period-versus-period questions (for example: vs, compared to, increase, decrease, month-over-month), 
+           use compare_spending_periods.
+        4. If the user does not specify a timeframe, default to this month.
+        5. If the request is ambiguous, ask one concise clarification question before answering.
+        6. Do not invent transactions, dates, categories, or amounts.
+        7. Answer in second person and avoid first-person phrasing.
+        8. Use a numbered list when returning multiple results.
+        9. Keep a witty tone; if a category spend is above $50 in tool outputs, add one playful roast line.
         """
 
     def __init__(
@@ -82,6 +108,7 @@ class HelperAgent(LLMBase):
         )
         # Will be replaced on each ask/stream_answer call with fresh row data
         self._validated_rows: list[dict[str, Any]] = []
+        # Init HelperAgent + tools
         self._agent = create_agent(
             model=self._model,
             tools=[
@@ -140,7 +167,7 @@ class HelperAgent(LLMBase):
             """
             frame = HelperAgent._to_frame(agent_ref._validated_rows)
             if frame.empty:
-                return "No validated transactions are available yet."
+                return json.dumps({"status": "no_data"})
 
             # Work on a copy so the original frame is never mutated between calls
             scoped = frame.copy()
@@ -163,7 +190,13 @@ class HelperAgent(LLMBase):
                 ]
 
             if scoped.empty:
-                return "No transactions found matching those filters."
+                return json.dumps(
+                    {
+                        "status": "no_results",
+                        "category_filter": category or None,
+                        "this_month": this_month,
+                    }
+                )
 
             # Normalise synonyms so downstream logic only sees 'sum' or 'average'
             method = (aggregation_method or "sum").strip().lower()
@@ -184,23 +217,41 @@ class HelperAgent(LLMBase):
                     .sort_values(ascending=False)
                 )
                 top = grouped.head(max(1, top_n))
-                lines = [f"  {cat}: ${val:,.2f}" for cat, val in top.items()]
-                label = "average spend" if method == "average" else "spend"
-                return f"Top categories by {label}:\n" + "\n".join(lines)
+                return json.dumps(
+                    {
+                        "status": "ok",
+                        "type": "top_categories",
+                        "aggregation_method": method,
+                        "this_month": this_month,
+                        "category_filter": category or None,
+                        "top_n": int(max(1, top_n)),
+                        "results": [
+                            {"category": str(cat), "value": round(float(val), 2)}
+                            for cat, val in top.items()
+                        ],
+                    }
+                )
             elif method == "average":
-                return (
-                    f"Average spend: ${float(scoped['Transaction Total'].mean()):,.2f}"
+                return json.dumps(
+                    {
+                        "status": "ok",
+                        "type": "average",
+                        "this_month": this_month,
+                        "category_filter": category or None,
+                        "value": round(float(scoped["Transaction Total"].mean()), 2),
+                    }
                 )
             else:
                 total = float(scoped["Transaction Total"].sum())
-                # Build a human-readable scope suffix, e.g. "on food this month"
-                scope_parts = []
-                if category:
-                    scope_parts.append(f"on {category}")
-                if this_month:
-                    scope_parts.append("this month")
-                suffix = (" " + " ".join(scope_parts)) if scope_parts else ""
-                return f"Total spend{suffix}: ${total:,.2f}"
+                return json.dumps(
+                    {
+                        "status": "ok",
+                        "type": "total",
+                        "this_month": this_month,
+                        "category_filter": category or None,
+                        "value": round(total, 2),
+                    }
+                )
 
         return spending_breakdown
 
@@ -248,7 +299,7 @@ class HelperAgent(LLMBase):
             """
             frame = HelperAgent._to_frame(agent_ref._validated_rows)
             if frame.empty:
-                return "No validated transactions are available yet."
+                return json.dumps({"status": "no_data"})
 
             start_1, end_1, label_1 = HelperAgent._resolve_period(period_1)
             start_2, end_2, label_2 = HelperAgent._resolve_period(period_2)
@@ -257,7 +308,13 @@ class HelperAgent(LLMBase):
             scoped_2 = HelperAgent._slice_period(frame, start_2, end_2, category)
 
             if scoped_1.empty or scoped_2.empty:
-                return "Insufficient data for one or both requested periods."
+                return json.dumps(
+                    {
+                        "status": "insufficient_data",
+                        "period_1": label_1,
+                        "period_2": label_2,
+                    }
+                )
 
             value_1 = HelperAgent._aggregate_spend(
                 scoped_1,
@@ -271,27 +328,47 @@ class HelperAgent(LLMBase):
             )
 
             delta = value_1 - value_2
+            percent_change = None
             if value_2 == 0:
-                percent_part = "change: n/a (baseline is $0.00)"
+                percent_change = None
             else:
-                percent = (delta / value_2) * 100.0
-                percent_part = f"change: {percent:+.1f}%"
+                percent_change = round((delta / value_2) * 100.0, 1)
 
             metric_label = "weekly average" if weekly_average else "value"
-            prefix = f" for {category}" if category else ""
-            return (
-                f"Comparison{prefix} ({metric_label}):\n"
-                f"- {label_1}: ${value_1:,.2f}\n"
-                f"- {label_2}: ${value_2:,.2f}\n"
-                f"- absolute change: ${delta:,.2f} ({label_1} - {label_2})\n"
-                f"- {percent_part}"
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "type": "comparison",
+                    "metric": metric_label,
+                    "category_filter": category or None,
+                    "period_1": {
+                        "token": period_1,
+                        "label": label_1,
+                        "value": round(value_1, 2),
+                    },
+                    "period_2": {
+                        "token": period_2,
+                        "label": label_2,
+                        "value": round(value_2, 2),
+                    },
+                    "delta": round(delta, 2),
+                    "percent_change": percent_change,
+                }
             )
 
         return compare_spending_periods
 
     @staticmethod
     def _resolve_period(period_token: str) -> tuple[date, date, str]:
-        """Resolve a period token into a [start, end] date range and label."""
+        """Resolve a user period token into a concrete date range.
+
+        Args:
+            period_token: Period expression (for example: ``this_month``,
+                ``last_month``, ``2_months_ago``, ``YYYY-MM``).
+
+        Returns:
+            Tuple of ``(start_date, end_date, human_label)``.
+        """
         today = date.today()
         token = str(period_token or "this_month").strip().lower()
 
@@ -328,7 +405,15 @@ class HelperAgent(LLMBase):
 
     @staticmethod
     def _month_range_from_offset(months_ago: int) -> tuple[date, date]:
-        """Return the first and last date of the month *months_ago* from today."""
+        """Return first/last day of the month ``months_ago`` from today.
+
+        Args:
+            months_ago: Month offset where ``0`` means current month,
+                ``1`` means previous month, etc.
+
+        Returns:
+            Tuple of ``(start_date, end_date)`` for the resolved month.
+        """
         if months_ago <= 0:
             months_ago = 0
 
@@ -354,7 +439,17 @@ class HelperAgent(LLMBase):
         end: date,
         category: str,
     ) -> pd.DataFrame:
-        """Filter transactions by date range and optional category."""
+        """Filter transactions by inclusive date range and optional category.
+
+        Args:
+            frame: Input transaction frame with normalized columns.
+            start: Inclusive range start.
+            end: Inclusive range end.
+            category: Optional category substring filter (case-insensitive).
+
+        Returns:
+            Filtered DataFrame copy scoped to the requested period/category.
+        """
         scoped = frame[
             (frame["Transaction Date"].dt.date >= start)
             & (frame["Transaction Date"].dt.date <= end)
@@ -376,7 +471,16 @@ class HelperAgent(LLMBase):
         aggregation_method: str,
         weekly_average: bool,
     ) -> float:
-        """Aggregate spend for a period, optionally normalized by week count."""
+        """Aggregate spend for a scoped frame, optionally by weekly average.
+
+        Args:
+            scoped: Period/category-scoped transactions.
+            aggregation_method: ``sum``/``total`` or ``average``/``avg``/``mean``.
+            weekly_average: If True, divide aggregate value by unique ISO week count.
+
+        Returns:
+            Aggregate numeric value for the selected mode.
+        """
         method = (aggregation_method or "sum").strip().lower()
         if method in {"avg", "mean"}:
             method = "average"
@@ -427,18 +531,63 @@ class HelperAgent(LLMBase):
         return output.to_dict()
 
     def ask_with_schema(self, payload: AgentInput) -> AgentOutput:
-        """Invoke the agent using ``AgentInput`` and return ``AgentOutput``."""
-        # Make the current transaction data available to the tool closure
+        """
+        Invoke the tool-calling pipeline using typed input/output payloads.
+
+        Args:
+            payload: Structured input containing question, rows, and history.
+
+        Returns:
+            Structured ``AgentOutput`` containing answer and run metadata.
+        """
+        # Refresh the per-request data backing the tool closures.
         self._validated_rows = payload.validated_rows
-        messages = self._build_messages(payload.question, payload.chat_history)
+        messages = self._add_context_to_messages(payload.question, payload.chat_history)
+
+        # Pass 1: let the tool-calling agent reason and produce tool outputs.
         result = self._agent.invoke({"messages": messages})
-        messages = result.get("messages", [])
-        answer = self._extract_answer(messages)
-        return AgentOutput(
+        agent_output = result.get("messages", [])
+
+        # Pass 2: synthesize the final user-facing response from tool outputs + context.
+        answer = self._build_agent_answer(
+            question=payload.question,
+            chat_history=payload.chat_history,
+            messages=agent_output,
+        )
+
+        # Preserve legacy response metadata contract for downstream consumers.
+        tool_names: list[str] = []
+        for msg in agent_output:
+            msg_type = str(getattr(msg, "type", "")).lower()
+            if "tool" not in msg_type:
+                continue
+
+            raw_name = (
+                getattr(msg, "name", None)
+                or getattr(msg, "tool_name", None)
+                or getattr(msg, "tool", None)
+            )
+            if isinstance(raw_name, str) and raw_name.strip():
+                tool_names.append(raw_name.strip())
+
+        used_tool = len(tool_names) > 0
+        tool_name_value = ", ".join(dict.fromkeys(tool_names)) if used_tool else "none"
+
+        logger.info(
+            "helper_agent user_input=%r llm_output=%r tool_used=%s tool_name=%s",
+            payload.question,
+            answer,
+            used_tool,
+            tool_name_value,
+        )
+
+        final_output = AgentOutput(
             answer=answer,
             rowsScanned=len(payload.validated_rows),
-            toolUsed=self._used_tool(messages),
+            toolUsed=used_tool,
         )
+
+        return final_output
 
     def stream_answer(
         self,
@@ -464,7 +613,7 @@ class HelperAgent(LLMBase):
         # Make the current transaction data available to the tool closure
         self._validated_rows = validated_rows
         yielded_any = False
-        messages = self._build_messages(question, chat_history)
+        messages = self._add_context_to_messages(question, chat_history)
 
         try:
             stream_iter = self._agent.stream(
@@ -505,7 +654,7 @@ class HelperAgent(LLMBase):
             yield fallback
 
     @staticmethod
-    def _build_messages(
+    def _add_context_to_messages(
         question: str,
         chat_history: list[dict[str, Any]] | None,
         max_history_messages: int = 20,
@@ -584,50 +733,98 @@ class HelperAgent(LLMBase):
 
         return ""
 
-    @classmethod
-    def _extract_answer(cls, messages: list[Any]) -> str:
+    def _build_agent_answer(
+        self,
+        question: str,
+        chat_history: list[dict[str, Any]] | None,
+        messages: list[Any],
+    ) -> str:
         """
-        Return the last AI message text from a completed agent run.
+        Build the final user-facing answer from context and tool outputs.
 
-        Scans the message list in reverse so the most recent message wins.
-        Falls back first to the last tool output, then to any non-empty message,
-        and finally to a generic error string.
+        Tool calls are expected to return numeric/structured content. This method
+        feeds the original question, recent chat context, and tool outputs into
+        a synthesis pass to produce the final natural-language response.
 
         Args:
-            messages: The ``messages`` list returned by ``agent.invoke()``.
+            question: Original user question.
+            chat_history: Prior conversation turns.
+            messages: Messages produced by the tool-calling run.
 
         Returns:
-            The best available answer string extracted from the message list.
+            Final synthesized answer string.
         """
-        fallback_tool_text = ""
-        fallback_any_text = ""
-
-        for msg in reversed(messages):
+        tool_outputs: list[str] = []
+        for msg in messages:
             msg_type = str(getattr(msg, "type", "")).lower()
-            msg_text = cls._content_to_text(getattr(msg, "content", ""))
-
-            if not msg_text:
+            if "tool" not in msg_type:
                 continue
+            msg_text = self._content_to_text(getattr(msg, "content", ""))
+            if msg_text:
+                tool_outputs.append(msg_text)
 
-            # Record the first non-empty message encountered as a last-resort fallback
-            if not fallback_any_text:
-                fallback_any_text = msg_text
+        if not tool_outputs:
+            if messages:
+                fallback_text = self._content_to_text(
+                    getattr(messages[-1], "content", "")
+                ).strip()
+                if fallback_text:
+                    return fallback_text
+            return ""
 
-            # Prefer the most recent AI response message
-            if "ai" in msg_type:
-                return msg_text
+        history_lines: list[str] = []
+        if isinstance(chat_history, list) and chat_history:
+            for item in chat_history[-10:]:
+                if not isinstance(item, dict):
+                    continue
+                role = str(item.get("role", "")).strip().lower()
+                text = str(item.get("text", "") or "").strip()
+                if role in {"user", "assistant"} and text:
+                    history_lines.append(f"{role}: {text}")
 
-            # Keep the most recent tool output as a secondary fallback
-            if "tool" in msg_type and not fallback_tool_text:
-                fallback_tool_text = msg_text
+        synthesis_messages: list[dict[str, str]] = [
+            {
+                "role": "system",
+                "content": """
+                You are ArVee. Build a final answer for the user using ONLY the provided tool outputs.
+                If any category value in the tool outputs is above $50, include exactly one playful roast line.
+                Put a space between the answer and the roast. Only add a roast if the amount is over $100.
+                Do not call tools. Do not invent values.
+                If tool output indicates no_data/no_results/insufficient_data,
+                say that clearly and suggest one concrete next question.
+                
+                """,
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Question:\n{question}\n\n"
+                    f"Recent chat context:\n{chr(10).join(history_lines) if history_lines else '(none)'}\n\n"
+                    f"Tool outputs (JSON/text):\n{chr(10).join(tool_outputs)}\n\n"
+                    "Now write the final answer to the user."
+                ),
+            },
+        ]
 
-        if fallback_tool_text:
-            return fallback_tool_text
+        try:
+            synthesis_result = self._agent.invoke({"messages": synthesis_messages})
+            synthesis_msgs = synthesis_result.get("messages", [])
+            if synthesis_msgs:
+                synthesized = self._content_to_text(
+                    getattr(synthesis_msgs[-1], "content", "")
+                ).strip()
+                if synthesized:
+                    return synthesized
+        except Exception:
+            pass
 
-        if fallback_any_text:
-            return fallback_any_text
-
-        return "I could not generate an answer."
+        if messages:
+            fallback_text = self._content_to_text(
+                getattr(messages[-1], "content", "")
+            ).strip()
+            if fallback_text:
+                return fallback_text
+        return ""
 
     @staticmethod
     def _used_tool(messages: list[Any]) -> bool:
