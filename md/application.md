@@ -34,13 +34,39 @@ What's cool about this set up is you are also able to run the application in `DE
 ### Validate
 After uploading the files, clicking `Validate` will start the validation process. The application starts reading in the uploaded transactions & receipt images.
 
-1. The receipt images are decoded into base64 bytes payloads & get sent to OpenAI API for data extraction.
-2. Statements in PDF forms are loaded via PyPDF Loader from LangChain into text & the text is also sent to OpenAI API for data extraction.
-3. The image payload creation is done in multi-thread fashion to mitigate run time, as you can imagine there could be potentially a large amount of receipts to process.
-API calls are also done multi-threadedly to improve performance.
+1. The receipt images are decoded into base64 bytes payloads and sent to Gemini API for data extraction.
+2. Statements in PDF forms are loaded via PyPDF Loader from LangChain into text, and the text is also sent to Gemini API for data extraction.
+3. The image payload creation is done asynchronously to reduce runtime, especially when processing a large number of receipts.
+API calls are also done asynchronously to improve performance.
+You can swap Gemini with any VLM/LLM of your choice based on your use case and provider preferences.
 
-#### ✅ Why Multithreading Works for API Calls
-API calls are I/O-bound operations — the program spends most of its time waiting for network responses, not doing computation. Multithreading is well-suited for I/O-bound tasks because while one thread is waiting, another can proceed with its request.
+#### ✅ Why Async Works for API Calls
+API calls are I/O-bound operations — the program spends most of its time waiting for network responses, not doing computation. Async I/O is well-suited for I/O-bound tasks because while one request is waiting, the event loop can run other pending requests.
+
+### Cost Estimate (Gemini 2.5 Flash-Lite)
+Estimates below use Gemini Developer API paid-tier pricing for Gemini 2.5 Flash-Lite:
+- Input (text/image/video): $0.10 per 1,000,000 tokens
+- Output: $0.40 per 1,000,000 tokens
+
+#### Cost per 1,000 tokens
+- Input tokens: $0.0001 per 1,000 tokens
+- Output tokens: $0.0004 per 1,000 tokens
+
+#### Estimated cost per 1,000 images
+Assumption for this estimate:
+- Each image is counted as 258 input tokens (common case for images <= 384 px on both dimensions)
+- Estimated output is excluded unless noted, since output length depends on prompt/task
+
+Input-only estimate:
+- 1,000 images x 258 tokens = 258,000 input tokens
+- 258,000 / 1,000,000 x $0.10 = $0.0258
+
+Input + output example (if you average 120 output tokens per image):
+- Output tokens: 120,000
+- 120,000 / 1,000,000 x $0.40 = $0.0480
+- Total estimated cost for 1,000 images = $0.0738
+
+Note: Real cost can vary with image resolution (larger images can be tiled into more tokens), prompt size, and output length.
 
 ### Validation Complete & Recommendations Provided
 <img width="1294" height="1136" alt="image" src="https://github.com/user-attachments/assets/af39c9f2-8e34-416f-a9fa-4798703e81f6" />
