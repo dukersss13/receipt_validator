@@ -19,10 +19,12 @@ database = DataBase(engine_name="receipt_validator_db", local_db=True)
 
 
 def _pdf_escape(text: str) -> str:
+    """Escape parentheses and backslashes for PDF string literals."""
     return str(text).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
 def _wrap_pdf_text(text: str, max_chars: int) -> list[str]:
+    """Word-wrap *text* into lines of at most *max_chars* characters."""
     words = str(text).split()
     if not words:
         return [""]
@@ -51,6 +53,7 @@ def _draw_text_block(
     lines: list[str],
     line_height: float,
 ) -> None:
+    """Append PDF text-rendering operators for a multi-line text block."""
     if not lines:
         return
 
@@ -289,6 +292,7 @@ def _cleanup_temp_files(file_paths: list[str]) -> None:
 
 
 def _frame_to_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    """Convert a DataFrame to a list of dicts, replacing NaN with None."""
     if frame is None or frame.empty:
         return []
     safe_frame = frame.where(pd.notna(frame), None)
@@ -296,6 +300,7 @@ def _frame_to_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
 
 
 def _format_input_rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    """Subset a DataFrame to display columns and convert to record dicts."""
     if frame is None or frame.empty:
         return []
 
@@ -341,6 +346,7 @@ def _records_to_input_frame(rows: Any) -> pd.DataFrame:
 
 
 def _merge_ingestion_costs(costs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Sum token counts and costs across multiple ingestion cost dicts."""
     if not costs:
         return {}
 
@@ -377,16 +383,19 @@ def _merge_ingestion_costs(costs: list[dict[str, Any]]) -> dict[str, Any]:
 
 @app.get("/")
 def index():
+    """Serve the main single-page application."""
     return render_template("index.html")
 
 
 @app.get("/api/health")
 def health():
+    """Return a simple health-check response."""
     return jsonify({"status": "ok"})
 
 
 @app.post("/api/session/new")
 def new_session():
+    """Create a new session and return its ID."""
     session_id = create_session_id()
     database.get_or_create_session(session_id)
     return jsonify({"sessionId": session_id})
@@ -394,6 +403,7 @@ def new_session():
 
 @app.get("/api/session/<session_id>")
 def get_session_inputs(session_id: str):
+    """Return saved transactions and proofs for a session."""
     try:
         transactions_df, proofs_df = database.load_session_history(session_id)
     except ValueError as exc:
@@ -412,6 +422,7 @@ def get_session_inputs(session_id: str):
 
 @app.post("/api/session/<session_id>/save")
 def save_session_state(session_id: str):
+    """Persist the full UI state dict for a session."""
     payload = request.get_json(silent=True) or {}
     state = payload.get("state")
 
@@ -441,6 +452,7 @@ def save_session_state(session_id: str):
 
 @app.get("/api/session/<session_id>/state")
 def get_session_state(session_id: str):
+    """Load and return the saved UI state for a session."""
     try:
         state = database.load_session_state(session_id)
     except ValueError as exc:
@@ -453,6 +465,7 @@ def get_session_state(session_id: str):
 
 @app.post("/api/validate")
 def validate():
+    """Run the full validation pipeline on uploaded or saved session data."""
     # Lazy import to avoid loading PDF/LLM parser stack during app startup.
     from src.data.data_reader import DataReader, DataType
 
@@ -649,6 +662,7 @@ def validate():
 
 @app.post("/api/export/validated")
 def export_validated():
+    """Export validated transaction rows as a PDF file."""
     payload = request.get_json(silent=True) or {}
     rows = payload.get("rows", [])
 
@@ -670,6 +684,7 @@ def export_validated():
 
 @app.post("/api/chat/ask")
 def chat_ask():
+    """Handle a single chat question and return the full response."""
     payload = request.get_json(silent=True) or {}
     session_id = str(payload.get("sessionId", "")).strip()
     message = str(payload.get("message", "")).strip()
@@ -726,11 +741,13 @@ def chat_ask():
 
 
 def _sse(event: str, payload: dict[str, Any]) -> str:
+    """Format a Server-Sent Event message string."""
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
 
 @app.post("/api/chat/ask/stream")
 def chat_ask_stream():
+    """Stream a chat response as Server-Sent Events."""
     payload = request.get_json(silent=True) or {}
     session_id = str(payload.get("sessionId", "")).strip()
     message = str(payload.get("message", "")).strip()
@@ -763,6 +780,7 @@ def chat_ask_stream():
         chat_history = []
 
     def generate() -> Any:
+        """Yield SSE frames for the streamed chat response."""
         assembled: list[str] = []
         try:
             yield _sse("start", {"sessionId": session_id})

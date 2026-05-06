@@ -1,19 +1,9 @@
 import requests
-import asyncio
-import pandas as pd
 from src.utils.utils import load_exchange_rate_key
 from datetime import datetime
 
-
 access_key = load_exchange_rate_key()
 CONVERT_URL = "https://api.exchangerate.host/convert"
-
-
-class CurrencyConversionState(pd.DataFrame):
-    amount: float
-    currency: str
-    date: str
-    usd_value: float | None
 
 
 def _normalize_date(date_str: str) -> str:
@@ -98,44 +88,3 @@ def convert_currency_to_usd(entry: dict) -> float:
         currency_val = round(data["result"], 2)
 
     return currency_val
-
-
-async def convert_currency_to_usd_async(entry: dict) -> float:
-    """
-    Async wrapper for currency conversion using a non-blocking thread delegation.
-
-    Args:
-        entry: Transaction dict with ``currency``, ``total``, and ``date`` keys.
-
-    Returns:
-        The converted USD amount as returned by ``convert_currency_to_usd()``.
-    """
-    return await asyncio.to_thread(convert_currency_to_usd, entry)
-
-
-async def convert_entries_to_usd_async(
-    entries: list[dict], max_concurrency: int = 8
-) -> list[float]:
-    """
-    Convert many transaction entries to USD concurrently with bounded fan-out.
-
-    Uses a semaphore to cap the number of simultaneous exchange-rate API calls
-    and avoids overwhelming the external service.
-
-    Args:
-        entries: List of transaction dicts each containing ``currency``, ``total``,
-            and ``date`` keys.
-        max_concurrency: Maximum number of concurrent conversion requests.
-            Defaults to 8.
-
-    Returns:
-        List of converted USD amounts in the same order as *entries*.
-    """
-    semaphore = asyncio.Semaphore(max(1, max_concurrency))
-
-    async def run_with_limit(entry: dict) -> float:
-        async with semaphore:
-            return await convert_currency_to_usd_async(entry)
-
-    tasks = [run_with_limit(entry) for entry in entries]
-    return await asyncio.gather(*tasks)
