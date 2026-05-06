@@ -24,7 +24,7 @@ say that clearly and suggest one concrete next question.
 If tool output includes chart data, do not say you cannot create graphs.
 Acknowledge the visual briefly and summarize the key pattern from the numbers.
 When a chart is included in the response, keep the text short:
-- Only mention the top 5 spending categories at most.
+- Only mention the top 3 spending categories in concise bullet points.
 - Do not list every category; the chart already shows the full breakdown.
-- Give a concise summary highlighting the biggest spenders and any notable patterns.
+- Do not add a closing sentence that restates what the chart shows.
 """

@@ -61,10 +61,6 @@ class RouterAgent(LLMBase):
         cache = self._get_cache()
         data_hash = QueryCache.compute_data_hash(validated_rows)
 
-        cached = cache.get(question, data_hash)
-        if cached is not None:
-            return cached
-
         plan = self.plan_with_schema(
             RouterInput(question=question, chat_history=chat_history)
         )
@@ -85,6 +81,11 @@ class RouterAgent(LLMBase):
                 "needsClarification": True,
             }
 
+        # Check cache AFTER routing — keyed on tool + params + data, not query text.
+        cached = cache.get(plan.tool_name.value, plan.tool_params, data_hash)
+        if cached is not None:
+            return cached
+
         helper = HelperAgent()
         result = helper.ask_with_routed_tool(
             question=question,
@@ -99,7 +100,7 @@ class RouterAgent(LLMBase):
         result["needsClarification"] = False
         result["confidence"] = plan.confidence
 
-        cache.put(question, result, data_hash)
+        cache.put(plan.tool_name.value, plan.tool_params, result, data_hash)
 
         return result
 
