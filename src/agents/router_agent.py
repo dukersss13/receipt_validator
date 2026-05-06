@@ -9,6 +9,7 @@ from src.agents.agent_utils import (
 )
 from src.agents.helper_agent import HelperAgent
 from src.agents.llm_base import LLMBase
+from src.agents.query_cache import QueryCache
 from src.prompts.router_prompts import ROUTER_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,15 @@ logger = logging.getLogger(__name__)
 
 class RouterAgent(LLMBase):
     """Plan and dispatch user questions to the appropriate analytics tool."""
+
+    _cache: QueryCache | None = None
+
+    @classmethod
+    def _get_cache(cls, config_path: str = "config/llm_config.conf") -> QueryCache:
+        """Return the shared class-level cache, creating it on first access."""
+        if cls._cache is None:
+            cls._cache = QueryCache.from_config(config_path)
+        return cls._cache
 
     def __init__(self, llm_config_path: str = "config/llm_config.conf") -> None:
         super().__init__(
@@ -48,6 +58,13 @@ class RouterAgent(LLMBase):
             A response payload that includes answer text, routing metadata,
             and tool execution details.
         """
+        cache = self._get_cache()
+        data_hash = QueryCache.compute_data_hash(validated_rows)
+
+        cached = cache.get(question, data_hash)
+        if cached is not None:
+            return cached
+
         plan = self.plan_with_schema(
             RouterInput(question=question, chat_history=chat_history)
         )
@@ -81,6 +98,8 @@ class RouterAgent(LLMBase):
         result["toolParams"] = plan.tool_params
         result["needsClarification"] = False
         result["confidence"] = plan.confidence
+
+        cache.put(question, result, data_hash)
 
         return result
 
