@@ -324,11 +324,509 @@ function renderChatTranscript() {
         if (msg.pending) {
             item.classList.add("chat-msg-pending");
         }
-        item.textContent = msg.text;
+
+        if (msg.role === "assistant" && msg.chart) {
+            const chartNode = buildChatChartNode(msg.chart);
+            if (chartNode) {
+                item.appendChild(chartNode);
+            }
+        }
+
+        const text = document.createElement("div");
+        text.className = "chat-msg-text";
+        text.textContent = msg.text;
+        item.appendChild(text);
+
         host.appendChild(item);
     });
 
     host.scrollTop = host.scrollHeight;
+}
+
+function formatUsd(value) {
+    const numeric = Number(value) || 0;
+    return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(numeric);
+}
+
+function buildChatChartNode(chart) {
+    if (!chart) {
+        return null;
+    }
+
+    let inner = null;
+    if (chart.type === "grouped_bar") {
+        inner = buildGroupedBarChartNode(chart);
+    } else if (chart.type === "bar") {
+        inner = buildSingleBarChartNode(chart);
+    } else if (chart.type === "pie") {
+        inner = buildPieChartNode(chart);
+    }
+
+    if (!inner) {
+        return null;
+    }
+
+    const expandBtn = document.createElement("button");
+    expandBtn.className = "chat-chart-expand-btn";
+    expandBtn.setAttribute("aria-label", "Expand chart");
+    expandBtn.setAttribute("title", "Expand chart");
+    expandBtn.innerHTML =
+        '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+        "</svg>";
+    expandBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openChartModal(chart);
+    });
+    inner.appendChild(expandBtn);
+
+    return inner;
+}
+
+function openChartModal(chart) {
+    let overlay = byId("chart-modal-overlay");
+    if (overlay) {
+        overlay.remove();
+    }
+
+    overlay = document.createElement("div");
+    overlay.id = "chart-modal-overlay";
+    overlay.className = "chart-modal-overlay";
+
+    const modal = document.createElement("div");
+    modal.className = "chart-modal";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "chart-modal-close-btn";
+    closeBtn.setAttribute("aria-label", "Close");
+    closeBtn.innerHTML = "&times;";
+    closeBtn.addEventListener("click", () => overlay.remove());
+    modal.appendChild(closeBtn);
+
+    let expanded = null;
+    if (chart.type === "grouped_bar") {
+        expanded = buildGroupedBarChartNode(chart);
+    } else if (chart.type === "bar") {
+        expanded = buildSingleBarChartNode(chart);
+    } else if (chart.type === "pie") {
+        expanded = buildPieChartNode(chart);
+    }
+
+    if (expanded) {
+        expanded.classList.add("chat-chart-expanded");
+        modal.appendChild(expanded);
+    }
+
+    overlay.appendChild(modal);
+    overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) {
+            overlay.remove();
+        }
+    });
+    document.addEventListener("keydown", function escHandler(e) {
+        if (e.key === "Escape" && byId("chart-modal-overlay")) {
+            overlay.remove();
+            document.removeEventListener("keydown", escHandler);
+        }
+    });
+
+    document.body.appendChild(overlay);
+}
+
+function buildGroupedBarChartNode(chart) {
+
+    const categories = Array.isArray(chart.x) ? chart.x.map((v) => String(v || "")) : [];
+    const series = Array.isArray(chart.series) ? chart.series : [];
+    if (!categories.length || !series.length) {
+        return null;
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "chat-chart";
+
+    const title = document.createElement("div");
+    title.className = "chat-chart-title";
+    title.textContent = chart.title || "Category comparison";
+    wrapper.appendChild(title);
+
+    const tooltip = document.createElement("div");
+    tooltip.className = "chat-chart-tooltip";
+    tooltip.hidden = true;
+    wrapper.appendChild(tooltip);
+
+    const legend = document.createElement("div");
+    legend.className = "chat-chart-legend";
+    series.forEach((s, idx) => {
+        const legendItem = document.createElement("span");
+        legendItem.className = "chat-chart-legend-item";
+
+        const swatch = document.createElement("span");
+        swatch.className = "chat-chart-swatch";
+        swatch.style.backgroundColor = idx === 0 ? "#0f7b6c" : "#e59f3a";
+
+        const label = document.createElement("span");
+        label.textContent = String(s.name || `Series ${idx + 1}`);
+
+        legendItem.appendChild(swatch);
+        legendItem.appendChild(label);
+        legend.appendChild(legendItem);
+    });
+    wrapper.appendChild(legend);
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 420 250");
+    svg.setAttribute("class", "chat-chart-svg");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", chart.title || "Grouped bar chart");
+
+    const width = 420;
+    const height = 250;
+    const margin = { top: 14, right: 12, bottom: 70, left: 46 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+
+    const values = series.flatMap((s) =>
+        Array.isArray(s.values) ? s.values.map((value) => Number(value) || 0) : [],
+    );
+    const maxValue = Math.max(1, ...values);
+
+    const axis = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    axis.setAttribute(
+        "d",
+        `M ${margin.left} ${margin.top} V ${margin.top + plotHeight} H ${margin.left + plotWidth}`,
+    );
+    axis.setAttribute("stroke", "#b8ad99");
+    axis.setAttribute("stroke-width", "1");
+    axis.setAttribute("fill", "none");
+    svg.appendChild(axis);
+
+    const tickCount = 4;
+    for (let i = 0; i <= tickCount; i += 1) {
+        const value = (maxValue / tickCount) * i;
+        const y = margin.top + plotHeight - (value / maxValue) * plotHeight;
+
+        const grid = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        grid.setAttribute("x1", String(margin.left));
+        grid.setAttribute("x2", String(margin.left + plotWidth));
+        grid.setAttribute("y1", String(y));
+        grid.setAttribute("y2", String(y));
+        grid.setAttribute("stroke", i === 0 ? "#c8beac" : "#ece4d6");
+        grid.setAttribute("stroke-width", "1");
+        svg.appendChild(grid);
+
+        const tick = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        tick.setAttribute("x", String(margin.left - 8));
+        tick.setAttribute("y", String(y + 4));
+        tick.setAttribute("text-anchor", "end");
+        tick.setAttribute("class", "chat-chart-axis-text");
+        tick.textContent = formatUsd(value);
+        svg.appendChild(tick);
+    }
+
+    const categoryBand = plotWidth / categories.length;
+    const groupWidth = Math.min(46, categoryBand * 0.72);
+    const barGap = 3;
+    const barWidth = Math.max(
+        5,
+        (groupWidth - barGap * (series.length - 1)) / Math.max(series.length, 1),
+    );
+
+    categories.forEach((category, categoryIndex) => {
+        const groupStartX =
+            margin.left + categoryIndex * categoryBand + (categoryBand - groupWidth) / 2;
+
+        series.forEach((entry, seriesIndex) => {
+            const value = Number(entry?.values?.[categoryIndex] ?? 0) || 0;
+            const barHeight = (value / maxValue) * plotHeight;
+            const x = groupStartX + seriesIndex * (barWidth + barGap);
+            const y = margin.top + plotHeight - barHeight;
+
+            const bar = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            bar.setAttribute("x", String(x));
+            bar.setAttribute("y", String(y));
+            bar.setAttribute("width", String(barWidth));
+            bar.setAttribute("height", String(Math.max(0, barHeight)));
+            bar.setAttribute("rx", "2");
+            bar.setAttribute("fill", seriesIndex === 0 ? "#0f7b6c" : "#e59f3a");
+            bar.classList.add("chat-chart-bar");
+
+            const label = String(entry?.name || `Series ${seriesIndex + 1}`);
+            const tooltipText = `${label}: ${formatUsd(value)}`;
+
+            bar.addEventListener("mousemove", (event) => {
+                const bounds = wrapper.getBoundingClientRect();
+                tooltip.hidden = false;
+                tooltip.textContent = tooltipText;
+                tooltip.style.left = `${event.clientX - bounds.left + 12}px`;
+                tooltip.style.top = `${event.clientY - bounds.top - 18}px`;
+            });
+            bar.addEventListener("mouseleave", () => {
+                tooltip.hidden = true;
+            });
+
+            const nativeTooltip = document.createElementNS("http://www.w3.org/2000/svg", "title");
+            nativeTooltip.textContent = tooltipText;
+            bar.appendChild(nativeTooltip);
+            svg.appendChild(bar);
+        });
+
+        const xLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        const labelX = groupStartX + groupWidth / 2;
+        const labelY = margin.top + plotHeight + 16;
+        xLabel.setAttribute("x", String(labelX));
+        xLabel.setAttribute("y", String(labelY));
+        xLabel.setAttribute("class", "chat-chart-axis-text");
+        const maxLen = categories.length > 4 ? 9 : 12;
+        xLabel.textContent = category.length > maxLen ? `${category.slice(0, maxLen)}…` : category;
+        if (categories.length > 4) {
+            xLabel.setAttribute("text-anchor", "end");
+            xLabel.setAttribute("transform", `rotate(-40, ${labelX}, ${labelY})`);
+        } else {
+            xLabel.setAttribute("text-anchor", "middle");
+        }
+        svg.appendChild(xLabel);
+    });
+
+    wrapper.appendChild(svg);
+    return wrapper;
+}
+
+function buildSingleBarChartNode(chart) {
+    const labels = Array.isArray(chart.labels) ? chart.labels.map((v) => String(v || "")) : [];
+    const values = Array.isArray(chart.values) ? chart.values.map((v) => Number(v) || 0) : [];
+    if (!labels.length || labels.length !== values.length) {
+        return null;
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "chat-chart";
+
+    const title = document.createElement("div");
+    title.className = "chat-chart-title";
+    title.textContent = chart.title || "Spending breakdown";
+    wrapper.appendChild(title);
+
+    const tooltip = document.createElement("div");
+    tooltip.className = "chat-chart-tooltip";
+    tooltip.hidden = true;
+    wrapper.appendChild(tooltip);
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 420 250");
+    svg.setAttribute("class", "chat-chart-svg");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", chart.title || "Bar chart");
+
+    const width = 420;
+    const height = 250;
+    const margin = { top: 14, right: 12, bottom: 70, left: 46 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+    const maxValue = Math.max(1, ...values);
+
+    const axis = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    axis.setAttribute(
+        "d",
+        `M ${margin.left} ${margin.top} V ${margin.top + plotHeight} H ${margin.left + plotWidth}`,
+    );
+    axis.setAttribute("stroke", "#b8ad99");
+    axis.setAttribute("stroke-width", "1");
+    axis.setAttribute("fill", "none");
+    svg.appendChild(axis);
+
+    const tickCount = 4;
+    for (let i = 0; i <= tickCount; i += 1) {
+        const value = (maxValue / tickCount) * i;
+        const y = margin.top + plotHeight - (value / maxValue) * plotHeight;
+
+        const grid = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        grid.setAttribute("x1", String(margin.left));
+        grid.setAttribute("x2", String(margin.left + plotWidth));
+        grid.setAttribute("y1", String(y));
+        grid.setAttribute("y2", String(y));
+        grid.setAttribute("stroke", i === 0 ? "#c8beac" : "#ece4d6");
+        grid.setAttribute("stroke-width", "1");
+        svg.appendChild(grid);
+
+        const tick = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        tick.setAttribute("x", String(margin.left - 8));
+        tick.setAttribute("y", String(y + 4));
+        tick.setAttribute("text-anchor", "end");
+        tick.setAttribute("class", "chat-chart-axis-text");
+        tick.textContent = formatUsd(value);
+        svg.appendChild(tick);
+    }
+
+    const band = plotWidth / labels.length;
+    const barWidth = Math.min(28, band * 0.66);
+    labels.forEach((label, idx) => {
+        const value = values[idx];
+        const barHeight = (value / maxValue) * plotHeight;
+        const x = margin.left + idx * band + (band - barWidth) / 2;
+        const y = margin.top + plotHeight - barHeight;
+
+        const bar = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        bar.setAttribute("x", String(x));
+        bar.setAttribute("y", String(y));
+        bar.setAttribute("width", String(barWidth));
+        bar.setAttribute("height", String(Math.max(0, barHeight)));
+        bar.setAttribute("rx", "2");
+        bar.setAttribute("fill", "#0f7b6c");
+        bar.classList.add("chat-chart-bar");
+
+        const tooltipText = `${label}: ${formatUsd(value)}`;
+        bar.addEventListener("mousemove", (event) => {
+            const bounds = wrapper.getBoundingClientRect();
+            tooltip.hidden = false;
+            tooltip.textContent = tooltipText;
+            tooltip.style.left = `${event.clientX - bounds.left + 12}px`;
+            tooltip.style.top = `${event.clientY - bounds.top - 18}px`;
+        });
+        bar.addEventListener("mouseleave", () => {
+            tooltip.hidden = true;
+        });
+
+        const nativeTooltip = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        nativeTooltip.textContent = tooltipText;
+        bar.appendChild(nativeTooltip);
+        svg.appendChild(bar);
+
+        const xLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        const labelX = x + barWidth / 2;
+        const labelY = margin.top + plotHeight + 16;
+        xLabel.setAttribute("x", String(labelX));
+        xLabel.setAttribute("y", String(labelY));
+        xLabel.setAttribute("class", "chat-chart-axis-text");
+        const maxLen = labels.length > 4 ? 9 : 12;
+        xLabel.textContent = label.length > maxLen ? `${label.slice(0, maxLen)}…` : label;
+        if (labels.length > 4) {
+            xLabel.setAttribute("text-anchor", "end");
+            xLabel.setAttribute("transform", `rotate(-40, ${labelX}, ${labelY})`);
+        } else {
+            xLabel.setAttribute("text-anchor", "middle");
+        }
+        svg.appendChild(xLabel);
+    });
+
+    wrapper.appendChild(svg);
+    return wrapper;
+}
+
+function buildPieChartNode(chart) {
+    const labels = Array.isArray(chart.labels) ? chart.labels.map((v) => String(v || "")) : [];
+    const values = Array.isArray(chart.values) ? chart.values.map((v) => Math.max(0, Number(v) || 0)) : [];
+    if (!labels.length || labels.length !== values.length) {
+        return null;
+    }
+
+    const total = values.reduce((acc, val) => acc + val, 0);
+    if (total <= 0) {
+        return null;
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "chat-chart";
+
+    const title = document.createElement("div");
+    title.className = "chat-chart-title";
+    title.textContent = chart.title || "Spending share by category";
+    wrapper.appendChild(title);
+
+    const legend = document.createElement("div");
+    legend.className = "chat-chart-legend";
+    wrapper.appendChild(legend);
+
+    const tooltip = document.createElement("div");
+    tooltip.className = "chat-chart-tooltip";
+    tooltip.hidden = true;
+    wrapper.appendChild(tooltip);
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 420 250");
+    svg.setAttribute("class", "chat-chart-svg");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", chart.title || "Pie chart");
+
+    const cx = 130;
+    const cy = 130;
+    const radius = 82;
+    const colors = ["#0f7b6c", "#e59f3a", "#6f8a3b", "#cf6b4d", "#4a7895", "#b7779f", "#8f6b4f"];
+
+    let startAngle = -Math.PI / 2;
+    labels.forEach((label, idx) => {
+        const value = values[idx];
+        const sweep = (value / total) * (Math.PI * 2);
+        const endAngle = startAngle + sweep;
+        const x1 = cx + radius * Math.cos(startAngle);
+        const y1 = cy + radius * Math.sin(startAngle);
+        const x2 = cx + radius * Math.cos(endAngle);
+        const y2 = cy + radius * Math.sin(endAngle);
+        const largeArc = sweep > Math.PI ? 1 : 0;
+        const color = colors[idx % colors.length];
+
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute(
+            "d",
+            `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`,
+        );
+        path.setAttribute("fill", color);
+        path.classList.add("chat-chart-bar");
+
+        const percent = ((value / total) * 100).toFixed(1);
+        const tooltipText = `${label}: ${formatUsd(value)} (${percent}%)`;
+
+        path.addEventListener("mousemove", (event) => {
+            const bounds = wrapper.getBoundingClientRect();
+            tooltip.hidden = false;
+            tooltip.textContent = tooltipText;
+            tooltip.style.left = `${event.clientX - bounds.left + 12}px`;
+            tooltip.style.top = `${event.clientY - bounds.top - 18}px`;
+        });
+        path.addEventListener("mouseleave", () => {
+            tooltip.hidden = true;
+        });
+
+        const nativeTooltip = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        nativeTooltip.textContent = tooltipText;
+        path.appendChild(nativeTooltip);
+        svg.appendChild(path);
+
+        const legendItem = document.createElement("span");
+        legendItem.className = "chat-chart-legend-item";
+        const swatch = document.createElement("span");
+        swatch.className = "chat-chart-swatch";
+        swatch.style.backgroundColor = color;
+        const legendText = document.createElement("span");
+        legendText.textContent = `${label} ${percent}%`;
+        legendItem.appendChild(swatch);
+        legendItem.appendChild(legendText);
+        legend.appendChild(legendItem);
+
+        startAngle = endAngle;
+    });
+
+    const hole = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    hole.setAttribute("cx", String(cx));
+    hole.setAttribute("cy", String(cy));
+    hole.setAttribute("r", "34");
+    hole.setAttribute("fill", "#f8f4ec");
+    svg.appendChild(hole);
+
+    const centerText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    centerText.setAttribute("x", String(cx));
+    centerText.setAttribute("y", String(cy + 4));
+    centerText.setAttribute("text-anchor", "middle");
+    centerText.setAttribute("class", "chat-chart-axis-text");
+    centerText.textContent = "100%";
+    svg.appendChild(centerText);
+
+    wrapper.appendChild(svg);
+    return wrapper;
 }
 
 function setChatPopupOpen(isOpen) {
@@ -1218,6 +1716,7 @@ async function sendChatMessage() {
                             currentMsg.text =
                                 payload.answer || "I could not generate an answer.";
                         }
+                        currentMsg.chart = payload.chart || null;
                         renderChatTranscript();
                     }
                     streamDone = true;
@@ -1296,6 +1795,9 @@ async function downloadValidatedPdf() {
         showError(err.message);
     }
 }
+
+// Signal that main app handlers are active so the inline fallback click logic stays disabled.
+window.__arveeAppReady = true;
 
 byId("new-session-btn").addEventListener("click", createSession);
 byId("load-session-btn").addEventListener("click", loadSessionInputs);

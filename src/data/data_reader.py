@@ -19,7 +19,7 @@ from pyhocon import ConfigFactory
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 
-from src.intelligence.llm_base import LLMBase
+from src.agents.llm_base import LLMBase
 from prompts.data_reader_prompts import RECEIPT_PROMPT, STATEMENT_PROMPT
 from src.utils.currency_conversion_agent import convert_currency_to_usd
 from src.data.database import DataBase

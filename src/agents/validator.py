@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pyhocon import ConfigFactory
 
 from fuzzywuzzy import process, fuzz
-from src.intelligence.categorize import TransactionCategorizer
+from src.agents.categorize import TransactionCategorizer
 
 pd.set_option("display.max_columns", None)
 
@@ -620,12 +620,14 @@ class Validator:
                     / 100.0
                 )
 
-                candidate_pairs = candidate_pairs[
+                preferred_pairs = candidate_pairs[
                     candidate_pairs["__name_similarity"] >= name_similarity_threshold
                 ]
 
-                if candidate_pairs.empty:
-                    return pd.DataFrame([])
+                # Prefer higher name similarity, but if none pass the threshold,
+                # still allow date+amount-based recommendations.
+                if not preferred_pairs.empty:
+                    candidate_pairs = preferred_pairs
 
                 candidate_pairs = candidate_pairs.sort_values(
                     by=["__date_distance", "__total_delta", "__name_similarity"],

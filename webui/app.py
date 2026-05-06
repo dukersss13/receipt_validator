@@ -10,10 +10,9 @@ import pandas as pd
 from flask import Flask, Response, jsonify, render_template, request, send_file
 
 from src.data.database import DataBase
-from src.intelligence.helper_agent import HelperAgent
-from src.intelligence.validator import Validator
+from src.agents.router_agent import RouterAgent
+from src.agents.validator import Validator
 from src.utils.utils import create_session_id
-
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 database = DataBase(engine_name="receipt_validator_db", local_db=True)
@@ -698,11 +697,11 @@ def chat_ask():
                 400,
             )
 
-        helper = HelperAgent()
+        router = RouterAgent()
         chat_history = state.get("chatHistory", [])
         if not isinstance(chat_history, list):
             chat_history = []
-        result = helper.ask(
+        result = router.ask(
             message,
             validated_rows,
             chat_history=chat_history,
@@ -758,7 +757,7 @@ def chat_ask_stream():
             400,
         )
 
-    helper = HelperAgent()
+    router = RouterAgent()
     chat_history = state.get("chatHistory", [])
     if not isinstance(chat_history, list):
         chat_history = []
@@ -767,17 +766,17 @@ def chat_ask_stream():
         assembled: list[str] = []
         try:
             yield _sse("start", {"sessionId": session_id})
-            for token in helper.stream_answer(
+            result = router.ask(
                 message,
                 validated_rows,
                 chat_history=chat_history,
-            ):
-                assembled.append(token)
-                yield _sse("token", {"token": token})
-
-            final_answer = "".join(assembled).strip()
+            )
+            final_answer = str(result.get("answer", "") or "").strip()
             if not final_answer:
                 final_answer = "I could not generate an answer."
+
+            assembled.append(final_answer)
+            yield _sse("token", {"token": final_answer})
 
             chat_history.extend(
                 [
@@ -801,7 +800,11 @@ def chat_ask_stream():
                 {
                     "answer": final_answer,
                     "rowsScanned": len(validated_rows),
-                    "confidence": "high",
+                    "confidence": result.get("confidence", "high"),
+                    "toolUsed": bool(result.get("toolUsed", False)),
+                    "route": result.get("route", "helper_agent"),
+                    "toolName": result.get("toolName", ""),
+                    "chart": result.get("chart"),
                 },
             )
         except Exception as exc:

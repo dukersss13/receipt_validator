@@ -4,8 +4,10 @@ import random
 import threading
 import webbrowser
 import os
+import socket
 from datetime import date, timedelta
 
+import pandas as pd
 
 TEST_SESSION_ID = "test-session-001"
 
@@ -63,8 +65,32 @@ def _mock_validated_transactions(count: int = 30) -> list[dict]:
 def seed_test_session(database) -> str:
     """Create (or overwrite) a test session in the database."""
     validated = _mock_validated_transactions(30)
+    transactions_df = pd.DataFrame(
+        [
+            {
+                "business_name": r["Transaction Business Name"],
+                "total": r["Transaction Total"],
+                "date": r["Transaction Date"],
+                "currency": "USD",
+            }
+            for r in validated
+        ]
+    )
+    proofs_df = pd.DataFrame(
+        [
+            {
+                "business_name": r["Proof Business Name"],
+                "total": r["Proof Total"],
+                "date": r["Proof Date"],
+                "currency": "USD",
+            }
+            for r in validated
+        ]
+    )
 
     database.get_or_create_session(TEST_SESSION_ID)
+    # Seed canonical inputs so /api/session/<id> can always load rows.
+    database.save_session_inputs(TEST_SESSION_ID, transactions_df, proofs_df)
     database.save_session_state(
         TEST_SESSION_ID,
         {
@@ -104,6 +130,18 @@ def seed_test_session(database) -> str:
     return TEST_SESSION_ID
 
 
+def _resolve_port(default_port: int = 7860) -> int:
+    """Return default_port when available, else choose an open ephemeral port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if probe.connect_ex(("127.0.0.1", default_port)) != 0:
+            return default_port
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as fallback:
+        fallback.bind(("127.0.0.1", 0))
+        return int(fallback.getsockname()[1])
+
+
 if __name__ == "__main__":
     # Defer heavy web app imports until script execution time.
     from webui.app import app, database
@@ -111,8 +149,13 @@ if __name__ == "__main__":
 
     session_id = seed_test_session(database)
 
-    url = f"http://127.0.0.1:7860?testSession={session_id}"
-    print(f"Open this URL to auto-load seeded data: {url}")
+    port = _resolve_port(default_port=7860)
+    url = f"http://127.0.0.1:{port}?testSession={session_id}"
+    host_friendly_url = f"http://localhost:{port}?testSession={session_id}"
+    print(f"Open this URL to auto-load seeded data: {host_friendly_url}")
+    print(f"Container-local URL: {url}")
+    if port != 7860:
+        print(f"Port 7860 is busy; using fallback port {port}.")
 
     @app.before_request
     def _redirect_root_to_seeded_session():
@@ -137,4 +180,4 @@ if __name__ == "__main__":
         "true",
         "yes",
     }
-    app.run(host="0.0.0.0", port=7860, debug=debug_enabled, use_reloader=False)
+    app.run(host="0.0.0.0", port=port, debug=debug_enabled, use_reloader=False)

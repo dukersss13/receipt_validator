@@ -1,6 +1,5 @@
-from src.intelligence.helper_agent import HelperAgent
+from src.agents.helper_agent import HelperAgent
 from tests.ui_test import _mock_validated_transactions
-
 
 helper = HelperAgent()
 

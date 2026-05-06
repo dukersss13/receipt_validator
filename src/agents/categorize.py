@@ -4,8 +4,7 @@ from time import time
 
 import pandas as pd
 from google.genai import types
-from src.intelligence.llm_base import LLMBase
-
+from src.agents.llm_base import LLMBase
 
 CATEGORIZE_CATEGORIES = [
     "Food",

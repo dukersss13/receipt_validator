@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
         rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20260506b') }}" />
 </head>
 
 <body>
@@ -229,6 +229,7 @@
                 Hi, I'm ArVee! Ask me about your finances.
             </div>
             <button id="chat-fab" class="chat-fab" type="button" aria-expanded="false" aria-controls="chat-popup"
+                onclick="if(!window.__arveeAppReady){var p=document.getElementById('chat-popup');if(p){p.hidden=!p.hidden;this.setAttribute('aria-expanded',String(!p.hidden));}}"
                 aria-label="Open chat with ArVee">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
                     stroke-linejoin="round" width="26" height="26">
@@ -244,7 +245,31 @@
         </section>
     </main>
 
-    <script src="{{ url_for('static', filename='app.js') }}"></script>
+    <script src="{{ url_for('static', filename='app.js', v='20260506b') }}"></script>
+    <script>
+        window.addEventListener("load", function () {
+            if (window.__arveeAppReady) {
+                return;
+            }
+            try {
+                var params = new URLSearchParams(window.location.search || "");
+                var testSession = params.get("testSession");
+                if (!testSession) {
+                    return;
+                }
+                var loadInput = document.getElementById("load-session-id");
+                if (loadInput) {
+                    loadInput.value = testSession;
+                }
+                var loadBtn = document.getElementById("load-session-btn");
+                if (loadBtn && typeof loadBtn.click === "function") {
+                    loadBtn.click();
+                }
+            } catch (_err) {
+                // best-effort fallback when main UI script did not initialize
+            }
+        });
+    </script>
 </body>
 
 </html>

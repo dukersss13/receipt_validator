@@ -6,7 +6,6 @@ from google import genai
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pyhocon import ConfigFactory
 
-
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 
@@ -169,6 +168,79 @@ class LLMBase:
 
         text_attr = getattr(content, "text", None)
         return text_attr if isinstance(text_attr, str) else ""
+
+    @staticmethod
+    def _normalize_chat_history(
+        chat_history: list[dict[str, Any]] | None,
+        limit: int,
+    ) -> list[dict[str, str]]:
+        """
+        Normalize chat history into validated ``{"role", "text"}`` turns.
+
+        Args:
+            chat_history: Optional prior conversation turns.
+            limit: Maximum number of latest turns to keep.
+
+        Returns:
+            Filtered and normalized turns for user/assistant roles only.
+        """
+        if not isinstance(chat_history, list) or not chat_history:
+            return []
+
+        normalized: list[dict[str, str]] = []
+        for item in chat_history[-max(1, int(limit)) :]:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role", "")).strip().lower()
+            text = str(item.get("text", "") or "").strip()
+            if role in {"user", "assistant"} and text:
+                normalized.append({"role": role, "text": text})
+        return normalized
+
+    @classmethod
+    def history_lines(
+        cls,
+        chat_history: list[dict[str, Any]] | None,
+        limit: int = 10,
+    ) -> list[str]:
+        """
+        Render compact ``"role: text"`` lines from chat history.
+
+        Args:
+            chat_history: Optional prior conversation turns.
+            limit: Maximum number of latest turns to include.
+
+        Returns:
+            List of compact role-prefixed history lines.
+        """
+        turns = cls._normalize_chat_history(chat_history=chat_history, limit=limit)
+        return [f"{turn['role']}: {turn['text']}" for turn in turns]
+
+    @classmethod
+    def messages_with_history(
+        cls,
+        question: str,
+        chat_history: list[dict[str, Any]] | None,
+        max_history_messages: int = 20,
+    ) -> list[dict[str, str]]:
+        """
+        Build ``{"role", "content"}`` messages from history plus a question.
+
+        Args:
+            question: Current user question to append as the final message.
+            chat_history: Optional prior conversation turns.
+            max_history_messages: Max number of latest turns to prepend.
+
+        Returns:
+            Message list ready for LangChain/LangGraph invocation.
+        """
+        turns = cls._normalize_chat_history(
+            chat_history=chat_history,
+            limit=max_history_messages,
+        )
+        messages = [{"role": t["role"], "content": t["text"]} for t in turns]
+        messages.append({"role": "user", "content": question})
+        return messages
 
     def stream(
         self,
