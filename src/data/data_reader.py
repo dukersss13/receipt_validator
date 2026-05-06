@@ -1,6 +1,6 @@
 import os
 import base64
-import numpy as np
+import logging
 import pandas as pd
 from time import time
 import mimetypes
@@ -20,9 +20,11 @@ from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 
 from src.agents.llm_base import LLMBase
-from prompts.data_reader_prompts import RECEIPT_PROMPT, STATEMENT_PROMPT
+from src.prompts.data_reader_prompts import RECEIPT_PROMPT, STATEMENT_PROMPT
 from src.utils.currency_conversion_agent import convert_currency_to_usd
 from src.data.database import DataBase
+
+logger = logging.getLogger(__name__)
 
 
 class DataType(Enum):
@@ -78,16 +80,6 @@ class DataReader(LLMBase):
         self.io_max_workers = 8
         self.llm_max_workers = 6
         self.fx_max_workers = 8
-        raw_use_batch_api = config.get("llm.use_batch_api", False)
-        if isinstance(raw_use_batch_api, str):
-            self.use_batch_api = raw_use_batch_api.strip().lower() == "true"
-        else:
-            self.use_batch_api = bool(raw_use_batch_api)
-        self.batch_completion_window = str(
-            config.get("llm.batch_completion_window", "24h")
-        )
-        self.batch_poll_seconds = int(config.get("llm.batch_poll_seconds", 2))
-        self.batch_max_wait_seconds = int(config.get("llm.batch_max_wait_seconds", 10))
 
         super().__init__(
             llm_config_path=llm_config_path,
@@ -97,16 +89,8 @@ class DataReader(LLMBase):
             default_max_tokens=350,
         )
 
-        self.primary_llm_provider = "gemini"
         self.primary_model = self.model_name
-        # No fallback model is configured for native Gemini mode
-        self.fallback_model = self.model_name
-
         self.primary_client = self.init_genai_client()
-        self.fallback_client = None
-
-        # Native Gemini migration: disable legacy OpenAI-style JSONL batch flow.
-        self.use_batch_api = False
 
         # Running totals for cost/usage reporting
         self.ingestion_usage = {
@@ -154,6 +138,7 @@ class DataReader(LLMBase):
         Raises:
             ValueError: If *data_type* is not a recognised ``DataType`` value.
         """
+        start = time()
         if data_type == DataType.TRANSACTIONS:
             print("\n[Ingestion] Reading Transactions...\n")
             processed_data = self.load_transaction_data(self.transactions_data_path)
@@ -163,33 +148,23 @@ class DataReader(LLMBase):
         else:
             raise ValueError(f"Unsupported data type: {data_type}")
 
+        elapsed = round(time() - start, 2)
+        summary = self.get_ingestion_cost_summary()
+        logger.info(
+            "[Ingestion] type=%s | time=%.2fs | model=%s | "
+            "input_tokens=%d | output_tokens=%d | "
+            "llm_calls=%d | estimated_cost=$%.6f",
+            data_type.value,
+            elapsed,
+            summary["model"],
+            summary["inputTokens"],
+            summary["outputTokens"],
+            summary["llmCalls"],
+            summary["estimatedTotalCostUsd"],
+        )
+
         # Keep currency for persistence and conversion pipeline.
         return processed_data
-
-    def _completion_token_kwargs(self, max_tokens: int) -> dict[str, int]:
-        """
-        Build a ``max_tokens`` kwarg dict capped to the configured ingestion limit.
-
-        Args:
-            max_tokens: Requested token budget for this particular call.
-
-        Returns:
-            Dict with a single ``max_tokens`` key whose value is
-            ``min(max_tokens, self.max_tokens)``.
-        """
-        return {"max_tokens": min(max_tokens, self.max_tokens)}
-
-    def _sampling_kwargs(self) -> dict[str, float]:
-        """
-        Return the sampling parameter dict for LLM completion calls.
-
-        Returns:
-            Dict with ``temperature`` and ``top_p`` keys sourced from the LLM config.
-        """
-        return {
-            "temperature": self.temperature,
-            "top_p": self.top_p,
-        }
 
     @staticmethod
     def _input_token_rate_per_million(model_name: str) -> float:
@@ -266,36 +241,6 @@ class DataReader(LLMBase):
 
         if is_fallback:
             self.ingestion_usage["fallback_calls"] += 1
-
-        input_cost = (
-            input_tokens / 1_000_000
-        ) * DataReader._input_token_rate_per_million(model_name)
-        output_cost = (
-            output_tokens / 1_000_000
-        ) * DataReader._output_token_rate_per_million(model_name)
-        self.ingestion_usage["estimated_total_cost_usd"] += input_cost + output_cost
-
-    def _record_usage_from_body(self, body: dict, mode: str, model_name: str) -> None:
-        """
-        Accumulate token usage from a raw response body dict (legacy batch path).
-
-        Args:
-            body: Parsed JSON response body dict; expects an ``"usage"`` key.
-            mode: ``"batch"`` or ``"standard"``.
-            model_name: Model identifier used for per-model cost lookup.
-        """
-        usage = body.get("usage", {}) if isinstance(body, dict) else {}
-        input_tokens = int(usage.get("prompt_tokens", 0) or 0)
-        output_tokens = int(usage.get("completion_tokens", 0) or 0)
-
-        self.ingestion_usage["input_tokens"] += input_tokens
-        self.ingestion_usage["output_tokens"] += output_tokens
-        self.ingestion_usage["llm_calls"] += 1
-
-        if mode == "batch":
-            self.ingestion_usage["batch_runs"] += 1
-        else:
-            self.ingestion_usage["standard_runs"] += 1
 
         input_cost = (
             input_tokens / 1_000_000
@@ -386,64 +331,6 @@ class DataReader(LLMBase):
             return "".join(parts)
 
         return str(message_content)
-
-    def _poll_batch_until_done(self, batch_id: str):
-        """
-        Poll a batch job until it completes (disabled for native Gemini mode).
-
-        Args:
-            batch_id: The batch job identifier to poll.
-
-        Raises:
-            RuntimeError: Always — batch API is disabled in native Gemini mode.
-        """
-        _ = batch_id
-        raise RuntimeError("Batch API is disabled for native Gemini ingestion mode.")
-
-    @staticmethod
-    def _serialize_batch_output(raw_content: object) -> str:
-        """
-        Convert a raw batch response object to a plain string.
-
-        Tries ``text``, ``read()``, and ``content`` attributes in order before
-        falling back to ``str()``.
-
-        Args:
-            raw_content: The raw response object from a batch API call.
-
-        Returns:
-            A UTF-8 string representation of the response content.
-        """
-        if hasattr(raw_content, "text"):
-            return str(raw_content.text)
-        if hasattr(raw_content, "read"):
-            read_val = raw_content.read()
-            if isinstance(read_val, bytes):
-                return read_val.decode("utf-8")
-            return str(read_val)
-        if hasattr(raw_content, "content"):
-            content = raw_content.content
-            if isinstance(content, bytes):
-                return content.decode("utf-8")
-            return str(content)
-        return str(raw_content)
-
-    def _run_chat_batch_requests(
-        self, requests_payload: list[dict], model_name: str
-    ) -> list[str]:
-        """
-        Execute a batch of chat completion requests (disabled for native Gemini mode).
-
-        Args:
-            requests_payload: List of request dicts to submit as a batch.
-            model_name: Model identifier to use for the batch job.
-
-        Raises:
-            RuntimeError: Always — batch API is disabled in native Gemini mode.
-        """
-        _ = requests_payload
-        _ = model_name
-        raise RuntimeError("Batch API is disabled for native Gemini ingestion mode.")
 
     def load_proofs_data(self, data_path: str | list[str]) -> pd.DataFrame:
         """
@@ -798,7 +685,7 @@ class DataReader(LLMBase):
         return results
 
     @staticmethod
-    def preprocess_data(data_vector: np.ndarray) -> pd.DataFrame:
+    def preprocess_data(data_vector: list) -> pd.DataFrame:
         """
         Normalise a raw extraction result into the canonical four-column DataFrame.
 
@@ -1137,19 +1024,6 @@ class DataReader(LLMBase):
             f"Gemini request failed for model {self.primary_model} and no fallback is enabled."
         )
 
-    def read_proofs_data_batch(self, image_payloads: list[dict]) -> list[str]:
-        """
-        Batch extraction endpoint for proof images (disabled for native Gemini mode).
-
-        Args:
-            image_payloads: List of image payload dicts.
-
-        Raises:
-            RuntimeError: Always — batch API is disabled in native Gemini mode.
-        """
-        _ = image_payloads
-        raise RuntimeError("Batch API is disabled for native Gemini ingestion mode.")
-
     def extract_data_from_statement_text(self, bank_statement_text: str) -> str:
         """
         Extract structured transaction rows from sanitised bank statement text.
@@ -1168,28 +1042,3 @@ class DataReader(LLMBase):
             },
         ]
         return self._chat_completion_with_fallback(messages, max_tokens=350)
-
-    def extract_data_from_image_texts(self, bank_statement_text: str) -> str:
-        """
-        Backward-compatible alias for ``extract_data_from_statement_text``.
-
-        Args:
-            bank_statement_text: PII-stripped plain text from a bank/card statement.
-
-        Returns:
-            Raw LLM response string (Python list literal) containing extracted rows.
-        """
-        return self.extract_data_from_statement_text(bank_statement_text)
-
-    def extract_statement_data_batch(self, statement_texts: list[str]) -> list[str]:
-        """
-        Batch statement extraction endpoint (disabled for native Gemini mode).
-
-        Args:
-            statement_texts: List of PII-stripped statement text strings.
-
-        Raises:
-            RuntimeError: Always — batch API is disabled in native Gemini mode.
-        """
-        _ = statement_texts
-        raise RuntimeError("Batch API is disabled for native Gemini ingestion mode.")

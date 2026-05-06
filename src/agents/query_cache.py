@@ -41,16 +41,28 @@ class QueryCache:
         tool_name: str,
         tool_params: dict[str, Any],
         data_hash: str,
+        user_query: str = "",
     ) -> dict[str, Any] | None:
         """Return a cached response for this tool+params+data, or ``None``."""
         key = self._make_key(tool_name, tool_params, data_hash)
         entry = self._store.get(key)
         if entry is None:
-            logger.debug("cache MISS tool=%s params=%r", tool_name, tool_params)
+            logger.info(
+                "[Cache] MISS | query=%r | tool=%s | params=%r | cached_response=None",
+                user_query,
+                tool_name,
+                tool_params,
+            )
             return None
 
         self._store.move_to_end(key)
-        logger.info("cache HIT tool=%s params=%r", tool_name, tool_params)
+        logger.info(
+            "[Cache] HIT | query=%r | tool=%s | params=%r | cached_response=%r",
+            user_query,
+            tool_name,
+            tool_params,
+            entry.get("answer", "")[:120],
+        )
         return entry
 
     def put(
