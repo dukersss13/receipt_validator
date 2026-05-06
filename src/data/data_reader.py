@@ -1,5 +1,6 @@
 import os
 import base64
+import logging
 import pandas as pd
 from time import time
 import mimetypes
@@ -22,6 +23,8 @@ from src.agents.llm_base import LLMBase
 from src.prompts.data_reader_prompts import RECEIPT_PROMPT, STATEMENT_PROMPT
 from src.utils.currency_conversion_agent import convert_currency_to_usd
 from src.data.database import DataBase
+
+logger = logging.getLogger(__name__)
 
 
 class DataType(Enum):
@@ -135,6 +138,7 @@ class DataReader(LLMBase):
         Raises:
             ValueError: If *data_type* is not a recognised ``DataType`` value.
         """
+        start = time()
         if data_type == DataType.TRANSACTIONS:
             print("\n[Ingestion] Reading Transactions...\n")
             processed_data = self.load_transaction_data(self.transactions_data_path)
@@ -143,6 +147,21 @@ class DataReader(LLMBase):
             processed_data = self.load_proofs_data(self.proofs_data_path)
         else:
             raise ValueError(f"Unsupported data type: {data_type}")
+
+        elapsed = round(time() - start, 2)
+        summary = self.get_ingestion_cost_summary()
+        logger.info(
+            "[Ingestion] type=%s | time=%.2fs | model=%s | "
+            "input_tokens=%d | output_tokens=%d | "
+            "llm_calls=%d | estimated_cost=$%.6f",
+            data_type.value,
+            elapsed,
+            summary["model"],
+            summary["inputTokens"],
+            summary["outputTokens"],
+            summary["llmCalls"],
+            summary["estimatedTotalCostUsd"],
+        )
 
         # Keep currency for persistence and conversion pipeline.
         return processed_data

@@ -82,7 +82,9 @@ class RouterAgent(LLMBase):
             }
 
         # Check cache AFTER routing — keyed on tool + params + data, not query text.
-        cached = cache.get(plan.tool_name.value, plan.tool_params, data_hash)
+        cached = cache.get(
+            plan.tool_name.value, plan.tool_params, data_hash, user_query=question
+        )
         if cached is not None:
             return cached
 
@@ -121,8 +123,17 @@ class RouterAgent(LLMBase):
 
         parsed = extract_first_json_object(raw_text)
         if not isinstance(parsed, dict):
+            logger.info(
+                "[Router] query=%r | parsed=None (fallback)",
+                payload.question,
+            )
             return self._fallback_plan()
 
+        logger.info(
+            "[Router] query=%r | parsed=%r",
+            payload.question,
+            parsed,
+        )
         return self._normalize_plan(parsed)
 
     def _invoke_router_model(
