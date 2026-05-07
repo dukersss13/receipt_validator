@@ -35,7 +35,7 @@ BUSINESSES = [
 ]
 
 
-def _mock_validated_transactions(count: int = 30) -> list[dict]:
+def _mock_validated_transactions(count: int = 500) -> list[dict]:
     """Generate *count* realistic validated transaction rows."""
     random.seed(42)
     today = date.today()
@@ -44,7 +44,8 @@ def _mock_validated_transactions(count: int = 30) -> list[dict]:
     for i in range(count):
         biz, category = random.choice(BUSINESSES)
         total = round(random.uniform(3.50, 250.00), 2)
-        tx_date = today - timedelta(days=random.randint(0, 45))
+        # Force coverage across a rolling 4-month window (about 120 days).
+        tx_date = today - timedelta(days=(i % 120))
 
         rows.append(
             {
@@ -64,7 +65,7 @@ def _mock_validated_transactions(count: int = 30) -> list[dict]:
 
 def seed_test_session(database) -> str:
     """Create (or overwrite) a test session in the database."""
-    validated = _mock_validated_transactions(30)
+    validated = _mock_validated_transactions(500)
     transactions_df = pd.DataFrame(
         [
             {
@@ -94,7 +95,7 @@ def seed_test_session(database) -> str:
     database.save_session_state(
         TEST_SESSION_ID,
         {
-            "summary": "Mock session with 30 validated transactions for testing.",
+            "summary": "Mock session with 500 validated transactions over 4 months for testing.",
             "loadedTransactions": [
                 {
                     "business_name": r["Transaction Business Name"],
