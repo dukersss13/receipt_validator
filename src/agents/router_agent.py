@@ -220,6 +220,18 @@ class RouterAgent(LLMBase):
             if not clarification_question:
                 clarification_question = "Do you want a comparison between two periods, or a single-period total for this month?"
 
+        # Pie charts can't represent a two-period comparison — ask for bar instead.
+        if (
+            not needs_clarification
+            and tool_name is AgentTool.COMPARE_SPENDING_PERIODS
+            and normalized_params.get("chart_type") == "pie"
+        ):
+            needs_clarification = True
+            clarification_question = (
+                "Pie charts can't show a comparison between two periods. "
+                "Would you like a bar graph instead?"
+            )
+
         return RouterPlan(
             route=route,
             tool_name=tool_name,
@@ -254,11 +266,11 @@ class RouterAgent(LLMBase):
             raw_chart_type = (
                 str(tool_params.get("chart_type", "") or "").strip().lower()
             )
-            if raw_chart_type == "bar":
-                compare_chart_type = "bar"
-            elif raw_chart_type == "pie":
+            if raw_chart_type == "pie":
                 compare_chart_type = "pie"
             else:
+                # For comparisons, any bar variant maps to grouped_bar
+                # so both periods are shown side-by-side.
                 compare_chart_type = "grouped_bar"
             return {
                 "period_1": normalize_period(

@@ -251,15 +251,20 @@ class HelperAgent(LLMBase):
         method = normalize_aggregation_method(aggregation_method)
         top_n_value = max(0, int(top_n or 0))
 
+        # Always compute per-category breakdown for the top-5 table.
+        all_grouped = (
+            scoped.groupby("Transaction Category", dropna=False)["Transaction Total"]
+            .agg("mean" if method == "average" else "sum")
+            .sort_values(ascending=False)
+        )
+        top_5 = all_grouped.head(5)
+        top_categories_table = [
+            {"category": str(cat), "value": round(float(val), 2)}
+            for cat, val in top_5.items()
+        ]
+
         if top_n_value > 0:
-            grouped = (
-                scoped.groupby("Transaction Category", dropna=False)[
-                    "Transaction Total"
-                ]
-                .agg("mean" if method == "average" else "sum")
-                .sort_values(ascending=False)
-            )
-            top = grouped.head(max(1, top_n_value))
+            top = all_grouped.head(max(1, top_n_value))
             payload = {
                 "status": "ok",
                 "type": "top_categories",
@@ -272,6 +277,7 @@ class HelperAgent(LLMBase):
                     {"category": str(cat), "value": round(float(val), 2)}
                     for cat, val in top.items()
                 ],
+                "top_categories": top_categories_table,
             }
             if include_chart:
                 payload["chart"] = HelperAgent._build_spending_breakdown_chart(
@@ -290,6 +296,7 @@ class HelperAgent(LLMBase):
                 "period": period,
                 "category_filter": category or None,
                 "value": round(float(scoped["Transaction Total"].mean()), 2),
+                "top_categories": top_categories_table,
             }
             if include_chart:
                 payload["chart"] = HelperAgent._build_spending_breakdown_chart(
@@ -308,6 +315,7 @@ class HelperAgent(LLMBase):
             "period": period,
             "category_filter": category or None,
             "value": round(total, 2),
+            "top_categories": top_categories_table,
         }
         if include_chart:
             payload["chart"] = HelperAgent._build_spending_breakdown_chart(
@@ -326,7 +334,6 @@ class HelperAgent(LLMBase):
         aggregation_method: str = "sum",
         weekly_average: bool = False,
         include_chart: bool = False,
-        chart_type: str = "grouped_bar",
     ) -> dict[str, Any]:
         """Execute the compare_spending_periods computation on current rows."""
         frame = HelperAgent._to_frame(self._validated_rows)
@@ -396,7 +403,6 @@ class HelperAgent(LLMBase):
                     label_1=label_1,
                     label_2=label_2,
                     aggregation_method=method,
-                    chart_type=chart_type,
                 )
                 if bool(include_chart)
                 else None
@@ -438,9 +444,6 @@ class HelperAgent(LLMBase):
                 ),
                 weekly_average=bool(params.get("weekly_average", False)),
                 include_chart=bool(params.get("include_chart", False)),
-                chart_type=str(
-                    params.get("chart_type", "grouped_bar") or "grouped_bar"
-                ),
             )
         else:
             return self.ask(question, validated_rows, chat_history=chat_history)
@@ -459,6 +462,9 @@ class HelperAgent(LLMBase):
 
         if isinstance(tool_output, dict) and tool_output.get("chart") is not None:
             response["chart"] = tool_output.get("chart")
+
+        if isinstance(tool_output, dict) and tool_output.get("top_categories"):
+            response["top_categories"] = tool_output["top_categories"]
 
         return response
 
@@ -1039,7 +1045,6 @@ class HelperAgent(LLMBase):
         label_1: str,
         label_2: str,
         aggregation_method: str,
-        chart_type: str = "grouped_bar",
     ) -> dict[str, Any]:
         """Build chart payload for two category distributions."""
         method = normalize_aggregation_method(aggregation_method)
@@ -1069,27 +1074,22 @@ class HelperAgent(LLMBase):
             round(float(grouped_2.get(cat, 0.0)), 2) for cat in ordered_categories
         ]
 
-        selected_type = str(chart_type or "").strip().lower()
-
-        if selected_type == "bar":
-            combined = [round(v1 + v2, 2) for v1, v2 in zip(values_1, values_2)]
-            return {
-                "type": "bar",
-                "title": f"Combined spending: {label_1} + {label_2}",
-                "currency": "USD",
-                "labels": ordered_categories,
-                "values": combined,
-            }
-
-        if selected_type == "pie":
-            combined = [round(v1 + v2, 2) for v1, v2 in zip(values_1, values_2)]
-            return {
-                "type": "pie",
-                "title": f"Spending share: {label_1} + {label_2}",
-                "currency": "USD",
-                "labels": ordered_categories,
-                "values": combined,
-            }
+        # Build a per-category comparison table alongside the chart.
+        table_rows = []
+        for i, cat in enumerate(ordered_categories):
+            v1 = values_1[i]
+            v2 = values_2[i]
+            delta = round(v1 - v2, 2)
+            pct = round((delta / v2) * 100.0, 1) if v2 != 0 else None
+            table_rows.append(
+                {
+                    "category": cat,
+                    "period_1": v1,
+                    "period_2": v2,
+                    "delta": delta,
+                    "percent_change": pct,
+                }
+            )
 
         return {
             "type": "grouped_bar",
@@ -1100,6 +1100,10 @@ class HelperAgent(LLMBase):
                 {"name": label_1, "values": values_1},
                 {"name": label_2, "values": values_2},
             ],
+            "table": {
+                "columns": ["Category", label_1, label_2, "Delta ($)", "Change (%)"],
+                "rows": table_rows,
+            },
         }
 
     @staticmethod
@@ -1124,6 +1128,13 @@ class HelperAgent(LLMBase):
         selected_chart_type = (
             "pie" if str(chart_type or "").strip().lower() == "pie" else "bar"
         )
+
+        # Include the top 5 categories breakdown beneath the chart.
+        top_5 = grouped.head(5)
+        top_categories = [
+            {"category": str(cat), "value": round(float(val), 2)}
+            for cat, val in top_5.items()
+        ]
 
         return {
             "type": selected_chart_type,

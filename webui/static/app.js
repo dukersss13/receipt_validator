@@ -338,6 +338,20 @@ function renderChatTranscript() {
         text.textContent = msg.text;
         item.appendChild(text);
 
+        if (msg.role === "assistant" && msg.top_categories) {
+            const tableNode = buildTopCategoriesTable(msg.top_categories);
+            if (tableNode) {
+                item.appendChild(tableNode);
+            }
+        }
+
+        if (msg.role === "assistant" && msg.comparison_table) {
+            const tableNode = buildComparisonTable(msg.comparison_table);
+            if (tableNode) {
+                item.appendChild(tableNode);
+            }
+        }
+
         host.appendChild(item);
     });
 
@@ -352,6 +366,109 @@ function formatUsd(value) {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     }).format(numeric);
+}
+
+function buildTopCategoriesTable(categories) {
+    if (!Array.isArray(categories) || !categories.length) {
+        return null;
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "chat-data-table";
+
+    const heading = document.createElement("div");
+    heading.className = "chat-data-table-title";
+    heading.textContent = "Top 5 Categories";
+    wrapper.appendChild(heading);
+
+    const table = document.createElement("table");
+    const thead = document.createElement("thead");
+    thead.innerHTML = "<tr><th>Category</th><th>Amount</th></tr>";
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    categories.forEach((row) => {
+        const tr = document.createElement("tr");
+        const tdCat = document.createElement("td");
+        tdCat.textContent = row.category || "";
+        const tdVal = document.createElement("td");
+        tdVal.className = "num";
+        tdVal.textContent = formatUsd(row.value);
+        tr.appendChild(tdCat);
+        tr.appendChild(tdVal);
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrapper.appendChild(table);
+    return wrapper;
+}
+
+function buildComparisonTable(tableData) {
+    if (!tableData || !Array.isArray(tableData.rows) || !tableData.rows.length) {
+        return null;
+    }
+
+    const columns = Array.isArray(tableData.columns) ? tableData.columns : [];
+    const wrapper = document.createElement("div");
+    wrapper.className = "chat-data-table";
+
+    const heading = document.createElement("div");
+    heading.className = "chat-data-table-title";
+    heading.textContent = "Spending Comparison";
+    wrapper.appendChild(heading);
+
+    const table = document.createElement("table");
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+    columns.forEach((col) => {
+        const th = document.createElement("th");
+        th.textContent = col;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    tableData.rows.forEach((row) => {
+        const tr = document.createElement("tr");
+
+        const tdCat = document.createElement("td");
+        tdCat.textContent = row.category || "";
+        tr.appendChild(tdCat);
+
+        const tdP1 = document.createElement("td");
+        tdP1.className = "num";
+        tdP1.textContent = formatUsd(row.period_1);
+        tr.appendChild(tdP1);
+
+        const tdP2 = document.createElement("td");
+        tdP2.className = "num";
+        tdP2.textContent = formatUsd(row.period_2);
+        tr.appendChild(tdP2);
+
+        const tdDelta = document.createElement("td");
+        tdDelta.className = "num";
+        const delta = Number(row.delta) || 0;
+        tdDelta.textContent = (delta >= 0 ? "+" : "") + formatUsd(delta);
+        tdDelta.classList.add(delta >= 0 ? "positive" : "negative");
+        tr.appendChild(tdDelta);
+
+        const tdPct = document.createElement("td");
+        tdPct.className = "num";
+        if (row.percent_change != null) {
+            const pct = Number(row.percent_change);
+            tdPct.textContent = (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%";
+            tdPct.classList.add(pct >= 0 ? "positive" : "negative");
+        } else {
+            tdPct.textContent = "—";
+        }
+        tr.appendChild(tdPct);
+
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrapper.appendChild(table);
+    return wrapper;
 }
 
 function buildChatChartNode(chart) {
@@ -1718,6 +1835,8 @@ async function sendChatMessage() {
                                 payload.answer || "I could not generate an answer.";
                         }
                         currentMsg.chart = payload.chart || null;
+                        currentMsg.top_categories = payload.top_categories || null;
+                        currentMsg.comparison_table = payload.comparison_table || null;
                         renderChatTranscript();
                     }
                     streamDone = true;

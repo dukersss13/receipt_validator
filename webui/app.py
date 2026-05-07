@@ -823,6 +823,12 @@ def chat_ask_stream():
                     "route": result.get("route", "helper_agent"),
                     "toolName": result.get("toolName", ""),
                     "chart": result.get("chart"),
+                    "top_categories": result.get("top_categories"),
+                    "comparison_table": (
+                        result["chart"].get("table")
+                        if isinstance(result.get("chart"), dict)
+                        else None
+                    ),
                 },
             )
         except Exception as exc:
