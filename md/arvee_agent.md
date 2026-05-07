@@ -2,9 +2,10 @@
 
 ArVee is the conversational analytics assistant in Receipt Validator. It answers user questions over validated transaction data — providing spending totals, averages, category breakdowns, top-N summaries, period-over-period comparisons, and interactive chart visualizations.
 
-## Architecture
+### Agent Architecture Diagram
 
-ArVee uses a two-stage **Router → Helper** agent architecture. A lightweight routing model classifies the user's intent and extracts structured parameters, then hands off execution to the HelperAgent which runs deterministic computations and synthesizes a natural-language answer.
+![ArVee Agent Architecture](arvee_agent_architecture.svg)
+
 
 ### Component Overview
 
@@ -14,34 +15,6 @@ ArVee uses a two-stage **Router → Helper** agent architecture. A lightweight r
 | `HelperAgent` | Executes the selected tool over transaction data, generates the final answer | `gemini-2.5-flash-lite` |
 | `LLMBase` | Shared base class for Gemini config loading, API-key resolution, and model initialization | — |
 
-### Request Flow
-
-```
-User Question
-     │
-     ▼
-┌──────────────────┐
-│   RouterAgent    │  Receives question + chat history
-│  (gemini-2.5)    │  Returns JSON: { tool_name, tool_params, confidence }
-└────────┬─────────┘
-         │
-         ▼
-   ┌─────────────┐   needs_clarification = true?
-   │  Clarify?   │──────────────────────────────────► Return clarification question to user
-   └──────┬──────┘
-          │ no
-          ▼
-┌──────────────────┐
-│   HelperAgent    │  ask_with_routed_tool()
-│  (gemini-2.5)    │  1. Execute tool (deterministic Python)
-│                  │  2. Synthesize answer from tool output
-│                  │  3. Attach chart payload if requested
-└────────┬─────────┘
-         │
-         ▼
-   Response payload
-   (answer + chart + metadata)
-```
 
 ### Key Design Decisions
 
@@ -50,12 +23,10 @@ User Question
 - **Chart payloads are data-only**: Tools return structured JSON chart descriptors (`{ type, labels, values, ... }`). The frontend renders them as inline SVG — no server-side image generation.
 - **In-chat memory**: Prior turns are passed to both router and helper to support follow-up questions.
 
+
 ### ArVee Agent in the UI
 <img width="1540" height="1137" alt="Screenshot 2026-04-27 at 9 48 51 PM" src="https://github.com/user-attachments/assets/1a6a409b-77bd-4dc1-95ab-19364f533eb6" />
 
-### Agent Architecture Diagram
-
-![ArVee Agent Architecture](arvee_agent_architecture.svg)
 
 ---
 
