@@ -53,7 +53,9 @@ User Question
 ### ArVee Agent in the UI
 <img width="1540" height="1137" alt="Screenshot 2026-04-27 at 9 48 51 PM" src="https://github.com/user-attachments/assets/1a6a409b-77bd-4dc1-95ab-19364f533eb6" />
 
-### Architecture Image Placeholder
+### Architecture Diagram
+
+![ArVee Agent Architecture](architecture_diagram.svg)
 
 ---
 
