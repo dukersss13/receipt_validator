@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 820"
+     font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+
+  <defs>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="112%">
+      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-color="#1e293b" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#64748B"/>
+    </marker>
+    <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#0D9488"/>
+    </marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#F59E0B"/>
+    </marker>
+    <linearGradient id="bg-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#F1F5F9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1020" height="820" fill="url(#bg-grad)" rx="12"/>
+  <rect x="1" y="1" width="1018" height="818" fill="none" stroke="#E2E8F0" rx="12" stroke-width="1"/>
+
+  <!-- ===== TITLE ===== -->
+  <text x="510" y="32" text-anchor="middle" font-size="22" font-weight="700" fill="#1E293B"
+        letter-spacing="-0.3">Receipt Validator — System Architecture</text>
+  <text x="510" y="52" text-anchor="middle" font-size="12" fill="#64748B">
+    Multi-Modal Transaction Validation Pipeline</text>
+
+  <!-- ================================================================== -->
+  <!-- ROW 1: INPUT LAYER                                                  -->
+  <!-- ================================================================== -->
+  <text x="30" y="82" font-size="11" font-weight="700" fill="#94A3B8" letter-spacing="1">INPUT</text>
+
+  <!-- PDF Statements -->
+  <rect x="30" y="92" width="180" height="50" rx="8" fill="#F5F3FF" stroke="#A78BFA"
+        stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="120" y="114" text-anchor="middle" font-size="13" font-weight="600" fill="#5B21B6">PDF Statements</text>
+  <text x="120" y="131" text-anchor="middle" font-size="9.5" fill="#7C3AED">Bank / Card exports</text>
+
+  <!-- Receipt Images -->
+  <rect x="240" y="92" width="180" height="50" rx="8" fill="#F5F3FF" stroke="#A78BFA"
+        stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="330" y="114" text-anchor="middle" font-size="13" font-weight="600" fill="#5B21B6">Receipt Images</text>
+  <text x="330" y="131" text-anchor="middle" font-size="9.5" fill="#7C3AED">.png / .jpg / .jpeg</text>
+
+  <!-- Web UI -->
+  <rect x="570" y="92" width="200" height="50" rx="8" fill="#F0FDFA" stroke="#2DD4BF"
+        stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="670" y="114" text-anchor="middle" font-size="13" font-weight="600" fill="#134E4A">Flask Web UI</text>
+  <text x="670" y="131" text-anchor="middle" font-size="9.5" fill="#0D9488">Upload · Validate · Chat</text>
+
+  <!-- Database -->
+  <rect x="810" y="92" width="180" height="50" rx="8" fill="#FFFBEB" stroke="#F59E0B"
+        stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="900" y="114" text-anchor="middle" font-size="13" font-weight="600" fill="#92400E">Database</text>
+  <text x="900" y="131" text-anchor="middle" font-size="9.5" fill="#B45309">Session · State · History</text>
+
+  <!-- Arrow: Web UI ↔ Database -->
+  <line x1="770" y1="117" x2="808" y2="117" stroke="#F59E0B" stroke-width="1.5"
+        marker-start="url(#arrow-amber)" marker-end="url(#arrow-amber)"/>
+
+  <!-- Arrows: Inputs → DataReader -->
+  <line x1="120" y1="142" x2="120" y2="195" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="330" y1="142" x2="330" y2="195" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Arrow: Web UI → DataReader -->
+  <line x1="670" y1="142" x2="670" y2="163" stroke="#0D9488" stroke-width="1.5"/>
+  <line x1="670" y1="163" x2="430" y2="163" stroke="#0D9488" stroke-width="1.5"/>
+  <line x1="430" y1="163" x2="430" y2="195" stroke="#0D9488" stroke-width="1.5" marker-end="url(#arrow-teal)"/>
+  <text x="555" y="158" text-anchor="middle" font-size="9" fill="#94A3B8" font-style="italic">file upload</text>
+
+  <!-- ================================================================== -->
+  <!-- ROW 2: DATA INGESTION                                               -->
+  <!-- ================================================================== -->
+  <text x="30" y="190" font-size="11" font-weight="700" fill="#94A3B8" letter-spacing="1">INGESTION</text>
+
+  <rect x="72" y="197" width="410" height="62" rx="8" fill="#EFF6FF" stroke="#6396e8"
+        stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="277" y="222" text-anchor="middle" font-size="15" font-weight="700" fill="#1E3A8A">DataReader</text>
+  <text x="277" y="240" text-anchor="middle" font-size="10" fill="#3B6FCF">
+    gemini-2.5-flash-lite · PII stripping · base64 encoding · FX conversion</text>
+
+  <!-- Sub-steps inside DataReader (right side) -->
+  <rect x="505" y="197" width="145" height="28" rx="6" fill="#DBEAFE" stroke="#93C5FD" stroke-width="1"/>
+  <text x="577" y="215" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1E40AF">strip_sensitive_info</text>
+
+  <rect x="505" y="231" width="145" height="28" rx="6" fill="#DBEAFE" stroke="#93C5FD" stroke-width="1"/>
+  <text x="577" y="249" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1E40AF">currency → USD</text>
+
+  <!-- Arrows from DataReader to sub-steps -->
+  <line x1="482" y1="215" x2="503" y2="215" stroke="#93C5FD" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <line x1="482" y1="243" x2="503" y2="243" stroke="#93C5FD" stroke-width="1.2" stroke-dasharray="4 3"/>
+
+  <!-- Output schema label -->
+  <rect x="680" y="210" width="200" height="35" rx="6" fill="#F0FDF4" stroke="#86EFAC" stroke-width="1"/>
+  <text x="780" y="225" text-anchor="middle" font-size="9.5" font-weight="600" fill="#166534">Output Schema</text>
+  <text x="780" y="238" text-anchor="middle" font-size="9" fill="#15803D">business_name · total · date · currency</text>
+
+  <line x1="650" y1="228" x2="678" y2="228" stroke="#86EFAC" stroke-width="1.2" stroke-dasharray="4 3"/>
+
+  <!-- Arrow: DataReader → Categorizer -->
+  <line x1="277" y1="259" x2="277" y2="303" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="295" y="286" font-size="9" fill="#94A3B8" font-style="italic">DataFrames</text>
+
+  <!-- ================================================================== -->
+  <!-- ROW 3: CATEGORIZATION                                               -->
+  <!-- ================================================================== -->
+  <text x="30" y="320" font-size="11" font-weight="700" fill="#94A3B8" letter-spacing="1">CATEGORIZE</text>
+
+  <rect x="120" y="305" width="320" height="55" rx="8" fill="#EFF6FF" stroke="#6396e8"
+        stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="280" y="328" text-anchor="middle" font-size="14" font-weight="600" fill="#1E3A8A">
+    TransactionCategorizer</text>
+  <text x="280" y="346" text-anchor="middle" font-size="10" fill="#3B6FCF">
+    Gemini assigns: Food · Shopping · Medical · Transport · ...</text>
+
+  <!-- Connecting line: Categorizer → Categories -->
+  <line x1="440" y1="332" x2="468" y2="332" stroke="#C4B5FD" stroke-width="1.5" stroke-dasharray="4 3"/>
+
+  <!-- Category list (right side) -->
+  <rect x="470" y="305" width="180" height="55" rx="6" fill="#F5F3FF" stroke="#C4B5FD" stroke-width="1"/>
+  <text x="560" y="322" text-anchor="middle" font-size="9.5" font-weight="600" fill="#5B21B6">9 Categories</text>
+  <text x="560" y="336" text-anchor="middle" font-size="8.5" fill="#7C3AED">Food · Shopping · Medical</text>
+  <text x="560" y="348" text-anchor="middle" font-size="8.5" fill="#7C3AED">Transport · Utilities · Entertainment</text>
+
+  <!-- Arrow: Categorizer → Validator -->
+  <line x1="280" y1="360" x2="280" y2="405" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="298" y="388" font-size="9" fill="#94A3B8" font-style="italic">categorized rows</text>
+
+  <!-- ================================================================== -->
+  <!-- ROW 4: VALIDATION                                                   -->
+  <!-- ================================================================== -->
+  <text x="30" y="422" font-size="11" font-weight="700" fill="#94A3B8" letter-spacing="1">VALIDATE</text>
+
+  <rect x="100" y="407" width="360" height="60" rx="8" fill="#FEF2F2" stroke="#F87171"
+        stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="280" y="432" text-anchor="middle" font-size="15" font-weight="700" fill="#991B1B">Validator</text>
+  <text x="280" y="450" text-anchor="middle" font-size="10" fill="#DC2626">
+    Fuzzy match · Date normalization · Amount reconciliation</text>
+
+  <!-- Validator outputs (right side) -->
+  <rect x="490" y="396" width="170" height="26" rx="5" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="1"/>
+  <text x="575" y="413" text-anchor="middle" font-size="9.5" font-weight="600" fill="#991B1B">Validated Transactions</text>
+
+  <rect x="490" y="426" width="170" height="26" rx="5" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="1"/>
+  <text x="575" y="443" text-anchor="middle" font-size="9.5" font-weight="600" fill="#991B1B">Discrepancies</text>
+
+  <rect x="490" y="456" width="170" height="26" rx="5" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="1"/>
+  <text x="575" y="473" text-anchor="middle" font-size="9.5" font-weight="600" fill="#991B1B">Unmatched Items</text>
+
+  <!-- Recommendation box -->
+  <rect x="700" y="456" width="170" height="26" rx="5" fill="#EFF6FF" stroke="#6396e8" stroke-width="1"/>
+  <text x="785" y="473" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1E3A8A">Recommendation</text>
+  <line x1="660" y1="469" x2="698" y2="469" stroke="#6396e8" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+  <!-- Arrows from Validator to outputs -->
+  <line x1="460" y1="425" x2="488" y2="412" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <line x1="460" y1="437" x2="488" y2="439" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <line x1="460" y1="450" x2="488" y2="466" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
+
+  <!-- Arrow: Validator → ArVee pipeline -->
+  <line x1="280" y1="467" x2="280" y2="510" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="298" y="494" font-size="9" fill="#94A3B8" font-style="italic">validated rows</text>
+
+  <!-- ================================================================== -->
+  <!-- ROW 5: ARVEE AGENT PIPELINE                                         -->
+  <!-- ================================================================== -->
+  <!-- Container box -->
+  <rect x="25" y="512" width="650" height="280" rx="10" fill="none" stroke="#CBD5E1"
+        stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="40" y="530" font-size="11" font-weight="700" fill="#94A3B8" letter-spacing="1">
+    ARVEE CHAT AGENT</text>
+  <text x="665" y="530" text-anchor="end" font-size="9" fill="#94A3B8" font-style="italic">
+    See architecture_diagram.svg for details</text>
+
+  <!-- RouterAgent -->
+  <rect x="50" y="540" width="230" height="55" rx="8" fill="#EFF6FF" stroke="#6396e8"
+        stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="165" y="563" text-anchor="middle" font-size="14" font-weight="700" fill="#1E3A8A">RouterAgent</text>
+  <text x="165" y="580" text-anchor="middle" font-size="9" fill="#3B6FCF">
+    gemini-2.5-flash-lite · temp=0.0</text>
+
+  <!-- Arrow: Router → Decision -->
+  <line x1="165" y1="595" x2="165" y2="618" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Decision diamond -->
+  <polygon points="165,620 240,650 165,680 90,650" fill="#FFF7ED" stroke="#F97316"
+           stroke-width="1.5"/>
+  <text x="165" y="648" text-anchor="middle" font-size="9.5" font-weight="600" fill="#9A3412">clarify?</text>
+  <text x="165" y="660" text-anchor="middle" font-size="8.5" fill="#C2410C">cache?</text>
+
+  <!-- Arrow: Decision → HelperAgent (down) -->
+  <line x1="165" y1="680" x2="165" y2="710" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- HelperAgent -->
+  <rect x="50" y="712" width="230" height="55" rx="8" fill="#EFF6FF" stroke="#6396e8"
+        stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="165" y="735" text-anchor="middle" font-size="14" font-weight="700" fill="#1E3A8A">HelperAgent</text>
+  <text x="165" y="752" text-anchor="middle" font-size="9" fill="#3B6FCF">
+    gemini-2.5-flash-lite · temp=0.1</text>
+
+  <!-- Tools (right of helper) -->
+  <rect x="320" y="700" width="170" height="32" rx="6" fill="#F5F3FF" stroke="#A78BFA"
+        stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="405" y="720" text-anchor="middle" font-size="11" font-weight="600" fill="#5B21B6">spending_breakdown</text>
+
+  <rect x="320" y="740" width="200" height="32" rx="6" fill="#F5F3FF" stroke="#A78BFA"
+        stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="420" y="760" text-anchor="middle" font-size="11" font-weight="600" fill="#5B21B6">compare_spending_periods</text>
+
+  <!-- Arrows: Helper → Tools -->
+  <line x1="280" y1="725" x2="318" y2="718" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="280" y1="745" x2="318" y2="754" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- QueryCache (right of router) -->
+  <rect x="320" y="544" width="160" height="44" rx="8" fill="#ECFDF5" stroke="#34D399"
+        stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="400" y="565" text-anchor="middle" font-size="12" font-weight="600" fill="#065F46">QueryCache</text>
+  <text x="400" y="578" text-anchor="middle" font-size="9" fill="#059669">LRU · tool+params+data</text>
+
+  <!-- Arrow: Router → Cache -->
+  <line x1="280" y1="566" x2="318" y2="566" stroke="#64748B" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Clarification box (right of diamond) -->
+  <rect x="510" y="635" width="150" height="38" rx="6" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="1.2"/>
+  <text x="585" y="652" text-anchor="middle" font-size="10" font-weight="600" fill="#991B1B">Clarification</text>
+  <text x="585" y="664" text-anchor="middle" font-size="8.5" fill="#B91C1C">Ask user to rephrase</text>
+  <line x1="240" y1="650" x2="508" y2="650" stroke="#FCA5A5" stroke-width="1.2"
+        stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+
+  <!-- ================================================================== -->
+  <!-- ROW 6: OUTPUT                                                       -->
+
+
+  <!-- ================================================================== -->
+  <!-- SHARED FOUNDATION (bottom bar)                                      -->
+  <!-- ================================================================== -->
+  <rect x="25" y="796" width="970" height="20" rx="4" fill="#E2E8F0"/>
+  <text x="510" y="810" text-anchor="middle" font-size="10" font-weight="600" fill="#475569">
+    LLMBase — Shared config loading · API-key resolution · Model initialization · Streaming helpers</text>
+
+  <!-- ================================================================== -->
+  <!-- LEGEND                                                              -->
+  <!-- ================================================================== -->
+  <rect x="740" y="620" width="250" height="120" rx="8" fill="white" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="865" y="640" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">Legend</text>
+
+  <rect x="754" y="650" width="14" height="14" rx="3" fill="#EFF6FF" stroke="#6396e8" stroke-width="1"/>
+  <text x="776" y="661" font-size="10" fill="#475569">LLM Agent (Gemini)</text>
+
+  <rect x="754" y="670" width="14" height="14" rx="3" fill="#F5F3FF" stroke="#A78BFA" stroke-width="1"/>
+  <text x="776" y="681" font-size="10" fill="#475569">Tool (Deterministic Python)</text>
+
+  <rect x="754" y="690" width="14" height="14" rx="3" fill="#FEF2F2" stroke="#F87171" stroke-width="1"/>
+  <text x="776" y="701" font-size="10" fill="#475569">Validation Engine</text>
+
+  <rect x="754" y="710" width="14" height="14" rx="3" fill="#ECFDF5" stroke="#34D399" stroke-width="1"/>
+  <text x="776" y="721" font-size="10" fill="#475569">Cache Layer</text>
+
+</svg>

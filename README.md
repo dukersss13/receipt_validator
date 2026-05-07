@@ -40,15 +40,8 @@ The system consists of the following key components:
     * Users can download validated transaction outputs as CSV.
 
 6. **Architecture Diagram**
-<img width="1554" height="760" alt="image" src="https://github.com/user-attachments/assets/c24b305e-b8fb-4bd8-a6fc-5070ecbff1ba" />
 
-
-
-
-7. **LangGraph Visualization**
-
-   ![image](https://github.com/user-attachments/assets/7e5d07ef-6ffe-4ebd-9bd5-cb6e22c74706)
-   
+![Receipt Validator System Architecture](md/system_architecture.svg)
 
 
 
