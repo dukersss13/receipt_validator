@@ -27,7 +27,7 @@ The system consists of the following key components:
     * Converts non-USD totals through the currency conversion utility.
     * Tracks ingestion token usage and estimated cost.
 
-4.  **Validation + Intelligence (`src/intelligence/validator.py`, `src/intelligence/categorize.py`, `src/intelligence/helper_agent.py`):
+4.  **Validation + Intelligence** (`src/intelligence/validator.py`, `src/intelligence/categorize.py`, `src/intelligence/helper_agent.py`):
     * **TransactionCategorizer:** Uses Gemini to assign categories to transaction/proof rows.
     * **Validator:** Performs fuzzy business-name matching, date normalization, amount reconciliation, and discrepancy/unmatched analysis.
     * **ArVee HelperAgent:** Tool-calling assistant (`breakdown_spending`) for conversational analysis over validated rows.
