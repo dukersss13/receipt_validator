@@ -189,22 +189,22 @@
     answer + chart + table + metadata</text>
 
   <!-- ===== LEGEND ===== -->
-  <rect x="598" y="635" width="232" height="140" rx="8" fill="white" stroke="#E2E8F0" stroke-width="1"/>
-  <text x="714" y="655" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">Legend</text>
+  <rect x="598" y="790" width="232" height="140" rx="8" fill="white" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="714" y="810" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">Legend</text>
 
-  <rect x="612" y="665" width="14" height="14" rx="3" fill="#3B82F6"/>
-  <text x="634" y="676" font-size="10" fill="#475569">LLM Agent (Gemini)</text>
+  <rect x="612" y="820" width="14" height="14" rx="3" fill="#3B82F6"/>
+  <text x="634" y="831" font-size="10" fill="#475569">LLM Agent (Gemini)</text>
 
-  <rect x="612" y="685" width="14" height="14" rx="3" fill="#7C3AED"/>
-  <text x="634" y="696" font-size="10" fill="#475569">Tool (Deterministic Python)</text>
+  <rect x="612" y="840" width="14" height="14" rx="3" fill="#7C3AED"/>
+  <text x="634" y="851" font-size="10" fill="#475569">Tool (Deterministic Python)</text>
 
-  <rect x="612" y="705" width="14" height="14" rx="3" fill="#10B981"/>
-  <text x="634" y="716" font-size="10" fill="#475569">Cache Layer</text>
+  <rect x="612" y="860" width="14" height="14" rx="3" fill="#10B981"/>
+  <text x="634" y="871" font-size="10" fill="#475569">Cache Layer</text>
 
-  <rect x="612" y="725" width="14" height="14" rx="3" fill="#F97316"/>
-  <text x="634" y="736" font-size="10" fill="#475569">Decision Point</text>
+  <rect x="612" y="880" width="14" height="14" rx="3" fill="#F97316"/>
+  <text x="634" y="891" font-size="10" fill="#475569">Decision Point</text>
 
-  <rect x="612" y="745" width="14" height="14" rx="3" fill="#8B5CF6"/>
-  <text x="634" y="756" font-size="10" fill="#475569">Entry / Exit</text>
+  <rect x="612" y="900" width="14" height="14" rx="3" fill="#8B5CF6"/>
+  <text x="634" y="911" font-size="10" fill="#475569">Entry / Exit</text>
 
 </svg>
