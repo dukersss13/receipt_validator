@@ -30,8 +30,10 @@ The system consists of the following key components:
 4.  **Validation + Intelligence** (`src/intelligence/validator.py`, `src/intelligence/categorize.py`, `src/intelligence/helper_agent.py`):
     * **TransactionCategorizer:** Uses Gemini to assign categories to transaction/proof rows.
     * **Validator:** Performs fuzzy business-name matching, date normalization, amount reconciliation, and discrepancy/unmatched analysis.
-    * **ArVee HelperAgent:** Tool-calling assistant (`breakdown_spending`) for conversational analysis over validated rows.
-    * **Current Agent Scope:** Provides aggregation-based insights only (for example: sum/total spending, average spending per category, and timeframe-based summaries/trends).
+    * **ArVee Agent Flow:** `RouterAgent` interprets user intent and routes requests to `HelperAgent`, which executes the selected analytics tool and returns the response.
+    * **Current Tools:** `spending_breakdown` and `compare_spending_periods`.
+    * **Current Agent Scope:** Aggregation-oriented insights (for example: totals, averages, category breakdowns, and period comparisons).
+    * **More Info:** See [ArVee Agent details](md/arvee_agent.md).
     * **In-Chat Memory:** Maintains conversation context within the active chat, so follow-up questions can reference prior turns in the current conversation. ArVee HelperAgent always has context over **validated transactions** at current time, so feel free to ask him anything!
 
 5.  **Web/UI & Persistence (`webui/`, `src/data/database.py`):**
@@ -57,7 +59,7 @@ Refer to [this](md/application.md) to see the application's UI and workflow.
 
 ## ArVee Agent
 
-For a focused overview of ArVee HelperAgent architecture, tool-calling flow, and functionality, see [here](md/arvee_agent.md).
+For a focused overview of RouterAgent + HelperAgent architecture, tool-calling flow, and functionality, see [ArVee Agent details](md/arvee_agent.md).
 
 ### Custom Website UI
 This repository now includes a custom website UI powered by Flask.
