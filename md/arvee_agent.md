@@ -73,11 +73,20 @@ Returns top categories by sum or average using grouped aggregations across valid
 ### 3. Time-Scoped Analysis
 
 Supports time-period queries including "this month", "last month", "N months ago", and explicit `YYYY-MM` month references. Defaults to all available transactions when no timeframe is specified.
+<img width="568" height="820" alt="Screenshot 2026-05-08 at 11 03 26 AM" src="https://github.com/user-attachments/assets/e1a4d4bc-3308-4b8b-8f48-672bcd160c31" />
+
 
 ### 4. Period Comparison
 
 Compares two periods side-by-side with delta and percent-change calculations. Supports weekly-average normalization for fair comparison of periods with different lengths.
+<img width="561" height="935" alt="Screenshot 2026-05-08 at 11 04 03 AM" src="https://github.com/user-attachments/assets/56e89d5a-9884-418f-9ef5-593f2ec065f2" />
+<img width="789" height="527" alt="Screenshot 2026-05-08 at 11 04 09 AM" src="https://github.com/user-attachments/assets/8ca1af75-0c87-4085-9665-6d0fce5ad8f1" />
+
 
 ### 5. Interactive Charts
 
 Generates bar, pie, and grouped-bar chart visualizations rendered as inline SVG in the chat UI. Charts are expandable to full-screen for detailed inspection.
+
+<img width="790" height="553" alt="Screenshot 2026-05-08 at 11 04 41 AM" src="https://github.com/user-attachments/assets/09e51488-9188-4bd3-a49c-6ca26b5c2f08" />
+![Uploading Screenshot 2026-05-08 at 11.04.34 AM.png…]()
+
