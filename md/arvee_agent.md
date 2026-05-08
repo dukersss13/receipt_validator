@@ -4,7 +4,7 @@ ArVee is the conversational analytics assistant in Receipt Validator. It answers
 
 ### Agent Architecture Diagram
 
-![ArVee Agent Architecture](arvee_agent_architecture.svg)
+<img width="731" height="816" alt="ArVee Agent Architecture" src="arvee_agent_architecture.svg" />
 
 
 ### Component Overview
