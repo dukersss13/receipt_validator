@@ -81,8 +81,9 @@ Supports time-period queries including "this month", "last month", "N months ago
 Compares two periods side-by-side with delta and percent-change calculations. Supports weekly-average normalization for fair comparison of periods with different lengths.
 
 <table><tr>
-<td><img width="280" height="467" alt="Screenshot 2026-05-08 at 11 04 03 AM" src="https://github.com/user-attachments/assets/56e89d5a-9884-418f-9ef5-593f2ec065f2" /></td>
-<td><img width="395" height="264" alt="Screenshot 2026-05-08 at 11 04 09 AM" src="https://github.com/user-attachments/assets/8ca1af75-0c87-4085-9665-6d0fce5ad8f1" /></td>
+<td><img width="322" height="537" alt="Screenshot 2026-05-08 at 11 04 03 AM" src="https://github.com/user-attachments/assets/56e89d5a-9884-418f-9ef5-593f2ec065f2" /></td>
+<td>&nbsp;&nbsp;&nbsp;</td>
+<td><img width="454" height="304" alt="Screenshot 2026-05-08 at 11 04 09 AM" src="https://github.com/user-attachments/assets/8ca1af75-0c87-4085-9665-6d0fce5ad8f1" /></td>
 </tr></table>
 
 
