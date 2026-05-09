@@ -820,7 +820,6 @@ def chat_ask_stream():
                     "rowsScanned": len(validated_rows),
                     "confidence": result.get("confidence", "high"),
                     "toolUsed": bool(result.get("toolUsed", False)),
-                    "route": result.get("route", "helper_agent"),
                     "toolName": result.get("toolName", ""),
                     "chart": result.get("chart"),
                     "top_categories": result.get("top_categories"),

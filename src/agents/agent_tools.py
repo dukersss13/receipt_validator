@@ -6,42 +6,18 @@ import pandas as pd
 
 from src.agents.agent_schema import AgentTool
 from src.agents.agent_utils import (
+    MONTH_NAME_TO_NUMBER,
     category_matches,
     get_category_fuzzy_min_ratio,
     normalize_aggregation_method,
     normalize_period_token,
 )
 
-MONTH_NAME_TO_NUMBER: dict[str, int] = {
-    "january": 1,
-    "jan": 1,
-    "february": 2,
-    "feb": 2,
-    "march": 3,
-    "mar": 3,
-    "april": 4,
-    "apr": 4,
-    "may": 5,
-    "june": 6,
-    "jun": 6,
-    "july": 7,
-    "jul": 7,
-    "august": 8,
-    "aug": 8,
-    "september": 9,
-    "sep": 9,
-    "sept": 9,
-    "october": 10,
-    "oct": 10,
-    "november": 11,
-    "nov": 11,
-    "december": 12,
-    "dec": 12,
-}
-
 
 class AgentTools:
-    """Deterministic tool execution layer for ArVee analytics."""
+    """
+    Deterministic tool execution layer for ArVee analytics.
+    """
 
     def __init__(self, validated_rows: list[dict[str, Any]] | None = None) -> None:
         self._validated_rows = validated_rows or []

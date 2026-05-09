@@ -21,7 +21,6 @@ def test_router_plan_normalizes_spending_params(monkeypatch: Any) -> None:
 
     plan = router.plan_with_schema(payload=router_input("Top 3 food categories"))
 
-    assert plan.route == "helper_agent"
     assert plan.tool_name == "spending_breakdown"
     assert plan.tool_params["category"] == "Food"
     assert plan.tool_params["this_month"] is True

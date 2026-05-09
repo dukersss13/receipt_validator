@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from src.agents.agent_schema import AgentTool, AgentType, RouterInput, RouterPlan
+from src.agents.agent_schema import AgentTool, RouterInput, RouterPlan
 from src.agents.agent_utils import (
     extract_first_json_object,
     normalize_aggregation_method,
@@ -39,6 +39,7 @@ class RouterAgent(LLMBase):
             model_name=self.model_name,
             allow_test_key=True,
         )
+        self.tools = AgentTools()
 
     def ask(
         self,
@@ -75,7 +76,6 @@ class RouterAgent(LLMBase):
                 "rowsScanned": len(validated_rows),
                 "toolUsed": False,
                 "confidence": plan.confidence,
-                "route": plan.route.value,
                 "toolName": plan.tool_name.value,
                 "toolParams": plan.tool_params,
                 "needsClarification": True,
@@ -88,8 +88,8 @@ class RouterAgent(LLMBase):
         if cached is not None:
             return cached
 
-        tools = AgentTools(validated_rows=validated_rows)
-        tool_output = tools.execute_tool(
+        self.tools.set_validated_rows(validated_rows)
+        tool_output = self.tools.execute_tool(
             tool_name=plan.tool_name.value,
             tool_params=plan.tool_params,
         )
@@ -105,7 +105,6 @@ class RouterAgent(LLMBase):
         if isinstance(tool_output, dict) and tool_output.get("top_categories"):
             result["top_categories"] = tool_output["top_categories"]
 
-        result["route"] = plan.route.value
         result["toolName"] = plan.tool_name.value
         result["toolParams"] = plan.tool_params
         result["needsClarification"] = False
@@ -143,7 +142,7 @@ class RouterAgent(LLMBase):
             payload.question,
             parsed,
         )
-        return self._normalize_plan(parsed)
+        return self.extract_router_plan(parsed)
 
     def _invoke_router_model(
         self,
@@ -180,31 +179,26 @@ class RouterAgent(LLMBase):
             logger.exception("router_agent model invocation failed")
             return ""
 
-    def _normalize_plan(self, parsed: dict[str, Any]) -> RouterPlan:
-        """
-        Coerce model output to supported routes and tool parameter contracts.
+    def extract_router_plan(self, parsed: dict[str, Any]) -> RouterPlan:
+        """Extract and normalize a RouterPlan from model output.
 
         Args:
-            parsed: Untrusted model-produced plan dictionary.
+            parsed: Untrusted model-produced plan dictionary containing
+                tool_name, tool_params, needs_clarification,
+                clarification_question, and confidence fields.
 
         Returns:
-            A RouterPlan constrained to supported routes and params.
+            A validated RouterPlan constrained to supported tools and params.
         """
-        route = AgentType.from_value(
-            parsed.get("route", AgentType.HELPER.value),
-            default=AgentType.HELPER,
-        )
-        if route is not AgentType.HELPER:
-            route = AgentType.HELPER
-
         tool_name = AgentTool.from_value(
             parsed.get("tool_name", AgentTool.SPENDING_BREAKDOWN.value),
             default=AgentTool.SPENDING_BREAKDOWN,
         )
 
-        tool_params = parsed.get("tool_params", {})
-        if not isinstance(tool_params, dict):
-            tool_params = {}
+        raw_params = parsed.get("tool_params", {})
+        if not isinstance(raw_params, dict):
+            raw_params = {}
+        normalized_params = self._normalize_tool_params(tool_name, raw_params)
 
         needs_clarification = bool(parsed.get("needs_clarification", False))
         clarification_question = str(
@@ -215,21 +209,15 @@ class RouterAgent(LLMBase):
         if confidence not in {"high", "medium", "low"}:
             confidence = "medium"
 
-        normalized_params = self._normalize_tool_params(
-            tool_name=tool_name,
-            tool_params=tool_params,
-        )
-
-        # If a comparison is requested without both periods, force a follow-up
-        # clarification so the downstream tool call remains well-formed.
         if not needs_clarification and self._missing_required_params(
             tool_name, normalized_params
         ):
             needs_clarification = True
-            if not clarification_question:
-                clarification_question = "Do you want a comparison between two periods, or a single-period total for this month?"
+            clarification_question = clarification_question or (
+                "Do you want a comparison between two periods, "
+                "or a single-period total for this month?"
+            )
 
-        # Pie charts can't represent a two-period comparison — ask for bar instead.
         if (
             not needs_clarification
             and tool_name is AgentTool.COMPARE_SPENDING_PERIODS
@@ -242,7 +230,6 @@ class RouterAgent(LLMBase):
             )
 
         return RouterPlan(
-            route=route,
             tool_name=tool_name,
             tool_params=normalized_params,
             needs_clarification=needs_clarification,
@@ -351,7 +338,6 @@ class RouterAgent(LLMBase):
             A conservative RouterPlan that asks the user to clarify intent.
         """
         return RouterPlan(
-            route=AgentType.HELPER,
             tool_name=AgentTool.SPENDING_BREAKDOWN,
             tool_params={
                 "category": "",

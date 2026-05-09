@@ -3,29 +3,6 @@ from enum import Enum
 from typing import Any
 
 
-class AgentType(str, Enum):
-    """Supported top-level agent route types."""
-
-    HELPER = "helper_agent"
-    ROUTER = "router_agent"
-
-    @classmethod
-    def from_value(
-        cls,
-        value: Any,
-        default: "AgentType | None" = None,
-    ) -> "AgentType":
-        """Parse an arbitrary value into a supported AgentType."""
-        if isinstance(value, cls):
-            return value
-        token = str(value or "").strip().lower()
-        if token in {"helper", "helper_agent"}:
-            return cls.HELPER
-        if token in {"router", "router_agent"}:
-            return cls.ROUTER
-        return default or cls.HELPER
-
-
 class AgentTool(str, Enum):
     """Supported helper-agent tool identifiers."""
 
@@ -51,7 +28,7 @@ class AgentTool(str, Enum):
 
 @dataclass(slots=True)
 class AgentInput:
-    """Typed request payload for HelperAgent invocations.
+    """Typed request payload for AgentTools invocations.
 
     Attributes:
         question: Raw user question to answer.
@@ -66,7 +43,7 @@ class AgentInput:
 
 @dataclass(slots=True)
 class AgentOutput:
-    """Typed response payload returned by HelperAgent.
+    """Typed response payload returned by AgentTools.
 
     Attributes:
         answer: Final natural-language answer shown to the user.
@@ -112,7 +89,6 @@ class RouterPlan:
     """Structured router decision returned before downstream dispatch.
 
     Attributes:
-        route: Top-level route target (for example: ``"helper_agent"``).
         tool_name: Target tool name for routed execution.
         tool_params: Extracted, normalized params passed to the chosen tool.
         needs_clarification: Whether the request is too ambiguous to execute.
@@ -120,7 +96,6 @@ class RouterPlan:
         confidence: Coarse confidence label for UI/telemetry usage.
     """
 
-    route: AgentType
     tool_name: AgentTool
     tool_params: dict[str, Any]
     needs_clarification: bool = False
@@ -128,14 +103,12 @@ class RouterPlan:
     confidence: str = "high"
 
     def __post_init__(self) -> None:
-        """Coerce route/tool_name into enum values for type safety."""
-        self.route = AgentType.from_value(self.route)
+        """Coerce tool_name into enum value for type safety."""
         self.tool_name = AgentTool.from_value(self.tool_name)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable router plan dictionary."""
         return {
-            "route": self.route.value,
             "toolName": self.tool_name.value,
             "toolParams": self.tool_params,
             "needsClarification": self.needs_clarification,

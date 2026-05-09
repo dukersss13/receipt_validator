@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 960"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 820"
      font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
 
   <defs>
@@ -29,8 +29,8 @@
   </defs>
 
   <!-- Background -->
-  <rect width="860" height="960" fill="url(#bg-grad)" rx="12"/>
-  <rect x="1" y="1" width="858" height="958" fill="none" stroke="#E2E8F0" rx="12" stroke-width="1"/>
+  <rect width="860" height="820" fill="url(#bg-grad)" rx="12"/>
+  <rect x="1" y="1" width="858" height="818" fill="none" stroke="#E2E8F0" rx="12" stroke-width="1"/>
 
   <!-- ===== TITLE ===== -->
   <text x="420" y="32" text-anchor="middle" font-size="21" font-weight="700" fill="#1E293B"
@@ -123,85 +123,61 @@
     Return Cached Result</text>
   <text x="650" y="511" text-anchor="middle" font-size="9.5" fill="#047857">Skip tool execution entirely</text>
 
-  <!-- Arrow: Cache → Helper (Miss, down) -->
-  <line x1="300" y1="528" x2="300" y2="561" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
-  <rect x="254" y="530" width="36" height="16" rx="3" fill="#FEF3C7"/>
-  <text x="272" y="542" text-anchor="middle" font-size="10" font-weight="700" fill="#D97706">Miss</text>
+  <!-- Arrow: Cache → AgentTools (Miss, down) -->
+  <line x1="300" y1="528" x2="350" y2="561" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="284" y="530" width="36" height="16" rx="3" fill="#FEF3C7"/>
+  <text x="302" y="542" text-anchor="middle" font-size="10" font-weight="700" fill="#D97706">Miss</text>
 
-  <!-- ===== 6. HELPER AGENT ===== -->
-  <rect x="175" y="563" width="250" height="66" rx="8" fill="#3B82F6" filter="url(#shadow)"/>
-  <text x="300" y="588" text-anchor="middle" font-size="15" font-weight="700" fill="white">AgentTools</text>
-  <text x="300" y="606" text-anchor="middle" font-size="10" fill="rgba(255,255,255,0.75)">
-    gemini-2.5-flash-lite · temp=0.1 · max_tokens=500</text>
-  <text x="300" y="620" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.6)">
-    execute_tool() + deterministic text</text>
+  <!-- ===== 6. AGENT TOOLS (container) ===== -->
+  <rect x="68" y="563" width="564" height="130" rx="10" fill="#7C3AED" fill-opacity="0.08"
+        stroke="#7C3AED" stroke-width="2" stroke-dasharray="6,3" filter="url(#shadow)"/>
+  <text x="350" y="584" text-anchor="middle" font-size="15" font-weight="700" fill="#7C3AED">AgentTools</text>
+  <text x="350" y="598" text-anchor="middle" font-size="9.5" fill="#6D28D9">
+    execute_tool() · Deterministic Python — no LLM</text>
 
-  <!-- Arrow: Helper → Tool1 (down-left) -->
-  <line x1="248" y1="629" x2="170" y2="672" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+  <!-- OR label -->
+  <rect x="329" y="614" width="42" height="18" rx="4" fill="#EDE9FE"/>
+  <text x="350" y="627" text-anchor="middle" font-size="10" font-weight="600" fill="#7C3AED">OR</text>
 
-  <!-- Arrow: Helper → Tool2 (down-right) -->
-  <line x1="352" y1="629" x2="472" y2="672" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
-
-  <!-- OR label between arrows -->
-  <rect x="279" y="645" width="42" height="18" rx="4" fill="#E2E8F0"/>
-  <text x="300" y="658" text-anchor="middle" font-size="10" font-weight="600" fill="#64748B">OR</text>
-
-  <!-- ===== 7. TOOL 1: spending_breakdown ===== -->
-  <rect x="48" y="674" width="236" height="54" rx="8" fill="#7C3AED" filter="url(#shadow)"/>
-  <text x="166" y="697" text-anchor="middle" font-size="13" font-weight="600" fill="white">
+  <!-- Tool 1: spending_breakdown -->
+  <rect x="88" y="638" width="236" height="44" rx="8" fill="#7C3AED" filter="url(#shadow)"/>
+  <text x="206" y="658" text-anchor="middle" font-size="13" font-weight="600" fill="white">
     spending_breakdown</text>
-  <text x="166" y="714" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
+  <text x="206" y="673" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
     Single-period · pandas aggregation</text>
 
-  <!-- ===== 8. TOOL 2: compare_spending_periods ===== -->
-  <rect x="366" y="674" width="250" height="54" rx="8" fill="#7C3AED" filter="url(#shadow)"/>
-  <text x="491" y="697" text-anchor="middle" font-size="13" font-weight="600" fill="white">
+  <!-- Tool 2: compare_spending_periods -->
+  <rect x="376" y="638" width="236" height="44" rx="8" fill="#7C3AED" filter="url(#shadow)"/>
+  <text x="494" y="658" text-anchor="middle" font-size="13" font-weight="600" fill="white">
     compare_spending_periods</text>
-  <text x="491" y="714" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
+  <text x="494" y="673" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
     Two-period · pandas comparison</text>
 
-  <!-- Arrow: Tool1 → Synthesis -->
-  <line x1="166" y1="728" x2="252" y2="770" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+  <!-- Arrow: AgentTools → Response -->
+  <line x1="350" y1="693" x2="350" y2="726" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="440" y="714" font-size="9.5" fill="#94A3B8" font-style="italic">cache.put() before return</text>
 
-  <!-- Arrow: Tool2 → Synthesis -->
-  <line x1="491" y1="728" x2="360" y2="770" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
-
-  <!-- Annotation: deterministic -->
-  <text x="300" y="753" text-anchor="middle" font-size="9" fill="#94A3B8" font-style="italic">
-    Deterministic Python — LLM never computes numbers</text>
-
-  <!-- ===== 9. DETERMINISTIC ANSWER RENDER ===== -->
-  <rect x="175" y="772" width="250" height="52" rx="8" fill="#2563EB" filter="url(#shadow)"/>
-  <text x="300" y="795" text-anchor="middle" font-size="14" font-weight="600" fill="white">
-    Deterministic Answer Render</text>
-  <text x="300" y="811" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
-    Template text + structured payload</text>
-
-  <!-- Arrow: Synthesis → Response -->
-  <line x1="300" y1="824" x2="300" y2="854" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
-  <text x="385" y="843" font-size="9.5" fill="#94A3B8" font-style="italic">cache.put() before return</text>
-
-  <!-- ===== 10. RESPONSE PAYLOAD ===== -->
-  <rect x="175" y="856" width="250" height="52" rx="22" fill="#8B5CF6" filter="url(#shadow)"/>
-  <text x="300" y="879" text-anchor="middle" font-size="14" font-weight="600" fill="white">
+  <!-- ===== 7. RESPONSE PAYLOAD ===== -->
+  <rect x="225" y="728" width="250" height="52" rx="22" fill="#8B5CF6" filter="url(#shadow)"/>
+  <text x="350" y="751" text-anchor="middle" font-size="14" font-weight="600" fill="white">
     Response Payload</text>
-  <text x="300" y="895" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
+  <text x="350" y="767" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
     answer + chart + table + metadata</text>
 
   <!-- ===== LEGEND ===== -->
-  <rect x="598" y="790" width="232" height="120" rx="8" fill="white" stroke="#E2E8F0" stroke-width="1"/>
-  <text x="714" y="810" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">Legend</text>
+  <rect x="598" y="700" width="232" height="110" rx="8" fill="white" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="714" y="720" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">Legend</text>
 
-  <rect x="612" y="820" width="14" height="14" rx="3" fill="#3B82F6"/>
-  <text x="634" y="831" font-size="10" fill="#475569">LLM Agent (Gemini)</text>
+  <rect x="612" y="730" width="14" height="14" rx="3" fill="#3B82F6"/>
+  <text x="634" y="741" font-size="10" fill="#475569">LLM (Router — Gemini)</text>
 
-  <rect x="612" y="840" width="14" height="14" rx="3" fill="#7C3AED"/>
-  <text x="634" y="851" font-size="10" fill="#475569">Tool (Deterministic Python)</text>
+  <rect x="612" y="750" width="14" height="14" rx="3" fill="#7C3AED"/>
+  <text x="634" y="761" font-size="10" fill="#475569">AgentTools (Deterministic)</text>
 
-  <rect x="612" y="860" width="14" height="14" rx="3" fill="#10B981"/>
-  <text x="634" y="871" font-size="10" fill="#475569">Cache Layer</text>
+  <rect x="612" y="770" width="14" height="14" rx="3" fill="#10B981"/>
+  <text x="634" y="781" font-size="10" fill="#475569">Cache Layer</text>
 
-  <rect x="612" y="880" width="14" height="14" rx="3" fill="#F97316"/>
-  <text x="634" y="891" font-size="10" fill="#475569">Decision Point</text>
+  <rect x="612" y="790" width="14" height="14" rx="3" fill="#F97316"/>
+  <text x="634" y="801" font-size="10" fill="#475569">Decision Point</text>
 
 </svg>

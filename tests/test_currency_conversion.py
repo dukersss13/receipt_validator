@@ -4,10 +4,7 @@ import pytest
 foreign_currency_path = "data/foreign_currency"
 
 
-@pytest.mark.skipif(
-    "GITHUB_ACTIONS" in os.environ,
-    reason="Skipping currency conversion test on GitHub Actions",
-)
+@pytest.mark.requires_llm
 def test_currency_conversion_agent():
     # Test the currency conversion agent with a sample receipt text
 
