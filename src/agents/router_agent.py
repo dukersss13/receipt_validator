@@ -19,6 +19,7 @@ class RouterAgent(LLMBase):
     """Plan and dispatch user questions to the appropriate analytics tool."""
 
     _cache: QueryCache | None = None
+    _MAX_HISTORY: int = 10
 
     @classmethod
     def _get_cache(cls, config_path: str = "config/llm_config.conf") -> QueryCache:
@@ -40,6 +41,8 @@ class RouterAgent(LLMBase):
             allow_test_key=True,
         )
         self.tools = AgentTools()
+        self._chat_history: list[dict[str, Any]] = []
+        self._pending_plan: RouterPlan | None = None
 
     def ask(
         self,
@@ -50,28 +53,45 @@ class RouterAgent(LLMBase):
         """
         Route a user question and return a final assistant response payload.
 
+        If a prior request triggered a clarification and stored a pending plan,
+        the user's follow-up is merged into that plan instead of re-routing.
+        Maintains an internal chat history (last 10 turns) for routing context.
+
         Args:
             question: The user prompt to analyze and route.
             validated_rows: Normalized transaction rows available for analysis.
-            chat_history: Optional recent conversation history used for context.
+            chat_history: Optional external chat history; merged with internal.
 
         Returns:
             A response payload that includes answer text, routing metadata,
             and tool execution details.
         """
+        # Merge external history into internal on first call or when supplied.
+        if chat_history:
+            self._merge_external_history(chat_history)
+
         cache = self._get_cache()
         data_hash = QueryCache.compute_data_hash(validated_rows)
 
-        plan = self.plan_with_schema(
-            RouterInput(question=question, chat_history=chat_history)
-        )
+        # If we have a pending plan from a prior clarification, resolve it.
+        if self._pending_plan is not None:
+            plan = self._resolve_pending_plan(question)
+        else:
+            plan = self.plan_with_schema(
+                RouterInput(
+                    question=question,
+                    chat_history=self._chat_history,
+                )
+            )
 
         if plan.needs_clarification:
+            self._pending_plan = plan
             clarification = (
                 plan.clarification_question.strip()
                 or "Could you clarify which period or category you want to analyze?"
             )
-            return {
+            quick_replies = self._build_quick_replies(plan)
+            result = {
                 "answer": clarification,
                 "rowsScanned": len(validated_rows),
                 "toolUsed": False,
@@ -79,13 +99,20 @@ class RouterAgent(LLMBase):
                 "toolName": plan.tool_name.value,
                 "toolParams": plan.tool_params,
                 "needsClarification": True,
+                "quickReplies": quick_replies,
             }
+            self._append_history(question, clarification)
+            return result
+
+        # Clear any pending plan — this request is fully resolved.
+        self._pending_plan = None
 
         # Check cache AFTER routing — keyed on tool + params + data, not query text.
         cached = cache.get(
             plan.tool_name.value, plan.tool_params, data_hash, user_query=question
         )
         if cached is not None:
+            self._append_history(question, cached.get("answer", ""))
             return cached
 
         self.tools.set_validated_rows(validated_rows)
@@ -111,8 +138,130 @@ class RouterAgent(LLMBase):
         result["confidence"] = plan.confidence
 
         cache.put(plan.tool_name.value, plan.tool_params, result, data_hash)
+        self._append_history(question, result.get("answer", ""))
 
         return result
+
+    def _append_history(self, question: str, answer: str) -> None:
+        """Append a user/assistant turn and cap at ``_MAX_HISTORY`` entries."""
+        self._chat_history.append({"role": "user", "text": question})
+        self._chat_history.append({"role": "assistant", "text": answer})
+        if len(self._chat_history) > self._MAX_HISTORY * 2:
+            self._chat_history = self._chat_history[-(self._MAX_HISTORY * 2) :]
+
+    def _merge_external_history(self, external: list[dict[str, Any]]) -> None:
+        """Seed internal history from external source if internal is empty."""
+        if self._chat_history:
+            return
+        for turn in external[-(self._MAX_HISTORY * 2) :]:
+            if isinstance(turn, dict) and "role" in turn and "text" in turn:
+                self._chat_history.append({"role": turn["role"], "text": turn["text"]})
+
+    def _resolve_pending_plan(self, user_answer: str) -> RouterPlan:
+        """Merge a user's clarification answer into the pending plan.
+
+        Args:
+            user_answer: The follow-up text from the user.
+
+        Returns:
+            An updated RouterPlan with the missing fields filled in.
+        """
+        plan = self._pending_plan
+        assert plan is not None
+        self._pending_plan = None
+
+        answer = user_answer.strip().lower()
+
+        # Case 1: Pie chart on comparison — user confirms bar graph.
+        if (
+            plan.tool_name is AgentTool.COMPARE_SPENDING_PERIODS
+            and plan.tool_params.get("chart_type") == "pie"
+        ):
+            if "bar" in answer or "yes" in answer or "sure" in answer:
+                plan.tool_params["chart_type"] = "grouped_bar"
+                plan.needs_clarification = False
+                plan.clarification_question = ""
+                return plan
+            # User declined — remove chart entirely.
+            plan.tool_params["include_chart"] = False
+            plan.tool_params.pop("chart_type", None)
+            plan.needs_clarification = False
+            plan.clarification_question = ""
+            return plan
+
+        # Case 2: Missing periods for comparison, or fallback ambiguity.
+        # Re-route through the LLM with the pending plan as context so it
+        # only needs to fill in the missing fields.
+        merged_plan = self._reroute_with_context(user_answer, plan)
+        return merged_plan
+
+    def _reroute_with_context(
+        self, question: str, prior_plan: RouterPlan
+    ) -> RouterPlan:
+        """Re-invoke the router with the prior partial plan as context.
+
+        Args:
+            question: The user's clarification follow-up.
+            prior_plan: The incomplete plan from the prior turn.
+
+        Returns:
+            A new RouterPlan that inherits unresolved params from the prior plan.
+        """
+        new_plan = self.plan_with_schema(
+            RouterInput(question=question, chat_history=self._chat_history)
+        )
+
+        # Carry forward params the user didn't re-specify.
+        merged_params = {**prior_plan.tool_params}
+        for key, value in new_plan.tool_params.items():
+            if value not in (None, "", 0, False):
+                merged_params[key] = value
+        new_plan.tool_params = merged_params
+
+        # If the new plan kept the same tool but added the missing fields,
+        # it's resolved. Otherwise trust the new plan's clarification state.
+        if (
+            new_plan.tool_name == prior_plan.tool_name
+            and not self._missing_required_params(
+                new_plan.tool_name, new_plan.tool_params
+            )
+        ):
+            new_plan.needs_clarification = False
+            new_plan.clarification_question = ""
+
+        return new_plan
+
+    @staticmethod
+    def _build_quick_replies(plan: RouterPlan) -> list[str]:
+        """Generate contextual quick-reply options for a clarification.
+
+        Args:
+            plan: The plan that triggered the clarification.
+
+        Returns:
+            A list of suggested reply strings the UI can render as buttons.
+        """
+        # Pie chart not supported for comparison.
+        if (
+            plan.tool_name is AgentTool.COMPARE_SPENDING_PERIODS
+            and plan.tool_params.get("chart_type") == "pie"
+        ):
+            return ["Yes, use a bar graph", "No chart"]
+
+        # Missing periods — suggest common comparisons.
+        if plan.tool_name is AgentTool.COMPARE_SPENDING_PERIODS:
+            return [
+                "This month vs last month",
+                "This month vs 2 months ago",
+                "Past 3 months vs prior 3 months",
+            ]
+
+        # Fallback / ambiguous single-period request.
+        return [
+            "Total spending this month",
+            "Compare this month vs last month",
+            "Top 5 categories",
+        ]
 
     def plan_with_schema(self, payload: RouterInput) -> RouterPlan:
         """

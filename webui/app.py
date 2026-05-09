@@ -821,6 +821,8 @@ def chat_ask_stream():
                     "confidence": result.get("confidence", "high"),
                     "toolUsed": bool(result.get("toolUsed", False)),
                     "toolName": result.get("toolName", ""),
+                    "needsClarification": bool(result.get("needsClarification", False)),
+                    "quickReplies": result.get("quickReplies", []),
                     "chart": result.get("chart"),
                     "top_categories": result.get("top_categories"),
                     "comparison_table": (
