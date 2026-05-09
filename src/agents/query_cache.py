@@ -16,7 +16,7 @@ class QueryCache:
 
     After the RouterAgent classifies a query, the cache checks whether the
     same tool + params + data combination has already been executed.  This
-    avoids duplicate HelperAgent calls while allowing the router to run every
+    avoids duplicate tool execution while allowing the router to run every
     time (cheap) and never confusing queries that route to different tools.
 
     Cache key dimensions:

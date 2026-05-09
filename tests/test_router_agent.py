@@ -176,26 +176,17 @@ def test_router_dispatches_routed_tool(monkeypatch: Any) -> None:
         ),
     )
 
-    def fake_helper_result(
-        self: Any,
-        question: str,
-        validated_rows: list[dict[str, Any]],
-        tool_name: str,
-        tool_params: dict[str, Any],
-        chat_history: list[dict[str, Any]] | None = None,
-    ) -> dict[str, Any]:
-        return {
-            "answer": "You spent $10.00 on food this month.",
-            "rowsScanned": len(validated_rows),
-            "toolUsed": True,
-            "confidence": "high",
-            "echoTool": tool_name,
-            "echoParams": tool_params,
-        }
-
     monkeypatch.setattr(
-        "src.agents.helper_agent.HelperAgent.ask_with_routed_tool",
-        fake_helper_result,
+        "src.agents.agent_tools.AgentTools.execute_tool",
+        lambda self, tool_name, tool_params: {
+            "status": "ok",
+            "type": "total",
+            "value": 10.0,
+        },
+    )
+    monkeypatch.setattr(
+        "src.agents.agent_tools.AgentTools.render_answer",
+        lambda tool_name, tool_output: "You spent $10.00 on food this month.",
     )
 
     rows = [

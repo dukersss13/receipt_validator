@@ -1006,37 +1006,14 @@ class HelperAgent(LLMBase):
         fallback_text: str,
     ) -> str:
         """Run the final answer synthesis pass from tool outputs and context."""
-        history_lines = self.history_lines(chat_history, limit=10)
-
-        synthesis_messages: list[dict[str, str]] = [
-            {
-                "role": "system",
-                "content": ARVEE_ANSWER_PROMPT,
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Question:\n{question}\n\n"
-                    f"Recent chat context:\n{chr(10).join(history_lines) if history_lines else '(none)'}\n\n"
-                    f"Tool outputs (JSON/text):\n{chr(10).join(tool_outputs)}\n\n"
-                    "Now write the final answer to the user."
-                ),
-            },
-        ]
-
-        try:
-            synthesis_result = self._agent.invoke({"messages": synthesis_messages})
-            synthesis_msgs = synthesis_result.get("messages", [])
-            if synthesis_msgs:
-                synthesized = self._content_to_text(
-                    getattr(synthesis_msgs[-1], "content", "")
-                ).strip()
-                if synthesized:
-                    return synthesized
-        except Exception:
-            pass
-
-        return fallback_text
+        return self.synthesize_from_tool_outputs(
+            model=self._agent,
+            question=question,
+            chat_history=chat_history,
+            tool_outputs=tool_outputs,
+            fallback_text=fallback_text,
+            system_prompt=ARVEE_ANSWER_PROMPT,
+        )
 
     @staticmethod
     def _build_comparison_chart(

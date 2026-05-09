@@ -12,7 +12,7 @@ ArVee is the conversational analytics assistant in Receipt Validator. It answers
 | Component | Role | Model |
 |---|---|---|
 | `RouterAgent` | Classifies intent, selects tool, extracts params as structured JSON | `gemini-2.5-flash-lite` (zero temperature) |
-| `HelperAgent` | Executes the selected tool over transaction data, generates the final answer | `gemini-2.5-flash-lite` |
+| `AgentTools` | Executes deterministic analytics tools and returns structured outputs plus deterministic text | — |
 | `LLMBase` | Shared base class for Gemini config loading, API-key resolution, and model initialization | — |
 
 
@@ -20,8 +20,9 @@ ArVee is the conversational analytics assistant in Receipt Validator. It answers
 
 - **Router is non-thinking**: Uses `gemini-2.5-flash-lite` (no chain-of-thought) with `temperature=0.0` and `max_tokens=150` for fast, deterministic JSON extraction.
 - **Deterministic tool execution**: All math (filtering, grouping, aggregation) runs in Python via pandas — the LLM never computes numbers.
+- **Router-first execution**: RouterAgent resolves the tool and params, then directly dispatches deterministic execution through `AgentTools`.
 - **Chart payloads are data-only**: Tools return structured JSON chart descriptors (`{ type, labels, values, ... }`). The frontend renders them as inline SVG — no server-side image generation.
-- **In-chat memory**: Prior turns are passed to both router and helper to support follow-up questions.
+- **Optional synthesis hook**: Shared synthesis helpers exist in `LLMBase` for future use, but default runtime responses are deterministic.
 
 
 ### ArVee Agent in the UI

@@ -7,7 +7,7 @@ from src.agents.agent_utils import (
     normalize_aggregation_method,
     normalize_period_token,
 )
-from src.agents.helper_agent import HelperAgent
+from src.agents.agent_tools import AgentTools
 from src.agents.llm_base import LLMBase
 from src.agents.query_cache import QueryCache
 from src.prompts.router_prompts import ROUTER_SYSTEM_PROMPT
@@ -88,14 +88,23 @@ class RouterAgent(LLMBase):
         if cached is not None:
             return cached
 
-        helper = HelperAgent()
-        result = helper.ask_with_routed_tool(
-            question=question,
-            validated_rows=validated_rows,
+        tools = AgentTools(validated_rows=validated_rows)
+        tool_output = tools.execute_tool(
             tool_name=plan.tool_name.value,
             tool_params=plan.tool_params,
-            chat_history=chat_history,
         )
+        result: dict[str, Any] = {
+            "answer": AgentTools.render_answer(plan.tool_name.value, tool_output),
+            "rowsScanned": len(validated_rows),
+            "toolUsed": True,
+        }
+
+        if isinstance(tool_output, dict) and tool_output.get("chart") is not None:
+            result["chart"] = tool_output.get("chart")
+
+        if isinstance(tool_output, dict) and tool_output.get("top_categories"):
+            result["top_categories"] = tool_output["top_categories"]
+
         result["route"] = plan.route.value
         result["toolName"] = plan.tool_name.value
         result["toolParams"] = plan.tool_params

@@ -121,7 +121,7 @@
         stroke-width="1.5" filter="url(#shadow)"/>
   <text x="650" y="497" text-anchor="middle" font-size="12" font-weight="600" fill="#065F46">
     Return Cached Result</text>
-  <text x="650" y="511" text-anchor="middle" font-size="9.5" fill="#047857">Skip HelperAgent entirely</text>
+  <text x="650" y="511" text-anchor="middle" font-size="9.5" fill="#047857">Skip tool execution entirely</text>
 
   <!-- Arrow: Cache → Helper (Miss, down) -->
   <line x1="300" y1="528" x2="300" y2="561" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
@@ -130,11 +130,11 @@
 
   <!-- ===== 6. HELPER AGENT ===== -->
   <rect x="175" y="563" width="250" height="66" rx="8" fill="#3B82F6" filter="url(#shadow)"/>
-  <text x="300" y="588" text-anchor="middle" font-size="15" font-weight="700" fill="white">HelperAgent</text>
+  <text x="300" y="588" text-anchor="middle" font-size="15" font-weight="700" fill="white">AgentTools</text>
   <text x="300" y="606" text-anchor="middle" font-size="10" fill="rgba(255,255,255,0.75)">
     gemini-2.5-flash-lite · temp=0.1 · max_tokens=500</text>
   <text x="300" y="620" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.6)">
-    ask_with_routed_tool()</text>
+    execute_tool() + deterministic text</text>
 
   <!-- Arrow: Helper → Tool1 (down-left) -->
   <line x1="248" y1="629" x2="170" y2="672" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
@@ -170,12 +170,12 @@
   <text x="300" y="753" text-anchor="middle" font-size="9" fill="#94A3B8" font-style="italic">
     Deterministic Python — LLM never computes numbers</text>
 
-  <!-- ===== 9. LLM ANSWER SYNTHESIS ===== -->
+  <!-- ===== 9. DETERMINISTIC ANSWER RENDER ===== -->
   <rect x="175" y="772" width="250" height="52" rx="8" fill="#2563EB" filter="url(#shadow)"/>
   <text x="300" y="795" text-anchor="middle" font-size="14" font-weight="600" fill="white">
-    LLM Answer Synthesis</text>
+    Deterministic Answer Render</text>
   <text x="300" y="811" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
-    Natural-language answer + chart payload</text>
+    Template text + structured payload</text>
 
   <!-- Arrow: Synthesis → Response -->
   <line x1="300" y1="824" x2="300" y2="854" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
