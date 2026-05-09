@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 820"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 880"
      font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
 
   <defs>
@@ -22,6 +22,10 @@
             markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M 0 1 L 8 5 L 0 9 z" fill="#F59E0B"/>
     </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#8B5CF6"/>
+    </marker>
     <linearGradient id="bg-grad" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#F8FAFC"/>
       <stop offset="100%" stop-color="#F1F5F9"/>
@@ -29,8 +33,8 @@
   </defs>
 
   <!-- Background -->
-  <rect width="860" height="820" fill="url(#bg-grad)" rx="12"/>
-  <rect x="1" y="1" width="858" height="818" fill="none" stroke="#E2E8F0" rx="12" stroke-width="1"/>
+  <rect width="860" height="880" fill="url(#bg-grad)" rx="12"/>
+  <rect x="1" y="1" width="858" height="878" fill="none" stroke="#E2E8F0" rx="12" stroke-width="1"/>
 
   <!-- ===== TITLE ===== -->
   <text x="420" y="32" text-anchor="middle" font-size="21" font-weight="700" fill="#1E293B"
@@ -67,117 +71,134 @@
   <text x="392" y="216" font-size="9.5" fill="#94A3B8" font-style="italic">question + validated_rows</text>
 
   <!-- ===== 3. ROUTER AGENT ===== -->
-  <rect x="175" y="230" width="250" height="66" rx="8" fill="#3B82F6" filter="url(#shadow)"/>
-  <text x="300" y="255" text-anchor="middle" font-size="15" font-weight="700" fill="white">RouterAgent</text>
-  <text x="300" y="273" text-anchor="middle" font-size="10" fill="rgba(255,255,255,0.75)">
+  <rect x="175" y="230" width="250" height="80" rx="8" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="300" y="253" text-anchor="middle" font-size="15" font-weight="700" fill="white">RouterAgent</text>
+  <text x="300" y="269" text-anchor="middle" font-size="10" fill="rgba(255,255,255,0.75)">
     gemini-2.5-flash-lite · temp=0.0 · max_tokens=350</text>
-  <text x="300" y="287" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.6)">
-    plan_with_schema() → _normalize_plan()</text>
+  <text x="300" y="283" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.6)">
+    plan_with_schema() → extract_router_plan()</text>
+  <text x="300" y="297" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.6)">
+    Internal Chat History (last 10 turns)</text>
 
   <!-- Arrow: Router → Decision -->
-  <line x1="300" y1="296" x2="300" y2="323" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
-  <text x="378" y="314" font-size="9.5" fill="#94A3B8" font-style="italic">RouterPlan</text>
+  <line x1="300" y1="310" x2="300" y2="337" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="378" y="328" font-size="9.5" fill="#94A3B8" font-style="italic">RouterPlan</text>
 
   <!-- ===== 4. DECISION: needs_clarification? ===== -->
-  <polygon points="300,325 415,383 300,441 185,383" fill="#FFF7ED" stroke="#F97316"
+  <polygon points="300,339 415,397 300,455 185,397" fill="#FFF7ED" stroke="#F97316"
            stroke-width="2" filter="url(#shadow)"/>
-  <text x="300" y="378" text-anchor="middle" font-size="11.5" font-weight="600" fill="#9A3412">
+  <text x="300" y="392" text-anchor="middle" font-size="11.5" font-weight="600" fill="#9A3412">
     needs_clarification?</text>
-  <text x="300" y="393" text-anchor="middle" font-size="9.5" fill="#C2410C">confidence check</text>
+  <text x="300" y="407" text-anchor="middle" font-size="9.5" fill="#C2410C">confidence check</text>
 
   <!-- Arrow: Decision → Clarification (Yes, right) -->
-  <line x1="415" y1="383" x2="543" y2="383" stroke="#EF4444" stroke-width="2"
+  <line x1="415" y1="397" x2="543" y2="397" stroke="#EF4444" stroke-width="2"
         marker-end="url(#arrow-red)"/>
-  <rect x="442" y="370" width="32" height="16" rx="3" fill="#FEE2E2"/>
-  <text x="458" y="382" text-anchor="middle" font-size="10" font-weight="700" fill="#DC2626">Yes</text>
+  <rect x="442" y="384" width="32" height="16" rx="3" fill="#FEE2E2"/>
+  <text x="458" y="396" text-anchor="middle" font-size="10" font-weight="700" fill="#DC2626">Yes</text>
 
-  <!-- Clarification Response box (right) -->
-  <rect x="545" y="362" width="225" height="42" rx="8" fill="#FEF2F2" stroke="#FCA5A5"
+  <!-- Clarification Response box (right) — expanded for pending plan + quick replies -->
+  <rect x="545" y="362" width="240" height="72" rx="8" fill="#FEF2F2" stroke="#FCA5A5"
         stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="657" y="381" text-anchor="middle" font-size="12" font-weight="600" fill="#991B1B">
+  <text x="665" y="381" text-anchor="middle" font-size="12" font-weight="600" fill="#991B1B">
     Return Clarification</text>
-  <text x="657" y="395" text-anchor="middle" font-size="9.5" fill="#B91C1C">Ask user to clarify intent</text>
+  <text x="665" y="395" text-anchor="middle" font-size="9.5" fill="#B91C1C">Store pending plan (params preserved)</text>
+  <text x="665" y="409" text-anchor="middle" font-size="9.5" fill="#B91C1C">+ Quick Reply suggestions</text>
+  <text x="665" y="423" text-anchor="middle" font-size="8.5" fill="#DC2626" font-style="italic">
+    needsClarification · quickReplies[]</text>
+
+  <!-- Loop-back arrow: Clarification → RouterAgent (user answers) -->
+  <path d="M 785 397 Q 820 397 820 310 Q 820 240 470 240 L 425 260"
+        fill="none" stroke="#8B5CF6" stroke-width="1.8" stroke-dasharray="5,3"
+        marker-end="url(#arrow-purple)"/>
+  <text x="810" y="300" font-size="9" fill="#7C3AED" font-weight="600"
+        transform="rotate(-90,810,300)">User answers →</text>
+  <text x="530" y="236" font-size="9" fill="#7C3AED" font-style="italic">
+    _resolve_pending_plan() · merge params</text>
 
   <!-- Arrow: Decision → Cache (No, down) -->
-  <line x1="300" y1="441" x2="300" y2="470" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
-  <rect x="258" y="444" width="26" height="16" rx="3" fill="#E0F2FE"/>
-  <text x="271" y="456" text-anchor="middle" font-size="10" font-weight="700" fill="#1D4ED8">No</text>
+  <line x1="300" y1="455" x2="300" y2="484" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="258" y="458" width="26" height="16" rx="3" fill="#E0F2FE"/>
+  <text x="271" y="470" text-anchor="middle" font-size="10" font-weight="700" fill="#1D4ED8">No</text>
 
   <!-- ===== 5. QUERY CACHE ===== -->
-  <rect x="175" y="472" width="250" height="56" rx="8" fill="#10B981" filter="url(#shadow)"/>
-  <text x="300" y="495" text-anchor="middle" font-size="14" font-weight="600" fill="white">
+  <rect x="175" y="486" width="250" height="56" rx="8" fill="#10B981" filter="url(#shadow)"/>
+  <text x="300" y="509" text-anchor="middle" font-size="14" font-weight="600" fill="white">
     QueryCache (LRU)</text>
-  <text x="300" y="510" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
+  <text x="300" y="524" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
     key: tool_name + tool_params + data_hash</text>
 
   <!-- Arrow: Cache → Hit (right) -->
-  <line x1="425" y1="500" x2="543" y2="500" stroke="#10B981" stroke-width="2"
+  <line x1="425" y1="514" x2="543" y2="514" stroke="#10B981" stroke-width="2"
         marker-end="url(#arrow-green)"/>
-  <rect x="447" y="488" width="28" height="16" rx="3" fill="#D1FAE5"/>
-  <text x="461" y="500" text-anchor="middle" font-size="10" font-weight="700" fill="#059669">Hit</text>
+  <rect x="447" y="502" width="28" height="16" rx="3" fill="#D1FAE5"/>
+  <text x="461" y="514" text-anchor="middle" font-size="10" font-weight="700" fill="#059669">Hit</text>
 
   <!-- Cache Hit box (right) -->
-  <rect x="545" y="478" width="210" height="42" rx="8" fill="#ECFDF5" stroke="#6EE7B7"
+  <rect x="545" y="492" width="210" height="42" rx="8" fill="#ECFDF5" stroke="#6EE7B7"
         stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="650" y="497" text-anchor="middle" font-size="12" font-weight="600" fill="#065F46">
+  <text x="650" y="511" text-anchor="middle" font-size="12" font-weight="600" fill="#065F46">
     Return Cached Result</text>
-  <text x="650" y="511" text-anchor="middle" font-size="9.5" fill="#047857">Skip tool execution entirely</text>
+  <text x="650" y="525" text-anchor="middle" font-size="9.5" fill="#047857">Skip tool execution entirely</text>
 
   <!-- Arrow: Cache → AgentTools (Miss, down) -->
-  <line x1="300" y1="528" x2="350" y2="561" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
-  <rect x="284" y="530" width="36" height="16" rx="3" fill="#FEF3C7"/>
-  <text x="302" y="542" text-anchor="middle" font-size="10" font-weight="700" fill="#D97706">Miss</text>
+  <line x1="300" y1="542" x2="350" y2="575" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="284" y="544" width="36" height="16" rx="3" fill="#FEF3C7"/>
+  <text x="302" y="556" text-anchor="middle" font-size="10" font-weight="700" fill="#D97706">Miss</text>
 
   <!-- ===== 6. AGENT TOOLS (container) ===== -->
-  <rect x="68" y="563" width="564" height="130" rx="10" fill="#7C3AED" fill-opacity="0.08"
+  <rect x="68" y="577" width="564" height="130" rx="10" fill="#7C3AED" fill-opacity="0.08"
         stroke="#7C3AED" stroke-width="2" stroke-dasharray="6,3" filter="url(#shadow)"/>
-  <text x="350" y="584" text-anchor="middle" font-size="15" font-weight="700" fill="#7C3AED">AgentTools</text>
-  <text x="350" y="598" text-anchor="middle" font-size="9.5" fill="#6D28D9">
+  <text x="350" y="598" text-anchor="middle" font-size="15" font-weight="700" fill="#7C3AED">AgentTools</text>
+  <text x="350" y="612" text-anchor="middle" font-size="9.5" fill="#6D28D9">
     execute_tool() · Deterministic Python — no LLM</text>
 
   <!-- OR label -->
-  <rect x="329" y="614" width="42" height="18" rx="4" fill="#EDE9FE"/>
-  <text x="350" y="627" text-anchor="middle" font-size="10" font-weight="600" fill="#7C3AED">OR</text>
+  <rect x="329" y="628" width="42" height="18" rx="4" fill="#EDE9FE"/>
+  <text x="350" y="641" text-anchor="middle" font-size="10" font-weight="600" fill="#7C3AED">OR</text>
 
   <!-- Tool 1: spending_breakdown -->
-  <rect x="88" y="638" width="236" height="44" rx="8" fill="#7C3AED" filter="url(#shadow)"/>
-  <text x="206" y="658" text-anchor="middle" font-size="13" font-weight="600" fill="white">
+  <rect x="88" y="652" width="236" height="44" rx="8" fill="#7C3AED" filter="url(#shadow)"/>
+  <text x="206" y="672" text-anchor="middle" font-size="13" font-weight="600" fill="white">
     spending_breakdown</text>
-  <text x="206" y="673" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
+  <text x="206" y="687" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
     Single-period · pandas aggregation</text>
 
   <!-- Tool 2: compare_spending_periods -->
-  <rect x="376" y="638" width="236" height="44" rx="8" fill="#7C3AED" filter="url(#shadow)"/>
-  <text x="494" y="658" text-anchor="middle" font-size="13" font-weight="600" fill="white">
+  <rect x="376" y="652" width="236" height="44" rx="8" fill="#7C3AED" filter="url(#shadow)"/>
+  <text x="494" y="672" text-anchor="middle" font-size="13" font-weight="600" fill="white">
     compare_spending_periods</text>
-  <text x="494" y="673" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
+  <text x="494" y="687" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
     Two-period · pandas comparison</text>
 
   <!-- Arrow: AgentTools → Response -->
-  <line x1="350" y1="693" x2="350" y2="726" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
-  <text x="440" y="714" font-size="9.5" fill="#94A3B8" font-style="italic">cache.put() before return</text>
+  <line x1="350" y1="707" x2="350" y2="740" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="440" y="728" font-size="9.5" fill="#94A3B8" font-style="italic">cache.put() before return</text>
 
   <!-- ===== 7. RESPONSE PAYLOAD ===== -->
-  <rect x="225" y="728" width="250" height="52" rx="22" fill="#8B5CF6" filter="url(#shadow)"/>
-  <text x="350" y="751" text-anchor="middle" font-size="14" font-weight="600" fill="white">
+  <rect x="225" y="742" width="250" height="52" rx="22" fill="#8B5CF6" filter="url(#shadow)"/>
+  <text x="350" y="765" text-anchor="middle" font-size="14" font-weight="600" fill="white">
     Response Payload</text>
-  <text x="350" y="767" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
+  <text x="350" y="781" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,0.8)">
     answer + chart + table + metadata</text>
 
   <!-- ===== LEGEND ===== -->
-  <rect x="598" y="700" width="232" height="110" rx="8" fill="white" stroke="#E2E8F0" stroke-width="1"/>
-  <text x="714" y="720" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">Legend</text>
+  <rect x="578" y="750" width="252" height="120" rx="8" fill="white" stroke="#E2E8F0" stroke-width="1"/>
+  <text x="704" y="770" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">Legend</text>
 
-  <rect x="612" y="730" width="14" height="14" rx="3" fill="#3B82F6"/>
-  <text x="634" y="741" font-size="10" fill="#475569">LLM (Router — Gemini)</text>
+  <rect x="592" y="780" width="14" height="14" rx="3" fill="#3B82F6"/>
+  <text x="614" y="791" font-size="10" fill="#475569">LLM (Router — Gemini)</text>
 
-  <rect x="612" y="750" width="14" height="14" rx="3" fill="#7C3AED"/>
-  <text x="634" y="761" font-size="10" fill="#475569">AgentTools (Deterministic)</text>
+  <rect x="592" y="800" width="14" height="14" rx="3" fill="#7C3AED"/>
+  <text x="614" y="811" font-size="10" fill="#475569">AgentTools (Deterministic)</text>
 
-  <rect x="612" y="770" width="14" height="14" rx="3" fill="#10B981"/>
-  <text x="634" y="781" font-size="10" fill="#475569">Cache Layer</text>
+  <rect x="592" y="820" width="14" height="14" rx="3" fill="#10B981"/>
+  <text x="614" y="831" font-size="10" fill="#475569">Cache Layer</text>
 
-  <rect x="612" y="790" width="14" height="14" rx="3" fill="#F97316"/>
-  <text x="634" y="801" font-size="10" fill="#475569">Decision Point</text>
+  <rect x="592" y="840" width="14" height="14" rx="3" fill="#F97316"/>
+  <text x="614" y="851" font-size="10" fill="#475569">Decision Point</text>
+
+  <line x1="592" y1="863" x2="606" y2="863" stroke="#8B5CF6" stroke-width="1.8" stroke-dasharray="5,3"/>
+  <text x="614" y="867" font-size="10" fill="#475569">Clarification Loop-back</text>
 
 </svg>
