@@ -5,6 +5,13 @@ import pandas as pd
 import pytest
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "requires_llm: test requires a live LLM API call (skipped in CI)",
+    )
+
+
 BUSINESSES = [
     ("Starbucks", "Food"),
     ("Chipotle", "Food"),

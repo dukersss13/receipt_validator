@@ -5,10 +5,7 @@ import pytest
 from src.agents.categorize import TransactionCategorizer
 
 
-@pytest.mark.skipif(
-    os.getenv("GITHUB_ACTIONS") == "true",
-    reason="Skipping real-client categorization test on GitHub Actions",
-)
+@pytest.mark.requires_llm
 def test_categorizer_uses_business_name_only_for_transactions_and_proofs(
     sample_validated_transactions_df,
     sample_transactions_df,

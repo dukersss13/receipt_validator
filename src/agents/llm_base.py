@@ -242,6 +242,79 @@ class LLMBase:
         messages.append({"role": "user", "content": question})
         return messages
 
+    @classmethod
+    def build_synthesis_messages(
+        cls,
+        question: str,
+        chat_history: list[dict[str, Any]] | None,
+        tool_outputs: list[str],
+        system_prompt: str,
+        history_limit: int = 10,
+    ) -> list[dict[str, str]]:
+        """Build generic synthesis messages from question, context, and tool outputs."""
+        history_lines = cls.history_lines(chat_history, limit=history_limit)
+        return [
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Question:\n{question}\n\n"
+                    f"Recent chat context:\n{chr(10).join(history_lines) if history_lines else '(none)'}\n\n"
+                    f"Tool outputs (JSON/text):\n{chr(10).join(tool_outputs)}\n\n"
+                    "Now write the final answer to the user."
+                ),
+            },
+        ]
+
+    @classmethod
+    def synthesize_from_tool_outputs(
+        cls,
+        model: Any,
+        question: str,
+        chat_history: list[dict[str, Any]] | None,
+        tool_outputs: list[str],
+        fallback_text: str,
+        system_prompt: str,
+    ) -> str:
+        """Run optional synthesis using a provided model and return fallback on failure."""
+        if not tool_outputs:
+            return fallback_text
+
+        synthesis_messages = cls.build_synthesis_messages(
+            question=question,
+            chat_history=chat_history,
+            tool_outputs=tool_outputs,
+            system_prompt=system_prompt,
+        )
+
+        try:
+            try:
+                synthesis_result = model.invoke({"messages": synthesis_messages})
+            except Exception:
+                synthesis_result = model.invoke(synthesis_messages)
+
+            if isinstance(synthesis_result, dict):
+                messages = synthesis_result.get("messages", [])
+                if messages:
+                    synthesized = cls._content_to_text(
+                        getattr(messages[-1], "content", "")
+                    ).strip()
+                    if synthesized:
+                        return synthesized
+
+            synthesized = cls._content_to_text(
+                getattr(synthesis_result, "content", "")
+            ).strip()
+            if synthesized:
+                return synthesized
+        except Exception:
+            pass
+
+        return fallback_text
+
     def stream(
         self,
         user_input: str,

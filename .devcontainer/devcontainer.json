@@ -25,7 +25,8 @@
         "ms-toolsai.jupyter",
         "ms-toolsai.datawrangler",
         "tomoki1207.pdf",
-        "qwtel.sqlite-viewer"
+        "qwtel.sqlite-viewer",
+        "github.vscode-github-actions"
       ],
       "settings": {
         "python.linting.enabled": false,

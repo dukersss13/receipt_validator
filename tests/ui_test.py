@@ -1,4 +1,4 @@
-"""Launch the UI with a pre-populated mock session for testing the HelperAgent."""
+"""Launch the UI with a pre-populated mock session for testing the AgentTools."""
 
 import random
 import threading
