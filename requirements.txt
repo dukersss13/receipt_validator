@@ -5,12 +5,9 @@ pyhocon==0.3.61
 pytest==8.4.1
 gradio==5.41.1
 flask==3.0.3
-python-Levenshtein==0.27.1
-langchain>=1.2.15
 langgraph>=1.1.9
 langchain-community>=0.4.1
 langchain-google-genai>=4.2.2
 google-genai>=1.35.0
 pypdf==5.9.0
 sqlalchemy==2.0.42
-psycopg2-binary==2.9.10
