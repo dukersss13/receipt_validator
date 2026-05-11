@@ -247,8 +247,8 @@
   <text x="380" y="682" font-size="8" fill="#B91C1C" font-style="italic">Clarifying Questions</text>
 
   <!-- Loop-back: clarify? → RouterAgent (left then straight up to bottom) -->
-  <line x1="90" y1="658" x2="38" y2="658" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
-  <line x1="38" y1="658" x2="38" y2="608" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"
+  <line x1="90" y1="658" x2="60" y2="658" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <line x1="60" y1="658" x2="60" y2="608" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"
         marker-end="url(#arrow)"/>
 
   <!-- ================================================================== -->
