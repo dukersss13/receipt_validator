@@ -246,11 +246,8 @@
         marker-end="url(#arrow)"/>
   <text x="380" y="682" font-size="8" fill="#B91C1C" font-style="italic">Clarifying Questions</text>
 
-  <!-- Loop-back: clarify? → RouterAgent (up, touching bottom of RouterAgent) -->
-  <line x1="90" y1="658" x2="40" y2="658" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
-  <line x1="40" y1="658" x2="40" y2="612" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
-  <line x1="40" y1="612" x2="100" y2="612" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
-  <line x1="100" y1="612" x2="100" y2="608" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"
+  <!-- Loop-back: clarify? → RouterAgent (straight up to bottom of RouterAgent) -->
+  <line x1="165" y1="628" x2="165" y2="608" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"
         marker-end="url(#arrow)"/>
 
   <!-- ================================================================== -->
