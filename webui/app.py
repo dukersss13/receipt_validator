@@ -358,7 +358,6 @@ def _merge_ingestion_costs(costs: list[dict[str, Any]]) -> dict[str, Any]:
             sum(int(cost.get("outputTokens", 0) or 0) for cost in costs)
         ),
         "llmCalls": int(sum(int(cost.get("llmCalls", 0) or 0) for cost in costs)),
-        "batchCalls": int(sum(int(cost.get("batchCalls", 0) or 0) for cost in costs)),
         "standardCalls": int(
             sum(int(cost.get("standardCalls", 0) or 0) for cost in costs)
         ),
