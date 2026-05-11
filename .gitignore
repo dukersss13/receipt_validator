@@ -19,6 +19,11 @@ data/proofs/*
 data/validated/*
 data/foreign_currency/*
 
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
 
 !data/transactions/.gitkeep
 !data/proofs/.gitkeep
