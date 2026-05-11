@@ -4,7 +4,7 @@ ArVee is the conversational analytics assistant in Receipt Validator. It answers
 
 ### Agent Architecture Diagram
 
-<img width="658" height="734" alt="ArVee Agent Architecture" src="arvee_agent_architecture.svg" />
+<img width="658" height="790" alt="ArVee Agent Architecture" src="arvee_agent_architecture.svg" />
 
 
 ### Component Overview
@@ -18,9 +18,11 @@ ArVee is the conversational analytics assistant in Receipt Validator. It answers
 
 ### Key Design Decisions
 
-- **Router is non-thinking**: Uses `gemini-2.5-flash-lite` (no chain-of-thought) with `temperature=0.0` and `max_tokens=150` for fast, deterministic JSON extraction.
+- **Router is non-thinking**: Uses `gemini-2.5-flash-lite` (no chain-of-thought) with `temperature=0.0` and `max_tokens=350` for fast, deterministic JSON extraction.
 - **Deterministic tool execution**: All math (filtering, grouping, aggregation) runs in Python via pandas — the LLM never computes numbers.
 - **Router-first execution**: RouterAgent resolves the tool and params, then directly dispatches deterministic execution through `AgentTools`.
+- **Conversation context**: RouterAgent tracks the last 10 turns internally and seeds from external DB history on first call, enabling follow-up questions.
+- **Multi-turn clarification**: When params are ambiguous or missing, RouterAgent stores a pending plan, returns a clarification question with quick-reply suggestions, and merges the user's answer with previously extracted params.
 - **Chart payloads are data-only**: Tools return structured JSON chart descriptors (`{ type, labels, values, ... }`). The frontend renders them as inline SVG — no server-side image generation.
 - **Optional synthesis hook**: Shared synthesis helpers exist in `LLMBase` for future use, but default runtime responses are deterministic.
 
