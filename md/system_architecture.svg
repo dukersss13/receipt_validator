@@ -206,8 +206,8 @@
   <rect x="50" y="712" width="230" height="55" rx="8" fill="#F5F3FF" stroke="#A78BFA"
         stroke-width="1.5" filter="url(#shadow)"/>
   <text x="165" y="735" text-anchor="middle" font-size="14" font-weight="700" fill="#5B21B6">AgentTools</text>
-  <text x="165" y="752" text-anchor="middle" font-size="9" fill="#7C3AED">
-    Deterministic Python · No LLM</text>
+  <text x="165" y="750" text-anchor="middle" font-size="9" fill="#7C3AED">
+    Deterministic Python functions · No LLM</text>
 
   <!-- Tools (right of AgentTools) -->
   <rect x="320" y="700" width="170" height="32" rx="6" fill="#F5F3FF" stroke="#A78BFA"
@@ -246,8 +246,9 @@
         marker-end="url(#arrow)"/>
   <text x="380" y="682" font-size="8" fill="#B91C1C" font-style="italic">Clarifying Questions</text>
 
-  <!-- Loop-back: clarify? → RouterAgent (straight up to bottom of RouterAgent) -->
-  <line x1="165" y1="628" x2="165" y2="608" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"
+  <!-- Loop-back: clarify? → RouterAgent (left then straight up to bottom) -->
+  <line x1="90" y1="658" x2="38" y2="658" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <line x1="38" y1="658" x2="38" y2="608" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"
         marker-end="url(#arrow)"/>
 
   <!-- ================================================================== -->
@@ -271,7 +272,7 @@
   <text x="776" y="661" font-size="10" fill="#475569">LLM Agent (Gemini)</text>
 
   <rect x="754" y="670" width="14" height="14" rx="3" fill="#F5F3FF" stroke="#A78BFA" stroke-width="1"/>
-  <text x="776" y="681" font-size="10" fill="#475569">Tool (Deterministic Python)</text>
+  <text x="776" y="681" font-size="10" fill="#475569">Deterministic Python Functions</text>
 
   <rect x="754" y="690" width="14" height="14" rx="3" fill="#FEF2F2" stroke="#F87171" stroke-width="1"/>
   <text x="776" y="701" font-size="10" fill="#475569">Validation Engine</text>
