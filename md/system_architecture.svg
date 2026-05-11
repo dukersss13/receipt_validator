@@ -239,20 +239,19 @@
   <text x="587" y="668" text-anchor="middle" font-size="8.5" fill="#B91C1C">+ Quick Reply buttons</text>
   <line x1="240" y1="658" x2="508" y2="650" stroke="#FCA5A5" stroke-width="1.2"
         stroke-dasharray="4 3" marker-end="url(#arrow)"/>
-  <text x="270" y="647" font-size="9" font-weight="700" fill="#DC2626">Yes</text>
+  <text x="375" y="647" text-anchor="middle" font-size="9" font-weight="700" fill="#DC2626">Yes</text>
 
   <!-- Loop-back: Clarification → clarify? diamond -->
   <path d="M 510 665 Q 400 685 240 658"
         fill="none" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"
         marker-end="url(#arrow)"/>
-  <text x="380" y="682" font-size="8" fill="#B91C1C" font-style="italic">user answers</text>
+  <text x="380" y="682" font-size="8" fill="#B91C1C" font-style="italic">Clarifying Questions</text>
 
-  <!-- Loop-back: clarify? → RouterAgent (up) -->
-  <line x1="90" y1="658" x2="58" y2="658" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
-  <line x1="58" y1="658" x2="58" y2="595" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
-  <line x1="58" y1="595" x2="80" y2="575" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"
+  <!-- Loop-back: clarify? → RouterAgent (up, touching left edge) -->
+  <line x1="90" y1="658" x2="40" y2="658" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <line x1="40" y1="658" x2="40" y2="574" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <line x1="40" y1="574" x2="50" y2="574" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"
         marker-end="url(#arrow)"/>
-  <text x="46" y="630" font-size="8" fill="#B91C1C" font-style="italic" transform="rotate(-90,46,630)">merge params</text>
 
   <!-- ================================================================== -->
   <!-- ROW 6: OUTPUT                                                       -->
