@@ -196,8 +196,7 @@
   <!-- Decision diamond -->
   <polygon points="165,628 240,658 165,688 90,658" fill="#FFF7ED" stroke="#F97316"
            stroke-width="1.5"/>
-  <text x="165" y="656" text-anchor="middle" font-size="9.5" font-weight="600" fill="#9A3412">clarify?</text>
-  <text x="165" y="668" text-anchor="middle" font-size="8.5" fill="#C2410C">cache?</text>
+  <text x="165" y="662" text-anchor="middle" font-size="10" font-weight="600" fill="#9A3412">Clarify?</text>
 
   <!-- Arrow: Decision → AgentTools (down) -->
   <line x1="165" y1="688" x2="165" y2="710" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
@@ -247,10 +246,11 @@
         marker-end="url(#arrow)"/>
   <text x="380" y="682" font-size="8" fill="#B91C1C" font-style="italic">Clarifying Questions</text>
 
-  <!-- Loop-back: clarify? → RouterAgent (up, touching left edge) -->
+  <!-- Loop-back: clarify? → RouterAgent (up, touching bottom of RouterAgent) -->
   <line x1="90" y1="658" x2="40" y2="658" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
-  <line x1="40" y1="658" x2="40" y2="574" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
-  <line x1="40" y1="574" x2="50" y2="574" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"
+  <line x1="40" y1="658" x2="40" y2="612" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <line x1="40" y1="612" x2="100" y2="612" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <line x1="100" y1="612" x2="100" y2="608" stroke="#FCA5A5" stroke-width="1.2" stroke-dasharray="4 3"
         marker-end="url(#arrow)"/>
 
   <!-- ================================================================== -->
