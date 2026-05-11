@@ -1,3 +1,4 @@
+import asyncio
 import os
 import base64
 import logging
@@ -9,6 +10,7 @@ import io
 import re
 import ast
 import json
+import random as _random
 from typing import Any
 from pathlib import Path
 from functools import lru_cache
@@ -78,8 +80,10 @@ class DataReader(LLMBase):
         self.database = database
         # Concurrency knobs for ingestion performance.
         self.io_max_workers = 8
-        self.llm_max_workers = 6
         self.fx_max_workers = 8
+        # Max concurrent async API calls — controls the asyncio.Semaphore gate
+        # for Gemini requests. Keep below your RPM quota (~50-80% of limit).
+        self.async_max_concurrent = 30
 
         super().__init__(
             llm_config_path=llm_config_path,
@@ -98,7 +102,6 @@ class DataReader(LLMBase):
             "input_tokens": 0,
             "output_tokens": 0,
             "llm_calls": 0,
-            "batch_runs": 0,
             "standard_runs": 0,
             "fx_calls": 0,
             "fallback_calls": 0,
@@ -202,7 +205,6 @@ class DataReader(LLMBase):
     def _record_usage(
         self,
         usage: object | None,
-        mode: str,
         model_name: str,
         is_fallback: bool = False,
     ) -> None:
@@ -212,7 +214,6 @@ class DataReader(LLMBase):
         Args:
             usage: The usage metadata object attached to the Gemini response, or
                 ``None`` if the response did not include usage information.
-            mode: ``"batch"`` or ``"standard"`` — determines which call counter to increment.
             model_name: Model identifier used for per-model cost lookup.
             is_fallback: Whether this call was made on the fallback model path.
         """
@@ -233,11 +234,7 @@ class DataReader(LLMBase):
         self.ingestion_usage["input_tokens"] += input_tokens
         self.ingestion_usage["output_tokens"] += output_tokens
         self.ingestion_usage["llm_calls"] += 1
-
-        if mode == "batch":
-            self.ingestion_usage["batch_runs"] += 1
-        else:
-            self.ingestion_usage["standard_runs"] += 1
+        self.ingestion_usage["standard_runs"] += 1
 
         if is_fallback:
             self.ingestion_usage["fallback_calls"] += 1
@@ -268,7 +265,6 @@ class DataReader(LLMBase):
             "inputTokens": input_tokens,
             "outputTokens": output_tokens,
             "llmCalls": int(self.ingestion_usage["llm_calls"]),
-            "batchCalls": int(self.ingestion_usage["batch_runs"]),
             "standardCalls": int(self.ingestion_usage["standard_runs"]),
             "fxCalls": int(self.ingestion_usage["fx_calls"]),
             "fallbackCalls": int(self.ingestion_usage["fallback_calls"]),
@@ -467,9 +463,7 @@ class DataReader(LLMBase):
         """
         Extract transactions from a list of PDF statement files.
 
-        Attempts the standard per-file extraction path (parallel via thread pool).
-        The legacy batch path is retained but will only run when ``use_batch_api``
-        is True, which is currently always False in native Gemini mode.
+        Uses a thread pool for parallel per-file extraction.
 
         Args:
             pdf_files: List of absolute paths to PDF files.
@@ -481,40 +475,19 @@ class DataReader(LLMBase):
         if not pdf_files:
             return pd.DataFrame([])
 
-        pdf_frames: list[pd.DataFrame] = []
-
-        if self.use_batch_api:
+        def process_pdf(pdf_path: str) -> pd.DataFrame:
             try:
-                statement_texts = [
-                    DataReader.strip_sensitive_info(self._read_pdf_text(path))
-                    for path in pdf_files
-                ]
-                extracted = self.extract_statement_data_batch(statement_texts)
-                for item in extracted:
-                    if not item:
-                        continue
-                    data_vec = ast.literal_eval(item)
-                    pdf_frames.append(DataReader.preprocess_data(data_vec))
+                extracted_data = self.extract_data_from_pdf(pdf_path)
+                data_vec = ast.literal_eval(extracted_data)
+                return DataReader.preprocess_data(data_vec)
             except Exception as e:
-                print(
-                    f"\nWarning: Batch PDF extraction failed; falling back. Error: {e}\n"
-                )
+                print(f"\nWarning: Failed to process PDF {pdf_path}: {e}\n")
+                return pd.DataFrame([])
 
-        if not pdf_frames:
-
-            def process_pdf(pdf_path: str) -> pd.DataFrame:
-                try:
-                    extracted_data = self.extract_data_from_pdf(pdf_path)
-                    data_vec = ast.literal_eval(extracted_data)
-                    return DataReader.preprocess_data(data_vec)
-                except Exception as e:
-                    print(f"\nWarning: Failed to process PDF {pdf_path}: {e}\n")
-                    return pd.DataFrame([])
-
-            with ThreadPoolExecutor(
-                max_workers=min(self.io_max_workers, len(pdf_files))
-            ) as executor:
-                pdf_frames = list(executor.map(process_pdf, pdf_files))
+        with ThreadPoolExecutor(
+            max_workers=min(self.io_max_workers, len(pdf_files))
+        ) as executor:
+            pdf_frames = list(executor.map(process_pdf, pdf_files))
 
         valid_pdf_frames = [frame for frame in pdf_frames if not frame.empty]
         if not valid_pdf_frames:
@@ -608,10 +581,11 @@ class DataReader(LLMBase):
 
     def batch_read_data(self, image_payloads: list[dict]) -> list[str]:
         """
-        Process multiple image payloads concurrently and return extracted text responses.
+        Process multiple image payloads concurrently via async Gemini API calls.
 
-        Attempts the batch API path first (currently disabled) and falls back to
-        per-image parallel extraction via a thread pool.
+        Uses ``asyncio`` with a semaphore-gated concurrency pool and exponential
+        backoff with jitter for rate-limit resilience. Falls back to synchronous
+        ThreadPoolExecutor when no async-capable client is available.
 
         Args:
             image_payloads: List of image payload dicts as produced by
@@ -628,40 +602,25 @@ class DataReader(LLMBase):
         start_llm_calls = int(self.ingestion_usage["llm_calls"])
         start_fallback_calls = int(self.ingestion_usage["fallback_calls"])
 
-        can_use_batch_api = self.use_batch_api and self.primary_client is not None
-        if can_use_batch_api and image_payloads:
-            try:
-                results = self.read_proofs_data_batch(image_payloads)
-                elapsed = time() - start_time
-                cost_delta = (
-                    float(self.ingestion_usage["estimated_total_cost_usd"]) - start_cost
-                )
-                llm_calls_delta = (
-                    int(self.ingestion_usage["llm_calls"]) - start_llm_calls
-                )
-                fallback_calls_delta = (
-                    int(self.ingestion_usage["fallback_calls"]) - start_fallback_calls
-                )
-                avg_latency = elapsed / max(1, len(image_payloads))
-                print(
-                    "\n[Ingestion] Image extraction summary: "
-                    f"images={len(image_payloads)}, "
-                    f"total_latency_s={elapsed:.2f}, "
-                    f"avg_latency_s={avg_latency:.2f}, "
-                    f"llm_calls={llm_calls_delta}, "
-                    f"fallback_calls={fallback_calls_delta}, "
-                    f"estimated_cost_usd={cost_delta:.6f}\n"
-                )
-                return results
-            except Exception as e:
-                print(
-                    f"\nWarning: Batch proof extraction failed; falling back. Error: {e}\n"
-                )
+        # Prefer async path when the client supports it (client.aio).
+        client = self.primary_client
+        has_async = (
+            client is not None
+            and hasattr(client, "aio")
+            and hasattr(client.aio, "models")
+        )
 
-        with ThreadPoolExecutor(
-            max_workers=min(self.llm_max_workers, max(1, len(image_payloads)))
-        ) as executor:
-            results = list(executor.map(self.read_proofs_data, image_payloads))
+        if has_async:
+            results = self._run_async_batch(image_payloads)
+        else:
+            # Fallback: synchronous thread pool for envs without async support.
+            logger.info(
+                "[Ingestion] Async client unavailable — falling back to ThreadPoolExecutor"
+            )
+            with ThreadPoolExecutor(
+                max_workers=min(self.async_max_concurrent, max(1, len(image_payloads)))
+            ) as executor:
+                results = list(executor.map(self.read_proofs_data, image_payloads))
 
         elapsed = time() - start_time
         cost_delta = (
@@ -683,6 +642,161 @@ class DataReader(LLMBase):
         )
 
         return results
+
+    # ------------------------------------------------------------------
+    # Async helpers for concurrent Gemini API calls
+    # ------------------------------------------------------------------
+
+    def _run_async_batch(self, image_payloads: list[dict]) -> list[str]:
+        """
+        Bridge between sync callers and the async extraction coroutine.
+
+        Creates a new event loop if none is running, or schedules on the
+        existing loop when called from an async context.
+
+        Args:
+            image_payloads: Image payloads to process concurrently.
+
+        Returns:
+            Ordered list of LLM response strings.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            # Already inside an async context (e.g. Jupyter) — schedule via thread.
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(
+                    asyncio.run, self._async_batch_extract(image_payloads)
+                ).result()
+        else:
+            return asyncio.run(self._async_batch_extract(image_payloads))
+
+    async def _async_batch_extract(self, image_payloads: list[dict]) -> list[str]:
+        """
+        Concurrently extract receipt data from all image payloads using async Gemini API.
+
+        A semaphore gates the number of in-flight requests to stay within API
+        rate limits. Each request uses exponential backoff with jitter on
+        retryable errors (429 rate-limit, 503 service unavailable).
+
+        Args:
+            image_payloads: Image payloads to process.
+
+        Returns:
+            Ordered list of LLM response strings matching input order.
+        """
+        semaphore = asyncio.Semaphore(self.async_max_concurrent)
+        tasks = [
+            self._async_extract_single(payload, semaphore)
+            for payload in image_payloads
+        ]
+        return await asyncio.gather(*tasks)
+
+    async def _async_extract_single(
+        self,
+        image_payload: dict,
+        semaphore: asyncio.Semaphore,
+        max_retries: int = 5,
+        base_delay: float = 1.0,
+    ) -> str:
+        """
+        Extract data from a single image via the async Gemini client with retry logic.
+
+        Implements exponential backoff with full jitter:
+        ``delay = random(0, base_delay * 2^attempt)`` capped at 60 seconds.
+        Only retries on transient errors (429, 503, connection errors).
+
+        Args:
+            image_payload: Single image payload dict.
+            semaphore: Shared semaphore to limit concurrency.
+            max_retries: Maximum number of retry attempts before raising.
+            base_delay: Initial backoff delay in seconds.
+
+        Returns:
+            Raw LLM response string containing receipt data.
+
+        Raises:
+            RuntimeError: If all retries are exhausted.
+        """
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": RECEIPT_PROMPT},
+                    image_payload,
+                ],
+            }
+        ]
+
+        config = types.GenerateContentConfig(
+            temperature=self.temperature,
+            top_p=self.top_p,
+            max_output_tokens=min(300, self.max_tokens),
+        )
+        contents, system_instruction = DataReader._build_gemini_contents(messages)
+        if system_instruction:
+            config.system_instruction = system_instruction
+
+        last_error: Exception | None = None
+
+        for attempt in range(max_retries + 1):
+            async with semaphore:
+                try:
+                    response = await self.primary_client.aio.models.generate_content(
+                        model=self.primary_model,
+                        contents=contents,
+                        config=config,
+                    )
+                    self._record_usage(
+                        getattr(response, "usage_metadata", None),
+                        model_name=self.primary_model,
+                        is_fallback=False,
+                    )
+                    return DataReader._response_text(response)
+
+                except Exception as e:
+                    last_error = e
+                    error_str = str(e).lower()
+                    # Only retry on transient / rate-limit errors.
+                    is_retryable = any(
+                        code in error_str
+                        for code in ("429", "503", "rate", "resource_exhausted", "unavailable")
+                    )
+
+                    if not is_retryable or attempt >= max_retries:
+                        logger.error(
+                            "[Async] Non-retryable error or retries exhausted "
+                            "(attempt %d/%d): %s",
+                            attempt + 1,
+                            max_retries + 1,
+                            e,
+                        )
+                        raise RuntimeError(
+                            f"Gemini async request failed after {attempt + 1} attempt(s): {e}"
+                        ) from e
+
+                    # Exponential backoff with full jitter, capped at 60s.
+                    max_delay = min(base_delay * (2 ** attempt), 60.0)
+                    jittered_delay = _random.uniform(0, max_delay)
+                    logger.warning(
+                        "[Async] Retryable error (attempt %d/%d), "
+                        "backing off %.2fs: %s",
+                        attempt + 1,
+                        max_retries + 1,
+                        jittered_delay,
+                        e,
+                    )
+                    await asyncio.sleep(jittered_delay)
+
+        # Should not be reached, but guard against it.
+        raise RuntimeError(
+            f"Gemini async request failed after {max_retries + 1} attempts: {last_error}"
+        )
 
     @staticmethod
     def preprocess_data(data_vector: list) -> pd.DataFrame:
@@ -1009,7 +1123,6 @@ class DataReader(LLMBase):
                 )
                 self._record_usage(
                     getattr(response, "usage_metadata", None),
-                    mode="standard",
                     model_name=self.primary_model,
                     is_fallback=False,
                 )
