@@ -4,276 +4,270 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ArVee</title>
+    <title>Receipt Validator</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
         rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20260513') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20260506b') }}" />
 </head>
 
 <body>
     <div class="backdrop"></div>
 
-    <!-- App shell -->
-    <div class="app-shell">
+    <main class="layout">
+        <section class="hero">
+            <p class="eyebrow">Receipt Validator</p>
+            <h1 class="brand-title">
+                <span>ArVee</span>
+                <span class="brand-robot" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="presentation" focusable="false">
+                        <rect x="5" y="7" width="14" height="12" rx="3"></rect>
+                        <circle cx="10" cy="12" r="1.2"></circle>
+                        <circle cx="14" cy="12" r="1.2"></circle>
+                        <path d="M9 15h6"></path>
+                        <path d="M12 3v3"></path>
+                        <path d="M7.5 5.5l1.4 1.4"></path>
+                        <path d="M16.5 5.5l-1.4 1.4"></path>
+                    </svg>
+                </span>
+            </h1>
+            <p class="hero-copy">
+                Validate transactions, flag discrepancies and provide recommendations.
+            </p>
+        </section>
 
-        <!-- Left nav rail -->
-        <nav class="nav-rail" aria-label="Main navigation">
-            <div class="nav-brand">
-                <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="var(--teal)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <section class="panel upload-panel">
+            <div class="panel-header">
+                <h2>Session & Inputs</h2>
+                <button id="new-session-btn" class="btn btn-muted">Create New Session</button>
+            </div>
+
+            <div class="session-grid">
+                <div>
+                    <label>Live Session ID</label>
+                    <input id="session-id" type="text" readonly placeholder="Click Create New Session" />
+                </div>
+                <div>
+                    <label>Load Existing Session ID</label>
+                    <input id="load-session-id" type="text" placeholder="Paste session_id to load" />
+                </div>
+                <div>
+                    <label>Workflow Status</label>
+                    <input id="workflow-status" type="text" readonly value="Idle" />
+                </div>
+            </div>
+
+            <div class="actions actions-compact">
+                <button id="load-session-btn" class="btn btn-muted">Load Session</button>
+                <button id="save-session-btn" class="btn btn-muted">Save Session</button>
+            </div>
+
+            <div class="uploads-grid">
+                <label class="dropzone">
+                    <span>Transaction Files (PDF/Image)</span>
+                    <input id="transactions-input" type="file" multiple />
+                </label>
+                <label class="dropzone">
+                    <span>Proof Images (PNG/JPG/JPEG)</span>
+                    <input id="proofs-input" type="file" accept="image/*" multiple />
+                </label>
+            </div>
+
+            <div class="actions">
+                <button id="validate-btn" class="btn btn-primary">Run Validation</button>
+                <button id="clear-btn" class="btn btn-secondary">Clear</button>
+                <button id="download-btn" class="btn btn-tertiary" disabled>Download Validated PDF</button>
+            </div>
+        </section>
+
+        <section class="panel summary-panel">
+            <h2>Summary</h2>
+            <p id="summary-text">No validation has been executed yet.</p>
+            <div id="progress-shell" class="progress-shell" aria-live="polite" hidden>
+                <div id="progress-track" class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                    aria-valuenow="0">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+                <p id="progress-label" class="progress-label">0%</p>
+                <div id="receipt-loader" class="receipt-loader" hidden>
+                    <div class="robot-reader" aria-hidden="true">
+                        <div class="reader-head">
+                            <span></span>
+                            <span></span>
+                        </div>
+                        <div class="reader-arm"></div>
+                        <div class="receipt-stack">
+                            <div class="receipt-card"></div>
+                            <div class="receipt-card"></div>
+                            <div class="receipt-card"></div>
+                            <div class="receipt-card"></div>
+                        </div>
+                    </div>
+                    <p class="loader-copy">ArVee reading your receipts!</p>
+                </div>
+            </div>
+            <p id="error-text" class="error-text" hidden></p>
+        </section>
+
+        <section class="results-grid">
+            <article class="panel hidden-panel" id="validated-panel">
+                <h3>Validated Transactions</h3>
+                <div id="validated-table" class="table-wrap"></div>
+            </article>
+
+            <article class="panel hidden-panel" id="discrepancies-panel">
+                <h3>Discrepancies</h3>
+                <div id="discrepancies-table" class="table-wrap"></div>
+                <div class="panel-footer-actions">
+                    <button id="validate-discrepancies-btn" class="btn btn-primary-soft" disabled>Add Selected to Validated</button>
+                </div>
+            </article>
+
+            <article class="panel hidden-panel" id="recommendations-panel">
+                <h3>Recommendations</h3>
+                <div id="recommendations-table" class="table-wrap"></div>
+                <div class="panel-footer-actions">
+                    <button id="accept-recommendations-btn" class="btn btn-primary-soft" disabled>Accept Selected
+                        Recommendations</button>
+                </div>
+            </article>
+
+            <article class="panel hidden-panel" id="unmatched-transactions-panel">
+                <h3>Unmatched Transactions</h3>
+                <div id="unmatched-transactions-table" class="table-wrap"></div>
+            </article>
+
+            <article class="panel hidden-panel" id="unmatched-proofs-panel">
+                <h3>Unmatched Proofs</h3>
+                <div id="unmatched-proofs-table" class="table-wrap"></div>
+                <div class="panel-footer-actions panel-footer-actions-spaced">
+                    <button id="manual-match-btn" class="btn btn-primary-soft" disabled>Match Unmatched Transactions</button>
+                </div>
+            </article>
+
+        </section>
+
+        <section class="inputs-section">
+            <div class="inputs-heading">
+                <h2>Data Sources</h2>
+            </div>
+            <div class="inputs-grid">
+                <article class="panel" id="loaded-transactions-panel">
+                    <div class="data-source-head">
+                        <h3>Uploaded Transactions</h3>
+                        <div class="data-source-meta">
+                            <span id="loaded-transactions-count" class="row-badge">0 rows</span>
+                            <button id="loaded-transactions-toggle" type="button" class="btn btn-muted btn-mini"
+                                aria-expanded="false">Expand</button>
+                        </div>
+                    </div>
+                    <div id="loaded-transactions-body" class="data-source-body collapsed">
+                        <div id="loaded-transactions-table" class="table-wrap"></div>
+                    </div>
+                    <div class="data-source-actions">
+                        <button id="add-transactions-btn" type="button" class="btn btn-muted btn-mini">Add</button>
+                        <button id="clear-transactions-btn" type="button" class="btn btn-secondary btn-mini">Clear</button>
+                    </div>
+                </article>
+
+                <article class="panel" id="loaded-proofs-panel">
+                    <div class="data-source-head">
+                        <h3>Uploaded Proofs</h3>
+                        <div class="data-source-meta">
+                            <span id="loaded-proofs-count" class="row-badge">0 rows</span>
+                            <button id="loaded-proofs-toggle" type="button" class="btn btn-muted btn-mini"
+                                aria-expanded="false">Expand</button>
+                        </div>
+                    </div>
+                    <div id="loaded-proofs-body" class="data-source-body collapsed">
+                        <div id="loaded-proofs-table" class="table-wrap"></div>
+                    </div>
+                    <div class="data-source-actions">
+                        <button id="add-proofs-btn" type="button" class="btn btn-muted btn-mini">Add</button>
+                        <button id="clear-proofs-btn" type="button" class="btn btn-secondary btn-mini">Clear</button>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section id="chat-widget" class="chat-widget" aria-live="polite">
+            <article id="chat-popup" class="chat-popup" hidden>
+                <header class="chat-popup-header">
+                    <button id="chat-back-btn" class="chat-back-btn" type="button" aria-label="Back to suggestions"
+                        title="Back to suggestions">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" width="16" height="16">
+                            <path d="M19 12H5"></path>
+                            <path d="M12 19l-7-7 7-7"></path>
+                        </svg>
+                    </button>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="1.6" stroke-linecap="round"
+                        stroke-linejoin="round" width="22" height="22">
+                        <rect x="5" y="7" width="14" height="12" rx="3"></rect>
+                        <circle cx="10" cy="12" r="1.2"></circle>
+                        <circle cx="14" cy="12" r="1.2"></circle>
+                        <path d="M9 15h6"></path>
+                        <path d="M12 3v3"></path>
+                    </svg>
+                    <h3>ArVee</h3>
+                    <button id="chat-close-btn" class="chat-close-btn" type="button" aria-label="Close chat">×</button>
+                </header>
+                <div id="chat-transcript" class="chat-transcript"></div>
+                <div class="chat-compose">
+                    <input id="chat-input" type="text" placeholder="Ask about your transactions..." />
+                    <button id="chat-send-btn" class="chat-send-btn" type="button" aria-label="Send message">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" width="18" height="18">
+                            <path d="M22 2L11 13"></path>
+                            <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </article>
+            <div id="chat-greeting" class="chat-greeting" role="status">
+                Hi, I'm ArVee! Ask me about your finances.
+            </div>
+            <button id="chat-fab" class="chat-fab" type="button" aria-expanded="false" aria-controls="chat-popup"
+                onclick="if(!window.__arveeAppReady){var p=document.getElementById('chat-popup');if(p){p.hidden=!p.hidden;this.setAttribute('aria-expanded',String(!p.hidden));}}"
+                aria-label="Open chat with ArVee">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                    stroke-linejoin="round" width="26" height="26">
                     <rect x="5" y="7" width="14" height="12" rx="3"></rect>
                     <circle cx="10" cy="12" r="1.2"></circle>
                     <circle cx="14" cy="12" r="1.2"></circle>
                     <path d="M9 15h6"></path>
                     <path d="M12 3v3"></path>
+                    <path d="M7.5 5.5l1.4 1.4"></path>
+                    <path d="M16.5 5.5l-1.4 1.4"></path>
                 </svg>
-                <span class="nav-brand-text">ArVee</span>
-            </div>
-
-            <button class="nav-item active" data-tab="upload" type="button" aria-current="page">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                <span>Upload</span>
             </button>
-            <button class="nav-item" data-tab="validation" type="button">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                <span>Validation</span>
-            </button>
-            <button class="nav-item" data-tab="chat" type="button">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                <span>Chat</span>
-            </button>
-            <button class="nav-item" data-tab="settings" type="button">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                <span>Settings</span>
-            </button>
-        </nav>
+        </section>
+    </main>
 
-        <!-- Top bar -->
-        <header class="top-bar">
-            <div class="top-bar-session">
-                <label class="top-bar-label">Session</label>
-                <input id="session-id" class="top-bar-input" type="text" readonly placeholder="No session" />
-                <button id="new-session-btn" class="btn btn-muted btn-sm" type="button">New</button>
-            </div>
-            <div class="top-bar-load">
-                <input id="load-session-id" class="top-bar-input" type="text" placeholder="Paste session ID" />
-                <button id="load-session-btn" class="btn btn-muted btn-sm" type="button">Load</button>
-                <button id="save-session-btn" class="btn btn-muted btn-sm" type="button">Save</button>
-            </div>
-            <div class="top-bar-status">
-                <span class="status-dot"></span>
-                <span id="workflow-status" class="status-text">Idle</span>
-            </div>
-        </header>
-
-        <!-- Main content -->
-        <main class="main-content">
-
-            <!-- UPLOAD TAB -->
-            <section class="tab-content active" data-tab="upload">
-                <div class="tab-header">
-                    <h1 class="tab-title">Upload</h1>
-                    <p class="tab-subtitle">Upload transaction statements and proof-of-purchase images for validation.</p>
-                </div>
-
-                <div class="upload-cards">
-                    <div class="upload-card">
-                        <div class="upload-card-header">
-                            <h3>Transaction Files</h3>
-                            <span class="file-type-badge">PDF / Image</span>
-                        </div>
-                        <label class="dropzone" for="transactions-input">
-                            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="var(--teal)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                            <span class="dropzone-text">Drag &amp; drop or click to upload</span>
-                            <input id="transactions-input" type="file" multiple />
-                        </label>
-                        <div class="upload-card-meta">
-                            <span id="loaded-transactions-count" class="row-badge">0 rows</span>
-                            <button id="loaded-transactions-toggle" type="button" class="btn btn-muted btn-mini" aria-expanded="false">Expand</button>
-                            <button id="add-transactions-btn" type="button" class="btn btn-muted btn-mini">Add</button>
-                            <button id="clear-transactions-btn" type="button" class="btn btn-secondary btn-mini">Clear</button>
-                        </div>
-                        <div id="loaded-transactions-body" class="data-source-body collapsed">
-                            <div id="loaded-transactions-table" class="table-wrap"></div>
-                        </div>
-                    </div>
-
-                    <div class="upload-card">
-                        <div class="upload-card-header">
-                            <h3>Proof Images</h3>
-                            <span class="file-type-badge">PNG / JPG / JPEG</span>
-                        </div>
-                        <label class="dropzone" for="proofs-input">
-                            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="var(--teal)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                            <span class="dropzone-text">Drag &amp; drop or click to upload</span>
-                            <input id="proofs-input" type="file" accept="image/*" multiple />
-                        </label>
-                        <div class="upload-card-meta">
-                            <span id="loaded-proofs-count" class="row-badge">0 rows</span>
-                            <button id="loaded-proofs-toggle" type="button" class="btn btn-muted btn-mini" aria-expanded="false">Expand</button>
-                            <button id="add-proofs-btn" type="button" class="btn btn-muted btn-mini">Add</button>
-                            <button id="clear-proofs-btn" type="button" class="btn btn-secondary btn-mini">Clear</button>
-                        </div>
-                        <div id="loaded-proofs-body" class="data-source-body collapsed">
-                            <div id="loaded-proofs-table" class="table-wrap"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="upload-actions">
-                    <button id="validate-btn" class="btn btn-primary">Run Validation</button>
-                    <button id="clear-btn" class="btn btn-secondary">Clear All</button>
-                </div>
-
-                <div id="progress-shell" class="progress-shell" aria-live="polite" hidden>
-                    <div id="progress-track" class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                        <div id="progress-fill" class="progress-fill"></div>
-                    </div>
-                    <p id="progress-label" class="progress-label">0%</p>
-                    <div id="receipt-loader" class="receipt-loader" hidden>
-                        <div class="robot-reader" aria-hidden="true">
-                            <div class="reader-head"><span></span><span></span></div>
-                            <div class="reader-arm"></div>
-                            <div class="receipt-stack">
-                                <div class="receipt-card"></div>
-                                <div class="receipt-card"></div>
-                                <div class="receipt-card"></div>
-                                <div class="receipt-card"></div>
-                            </div>
-                        </div>
-                        <p class="loader-copy">ArVee reading your receipts!</p>
-                    </div>
-                </div>
-                <p id="error-text" class="error-text" hidden></p>
-            </section>
-
-            <!-- VALIDATION TAB -->
-            <section class="tab-content" data-tab="validation">
-                <div class="tab-header">
-                    <h1 class="tab-title">Validation Results</h1>
-                    <div class="tab-header-actions">
-                        <button id="download-btn" class="btn btn-tertiary btn-sm" disabled>Download PDF</button>
-                    </div>
-                </div>
-
-                <p id="summary-text" class="summary-text">No validation has been executed yet.</p>
-
-                <div class="kpi-row">
-                    <div class="kpi-card kpi-validated">
-                        <span class="kpi-label">Validated</span>
-                        <span id="kpi-validated" class="kpi-value">0</span>
-                    </div>
-                    <div class="kpi-card kpi-discrepancies">
-                        <span class="kpi-label">Discrepancies</span>
-                        <span id="kpi-discrepancies" class="kpi-value">0</span>
-                    </div>
-                    <div class="kpi-card kpi-unmatched-tx">
-                        <span class="kpi-label">Unmatched Tx</span>
-                        <span id="kpi-unmatched-tx" class="kpi-value">0</span>
-                    </div>
-                    <div class="kpi-card kpi-unmatched-proofs">
-                        <span class="kpi-label">Unmatched Proofs</span>
-                        <span id="kpi-unmatched-proofs" class="kpi-value">0</span>
-                    </div>
-                </div>
-
-                <div class="sub-tabs" role="tablist">
-                    <button class="sub-tab active" data-subtab="validated" role="tab" aria-selected="true" type="button">Validated</button>
-                    <button class="sub-tab" data-subtab="discrepancies" role="tab" aria-selected="false" type="button">Discrepancies</button>
-                    <button class="sub-tab" data-subtab="unmatched" role="tab" aria-selected="false" type="button">Unmatched</button>
-                </div>
-
-                <div class="sub-tab-content active" data-subtab="validated">
-                    <div id="validated-table" class="table-wrap"></div>
-                </div>
-
-                <div class="sub-tab-content" data-subtab="discrepancies">
-                    <div id="discrepancies-table" class="table-wrap"></div>
-                    <div class="panel-footer-actions">
-                        <button id="validate-discrepancies-btn" class="btn btn-primary-soft" disabled>Add Selected to Validated</button>
-                    </div>
-                    <div class="recommendations-section">
-                        <h3>Recommendations</h3>
-                        <div id="recommendations-table" class="table-wrap"></div>
-                        <div class="panel-footer-actions">
-                            <button id="accept-recommendations-btn" class="btn btn-primary-soft" disabled>Accept Selected Recommendations</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="sub-tab-content" data-subtab="unmatched">
-                    <div class="unmatched-split">
-                        <div class="unmatched-half">
-                            <h3>Unmatched Transactions</h3>
-                            <div id="unmatched-transactions-table" class="table-wrap"></div>
-                        </div>
-                        <div class="unmatched-half">
-                            <h3>Unmatched Proofs</h3>
-                            <div id="unmatched-proofs-table" class="table-wrap"></div>
-                        </div>
-                    </div>
-                    <div class="panel-footer-actions">
-                        <button id="manual-match-btn" class="btn btn-primary-soft" disabled>Match Selected</button>
-                    </div>
-                </div>
-            </section>
-
-            <!-- CHAT TAB -->
-            <section class="tab-content" data-tab="chat">
-                <div class="chat-full">
-                    <div class="chat-full-header">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" width="22" height="22">
-                            <rect x="5" y="7" width="14" height="12" rx="3"></rect>
-                            <circle cx="10" cy="12" r="1.2"></circle>
-                            <circle cx="14" cy="12" r="1.2"></circle>
-                            <path d="M9 15h6"></path>
-                            <path d="M12 3v3"></path>
-                        </svg>
-                        <h2>ArVee</h2>
-                        <button id="chat-back-btn" class="btn btn-muted btn-mini" type="button">Clear Chat</button>
-                    </div>
-                    <div id="chat-transcript" class="chat-transcript"></div>
-                    <div class="chat-compose">
-                        <input id="chat-input" type="text" placeholder="Ask about your transactions..." />
-                        <button id="chat-send-btn" class="chat-send-btn" type="button" aria-label="Send message">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
-                                <path d="M22 2L11 13"></path>
-                                <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-            </section>
-
-            <!-- SETTINGS TAB -->
-            <section class="tab-content" data-tab="settings">
-                <div class="tab-header">
-                    <h1 class="tab-title">Settings</h1>
-                </div>
-                <div class="settings-card">
-                    <h3>About</h3>
-                    <p>ArVee — Receipt Validator &amp; Spending Analyzer</p>
-                    <p class="settings-muted">Version 1.0.0</p>
-                </div>
-            </section>
-
-        </main>
-    </div>
-
-    <script src="{{ url_for('static', filename='app.js', v='20260513') }}"></script>
+    <script src="{{ url_for('static', filename='app.js', v='20260506b') }}"></script>
     <script>
         window.addEventListener("load", function () {
-            if (window.__arveeAppReady) return;
+            if (window.__arveeAppReady) {
+                return;
+            }
             try {
                 var params = new URLSearchParams(window.location.search || "");
                 var testSession = params.get("testSession");
-                if (!testSession) return;
+                if (!testSession) {
+                    return;
+                }
                 var loadInput = document.getElementById("load-session-id");
-                if (loadInput) loadInput.value = testSession;
+                if (loadInput) {
+                    loadInput.value = testSession;
+                }
                 var loadBtn = document.getElementById("load-session-btn");
-                if (loadBtn && typeof loadBtn.click === "function") loadBtn.click();
-            } catch (_err) {}
+                if (loadBtn && typeof loadBtn.click === "function") {
+                    loadBtn.click();
+                }
+            } catch (_err) {
+                // best-effort fallback when main UI script did not initialize
+            }
         });
     </script>
 </body>
