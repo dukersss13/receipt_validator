@@ -52,7 +52,24 @@ To get started, you will need to install:
 
 1. IDE of choice ([VSCode](https://code.visualstudio.com/download) recommended)
 2. [Docker](https://www.docker.com/products/docker-desktop/) 
-3. Generate a Gemini API key and store it under **secrets/google_gemini_api_key** (or set `GEMINI_API_KEY`).
+3. Generate a Gemini API key and set `GEMINI_API_KEY` via environment.
+
+### Local Environment Configuration
+
+Use a local `.env` file for development only:
+
+1. Create local env file:
+    `cp .env.example .env`
+2. Fill in required values (at minimum `GEMINI_API_KEY`).
+3. Load variables in your shell before running the app:
+    `set -a; source .env; set +a`
+
+Do not commit `.env` or any real secret files.
+
+### Production Secrets (GCP)
+
+For Cloud Run deployments, store secrets in Secret Manager and inject them at deploy time.
+Do not mount or commit secret files in production images.
 
 ### ArVee in Action 💻
 Refer to [this](md/application.md) to see the application's UI and workflow.
@@ -92,6 +109,7 @@ Initial production hardening is now included for container deployment.
 - `ARVEE_LOCAL_DB_NAME` (default: `receipt_validator_db`)
 - `ARVEE_DB_ECHO` (default: `false`)
 - `ARVEE_REQUIRE_USER_ID` (default: `false`; when `true`, requires `X-User-Id` header on session/validate endpoints)
+- `GEMINI_API_KEY` (required for LLM calls)
 
 ### Docker Run
 
