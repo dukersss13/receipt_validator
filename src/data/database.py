@@ -325,6 +325,8 @@ class DataBase:
             if existing_by_email is not None:
                 if not str(existing_by_email.password_hash or "").strip():
                     existing_by_email.password_hash = password_hash_fallback
+                # Keep provider metadata consistent once an account is linked to Google.
+                existing_by_email.provider = "google"
                 existing_by_email.provider_id = normalized_provider_id
                 db.commit()
                 db.refresh(existing_by_email)

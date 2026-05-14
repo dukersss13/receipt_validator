@@ -1,4 +1,5 @@
 import pytest
+from werkzeug.security import generate_password_hash
 
 from tests.mock_documents import create_mock_documents
 from src.data.db_schema import Session
@@ -28,3 +29,22 @@ def test_setup_db(mock_documents):
     assert len(db_proofs) == len(proofs)
 
     print("✅ Database setup test passed.")
+
+
+def test_create_or_link_google_user_marks_provider_google() -> None:
+    db = DataBase(engine_name="tests/data/db/test_google_link", reset_db=True)
+    user = db.create_user_auth(
+        "linkme@example.com",
+        generate_password_hash("StrongPass123!"),
+    )
+    assert user.provider == "email"
+
+    linked = db.create_or_link_google_user(
+        email="linkme@example.com",
+        provider_id="google-sub-999",
+        password_hash_fallback=generate_password_hash("fallback"),
+    )
+
+    assert linked.email == "linkme@example.com"
+    assert linked.provider == "google"
+    assert linked.provider_id == "google-sub-999"
