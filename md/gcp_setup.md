@@ -318,13 +318,44 @@ chmod +x scripts/verify_deployment.sh
 scripts/verify_deployment.sh https://YOUR_SERVICE_URL
 ```
 
+## 12. Always-On Backend (Phase 1)
+
+Always-on deployment quick start lives here, while detailed runtime state is tracked in `md/gcp.md`.
+
+1. Install/update dependencies:
+  `pip install -r requirements.txt`
+2. Start with Gunicorn:
+  `gunicorn -c gunicorn.conf.py backend_app:app`
+
+Deployment verification helper:
+
+- Run `scripts/verify_deployment.sh https://YOUR_SERVICE_URL` after each Cloud Run rollout.
+- Add `--require-google` when Google OAuth must be enabled in that environment.
+
+Detailed runtime environment variables, health endpoint behavior, and live auth/runtime observations are documented in:
+
+- `md/gcp.md` (current deployed runtime snapshot)
+- Sections 5 and 10 in this setup guide (required/runtime configuration)
+
+### Docker Run
+
+1. Build image:
+  `docker build -t arvee-backend:latest .`
+2. Run container:
+  `docker run --rm -p 7860:7860 -e ARVEE_PORT=7860 arvee-backend:latest`
+
+### Multi-User Header
+
+For user-scoped session access, include an `X-User-Id` header in API requests.
+If `ARVEE_REQUIRE_USER_ID=true`, requests without this header are rejected.
+
 If Google sign-in is required in the target environment:
 
 ```bash
 scripts/verify_deployment.sh https://YOUR_SERVICE_URL --require-google
 ```
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 - Error: Missing GEMINI_API_KEY or GOOGLE_API_KEY
   - Ensure secret exists, is bound to runtime service account, and mapped with --set-secrets.
@@ -334,7 +365,3 @@ scripts/verify_deployment.sh https://YOUR_SERVICE_URL --require-google
   - You are likely on SQLite in ephemeral filesystem; move to Cloud SQL and set ARVEE_DB_URL.
 - 401 Missing X-User-Id header
   - Disable ARVEE_REQUIRE_USER_ID or send X-User-Id from clients.
-
----
-
-If you want, I can also add a production-ready cloudbuild.yaml and a GitHub Actions workflow file tailored to this exact repository.

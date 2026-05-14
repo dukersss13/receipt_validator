@@ -98,75 +98,10 @@ Each session can be saved and loaded via a Session ID (`session_id`), and extrac
 
 ## Always-On Backend (Phase 1)
 
-Initial production hardening is now included for container deployment.
+GCP deployment and production runtime details were moved to:
 
-1. Install/update dependencies:
-    `pip install -r requirements.txt`
-2. Start with Gunicorn:
-    `gunicorn -c gunicorn.conf.py backend_app:app`
-
-Deployment verification helper:
-
-- Run `scripts/verify_deployment.sh https://YOUR_SERVICE_URL` after each Cloud Run rollout.
-- Add `--require-google` when Google OAuth must be enabled in that environment.
-
-### Runtime Environment Variables
-
-- `ARVEE_PORT` (default: `7860`)
-- `ARVEE_HOST` (default: `0.0.0.0` for local launchers)
-- `ARVEE_DEBUG` (default: `false`)
-- `ARVEE_DB_URL` (optional, SQLAlchemy URL for remote DB; when unset uses local SQLite)
-- `ARVEE_LOCAL_DB_NAME` (default: `receipt_validator_db`)
-- `ARVEE_DB_ECHO` (default: `false`)
-- `ARVEE_DB_CONNECT_TIMEOUT` (default: `5`; remote DB connect timeout seconds)
-- `ARVEE_DB_POOL_TIMEOUT` (default: `15`; SQLAlchemy pool checkout timeout seconds)
-- `ARVEE_REQUIRE_USER_ID` (default: `false`; when `true`, requires `X-User-Id` header on session/validate endpoints)
-- `ARVEE_AUTH_RATE_LIMIT_ENABLED` (default: `false`; enables per-IP auth endpoint throttling)
-- `ARVEE_AUTH_RATE_LIMIT_MAX_REQUESTS` (default: `20`; max auth attempts within rate-limit window)
-- `ARVEE_AUTH_RATE_LIMIT_WINDOW_SECONDS` (default: `60`; auth rate-limit rolling window)
-- `GEMINI_API_KEY` (required for LLM calls)
-- `ARVEE_GOOGLE_OAUTH_CLIENT_ID` (or `GOOGLE_OAUTH_CLIENT_ID`) for Google sign-in
-- `ARVEE_GOOGLE_OAUTH_CLIENT_ID_FILE` (or `GOOGLE_OAUTH_CLIENT_ID_FILE`) path to a file containing the OAuth client ID
-- `ARVEE_GOOGLE_REDIRECT_SCHEME` (default: `arvee`; must match iOS URL scheme)
-
-### Health Endpoints
-
-- `GET /api/health`: shallow liveness check
-- `GET /api/health/deep`: dependency-aware readiness check (DB connectivity and auth/OAuth config summary)
-
-### Auth Error Contract
-
-Auth endpoints return structured failures with:
-
-- `error`: human-readable message
-- `errorClass`: machine-readable category for client UX mapping
-
-Current classes include:
-
-- `validation_error`
-- `invalid_credentials`
-- `email_conflict`
-- `oauth_not_configured`
-- `oauth_verify_failure`
-- `db_timeout`
-- `database_error`
-- `schema_mismatch`
-- `auth_token_expired`
-- `auth_token_invalid`
-- `rate_limited`
-- `internal_error`
-
-### Docker Run
-
-1. Build image:
-    `docker build -t arvee-backend:latest .`
-2. Run container:
-    `docker run --rm -p 7860:7860 -e ARVEE_PORT=7860 arvee-backend:latest`
-
-### Multi-User Header (Current Step)
-
-For user-scoped session access, include an `X-User-Id` header in API requests.
-If `ARVEE_REQUIRE_USER_ID=true`, requests without this header are rejected.
+- [GCP setup guide](md/gcp_setup.md)
+- [GCP backend runtime snapshot](md/gcp.md)
 
 
  ## 📌 TODO
