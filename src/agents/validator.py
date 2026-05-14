@@ -625,12 +625,7 @@ class Validator:
         date_window_days = int(self.recommendation_matching["date_window_days"])
         amount_threshold = float(self.recommendation_matching["amount_threshold"])
 
-        date_reason = (
-            "Date within +/-1 day"
-            if date_window_days == 1
-            else f"Date within +/-{date_window_days} days"
-        )
-        amount_reason = f"Amount within +/-${amount_threshold:.2f}"
+        user_facing_reason = "Similar names, dates or amount"
 
         tx = unmatched_transactions.copy()
         pr = unmatched_proofs.copy()
@@ -706,14 +701,13 @@ class Validator:
                 )
 
                 def build_reason(row: pd.Series) -> str:
-                    reasons = []
-                    if bool(row["__name_match"]):
-                        reasons.append("Similar business name")
-                    if bool(row["__date_match"]):
-                        reasons.append(date_reason)
-                    if bool(row["__amount_match"]):
-                        reasons.append(amount_reason)
-                    return " + ".join(reasons)
+                    if (
+                        bool(row["__name_match"])
+                        or bool(row["__date_match"])
+                        or bool(row["__amount_match"])
+                    ):
+                        return user_facing_reason
+                    return ""
 
                 candidate_pairs["__reason"] = candidate_pairs.apply(
                     build_reason, axis=1
@@ -750,9 +744,11 @@ class Validator:
                     "Transaction Business Name": candidate_pairs["Business Name_tx"],
                     "Transaction Total": candidate_pairs["Total_tx"],
                     "Transaction Date": candidate_pairs["Date_tx"],
+                    "Transaction Category": candidate_pairs.get("Category_tx", ""),
                     "Proof Business Name": candidate_pairs["Business Name_pr"],
                     "Proof Total": candidate_pairs["Total_pr"],
                     "Proof Date": candidate_pairs["Date_pr"],
+                    "Proof Category": candidate_pairs.get("Category_pr", ""),
                     "Reason": candidate_pairs["__reason"],
                 }
             )
