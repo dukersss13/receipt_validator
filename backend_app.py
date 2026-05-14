@@ -102,6 +102,22 @@ def _classify_auth_exception(exc: Exception) -> str:
     return "internal_error"
 
 
+def _signup_password_validation_error(password: str) -> str | None:
+    if len(password) < 8:
+        return "Password must be at least 8 characters."
+
+    if not re.search(r"[A-Z]", password):
+        return "Password must include at least 1 capital letter, 1 number, and 1 special character."
+
+    if not re.search(r"\d", password):
+        return "Password must include at least 1 capital letter, 1 number, and 1 special character."
+
+    if not re.search(r"[^A-Za-z0-9]", password):
+        return "Password must include at least 1 capital letter, 1 number, and 1 special character."
+
+    return None
+
+
 def _instrument_auth_endpoint(endpoint_name: str):
     """Log auth endpoint latency and status to make dependency stalls visible."""
 
@@ -854,9 +870,10 @@ def auth_signup():
             400,
             "validation_error",
         )
-    if len(password) < 8:
+    password_error = _signup_password_validation_error(password)
+    if password_error:
         return _auth_error_response(
-            "Password must be at least 8 characters.",
+            password_error,
             400,
             "validation_error",
         )

@@ -83,3 +83,60 @@ def test_signup_duplicate_email_account_still_conflicts(monkeypatch: Any) -> Non
     payload = second.get_json()
     assert "already exists" in payload["error"].lower()
     assert payload["errorClass"] == "email_conflict"
+
+
+def test_signup_password_requires_uppercase(monkeypatch: Any) -> None:
+    db = DataBase(
+        engine_name="tests/data/db/test_signup_password_requires_uppercase",
+        reset_db=True,
+    )
+    monkeypatch.setattr(webapp_module, "database", db)
+
+    client = webapp_module.app.test_client()
+    response = client.post(
+        "/api/auth/signup",
+        json={"email": "loweronly@example.com", "password": "lowerpass123!"},
+    )
+
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert payload["errorClass"] == "validation_error"
+    assert "capital letter" in payload["error"]
+
+
+def test_signup_password_requires_number(monkeypatch: Any) -> None:
+    db = DataBase(
+        engine_name="tests/data/db/test_signup_password_requires_number",
+        reset_db=True,
+    )
+    monkeypatch.setattr(webapp_module, "database", db)
+
+    client = webapp_module.app.test_client()
+    response = client.post(
+        "/api/auth/signup",
+        json={"email": "nonumber@example.com", "password": "NoDigitsPass!"},
+    )
+
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert payload["errorClass"] == "validation_error"
+    assert "1 number" in payload["error"]
+
+
+def test_signup_password_requires_special_character(monkeypatch: Any) -> None:
+    db = DataBase(
+        engine_name="tests/data/db/test_signup_password_requires_special",
+        reset_db=True,
+    )
+    monkeypatch.setattr(webapp_module, "database", db)
+
+    client = webapp_module.app.test_client()
+    response = client.post(
+        "/api/auth/signup",
+        json={"email": "nospecial@example.com", "password": "NoSpecial123"},
+    )
+
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert payload["errorClass"] == "validation_error"
+    assert "special character" in payload["error"]
