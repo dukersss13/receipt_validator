@@ -76,6 +76,22 @@ class RouterAgent(LLMBase):
         # If we have a pending plan from a prior clarification, resolve it.
         if self._pending_plan is not None:
             plan = self._resolve_pending_plan(question)
+        elif question.strip().lower() in ("chart my spending",):
+            # Deterministic shortcut: chart all validated transactions.
+            plan = RouterPlan(
+                tool_name=AgentTool.SPENDING_BREAKDOWN,
+                tool_params={
+                    "category": "",
+                    "this_month": False,
+                    "period": None,
+                    "aggregation_method": "sum",
+                    "top_n": 0,
+                    "include_chart": True,
+                    "chart_type": "bar",
+                },
+                needs_clarification=False,
+                confidence="high",
+            )
         else:
             plan = self.plan_with_schema(
                 RouterInput(
