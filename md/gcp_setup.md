@@ -158,7 +158,7 @@ gcloud run deploy "$SERVICE" \
   --platform managed \
   --allow-unauthenticated \
   --port 7860 \
-  --set-env-vars ARVEE_PORT=7860,ARVEE_HOST=0.0.0.0,ARVEE_DEBUG=false,ARVEE_REQUIRE_USER_ID=false \
+  --set-env-vars ARVEE_PORT=7860,ARVEE_HOST=0.0.0.0,ARVEE_DEBUG=false,ARVEE_REQUIRE_USER_ID=false,ARVEE_PUBLIC_BASE_URL=https://YOUR_SERVICE_URL,ARVEE_CORS_ORIGINS=* \
   --set-secrets GEMINI_API_KEY=GEMINI_API_KEY:latest,EXCHANGE_RATE_KEY=EXCHANGE_RATE_KEY:latest
 ```
 
@@ -174,9 +174,19 @@ Run health checks (replace URL):
 ```bash
 curl -sS https://YOUR_SERVICE_URL/api/health | jq .
 curl -sS https://YOUR_SERVICE_URL/api/health/deep | jq .
+curl -sS https://YOUR_SERVICE_URL/api/auth/google/config | jq .
 ```
 
 `/api/health/deep` should report `status: "ok"` and `checks.database.ok: true` before iOS signup/Google auth tests.
+
+Cloud Run stale revision guard:
+
+```bash
+gcloud run services describe "$SERVICE" --region "$REGION" \
+  --format='value(status.latestCreatedRevisionName,status.latestReadyRevisionName,status.traffic[0].revisionName,status.traffic[0].percent)'
+```
+
+`latestCreatedRevisionName`, `latestReadyRevisionName`, and active traffic revision should match before iOS validation/chat tests.
 ```
 
 ## 8. Database Options
