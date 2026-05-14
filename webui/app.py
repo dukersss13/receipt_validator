@@ -699,17 +699,8 @@ def chat_ask():
         validated_rows = state.get("validatedTransactions", [])
 
         if not isinstance(validated_rows, list) or not validated_rows:
-            return (
-                jsonify(
-                    {
-                        "error": (
-                            "No validated transactions found for this session. "
-                            "Run validation first."
-                        )
-                    }
-                ),
-                400,
-            )
+            guidance = _validation_required_chat_payload()
+            return jsonify({"sessionId": session_id, "question": message, **guidance})
 
         router = RouterAgent()
         chat_history = state.get("chatHistory", [])
@@ -744,6 +735,30 @@ def _sse(event: str, payload: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
 
+def _validation_required_chat_payload() -> dict[str, Any]:
+    """Build a friendly chat response when validation data is missing."""
+    return {
+        "answer": (
+            "Please add transactions and proofs in Validation first, then tap "
+            "Validate before asking Chat questions."
+        ),
+        "rowsScanned": 0,
+        "confidence": "high",
+        "toolUsed": False,
+        "toolName": "",
+        "route": "validation_required",
+        "needsClarification": True,
+        "quickReplies": [
+            "How do I upload transactions?",
+            "How do I upload proofs?",
+            "What should I do after upload?",
+        ],
+        "chart": None,
+        "top_categories": [],
+        "comparison_table": None,
+    }
+
+
 @app.post("/api/chat/ask/stream")
 def chat_ask_stream():
     """Stream a chat response as Server-Sent Events."""
@@ -761,16 +776,21 @@ def chat_ask_stream():
     validated_rows = state.get("validatedTransactions", [])
 
     if not isinstance(validated_rows, list) or not validated_rows:
-        return (
-            jsonify(
-                {
-                    "error": (
-                        "No validated transactions found for this session. "
-                        "Run validation first."
-                    )
-                }
-            ),
-            400,
+        guidance = _validation_required_chat_payload()
+
+        def generate_validation_guidance() -> Any:
+            yield _sse("start", {"sessionId": session_id})
+            yield _sse("token", {"token": guidance["answer"]})
+            yield _sse("done", guidance)
+
+        return Response(
+            generate_validation_guidance(),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
         )
 
     router = RouterAgent()
