@@ -136,8 +136,8 @@ def test_chat_stream_emits_progress_for_routed_answer(monkeypatch: Any) -> None:
         "progress",
         "done",
     ]
-    assert "Understanding your question..." in events[1]["data"]
-    assert "Reviewing your latest validated transactions..." in events[2]["data"]
+    assert "Looking into your request..." in events[1]["data"]
+    assert "Analyzing your validated transactions..." in events[2]["data"]
     assert "Finalizing the response..." in events[3]["data"]
     assert "Here is your latest spend summary." in events[4]["data"]
     assert "Done." in events[5]["data"]

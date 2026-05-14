@@ -2,8 +2,10 @@ import io
 import json
 import os
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from queue import Queue
 from typing import Any
 
 import pandas as pd
@@ -465,41 +467,35 @@ def get_session_state(session_id: str):
     return jsonify({"sessionId": session_id, "state": state})
 
 
-@app.post("/api/validate")
-def validate():
-    """Run the full validation pipeline on uploaded or saved session data."""
+def _run_validation_pipeline(
+    session_id: str,
+    transactions: list[Any],
+    proofs: list[Any],
+    progress_callback: Any | None = None,
+) -> dict[str, Any]:
+    """Run validation and return the payload used by both JSON and SSE endpoints."""
     # Lazy import to avoid loading PDF/LLM parser stack during app startup.
     from src.data.data_reader import DataReader, DataType
 
-    session_id = str(request.form.get("sessionId", "")).strip()
-    transactions = request.files.getlist("transactions")
-    proofs = request.files.getlist("proofs")
-
     if not session_id:
-        return (
-            jsonify(
-                {"error": "sessionId is required. Create or provide a session first."}
-            ),
-            400,
-        )
+        raise ValueError("sessionId is required. Create or provide a session first.")
 
     use_uploaded_files = bool(transactions or proofs)
     if use_uploaded_files and (not transactions or not proofs):
-        return (
-            jsonify(
-                {
-                    "error": (
-                        "Provide both transactions and proofs when uploading new files, "
-                        "or upload neither to use saved session inputs."
-                    )
-                }
-            ),
-            400,
+        raise ValueError(
+            "Provide both transactions and proofs when uploading new files, "
+            "or upload neither to use saved session inputs."
         )
+
+    def emit(stage: str, percent: int) -> None:
+        if progress_callback is None:
+            return
+        progress_callback(stage, percent)
 
     transaction_paths: list[str] = []
     proof_paths: list[str] = []
     if use_uploaded_files:
+        emit("Preparing uploaded files...", 5)
         transaction_paths = _save_uploaded_files(transactions)
         proof_paths = _save_uploaded_files(proofs)
 
@@ -523,6 +519,7 @@ def validate():
                 parsed_config=shared_config,
             )
 
+            emit("Reading uploaded transactions and proofs...", 20)
             print("\n[Validation] Reading Transactions and Proofs in parallel\n")
             with ThreadPoolExecutor(max_workers=2) as executor:
                 tx_future = executor.submit(
@@ -532,6 +529,7 @@ def validate():
                 transactions_df = tx_future.result()
                 proofs_df = proof_future.result()
 
+            emit("Computing ingestion cost summaries...", 40)
             txn_cost = transactions_reader.get_ingestion_cost_summary()
             print(
                 "\n[Validation] Reading Txn Cost: "
@@ -570,26 +568,23 @@ def validate():
             print(f"\nIngestion usage: {log_entry}\n")
 
         else:
+            emit("Loading saved session inputs...", 20)
             transactions_df, proofs_df = database.load_session_history(session_id)
             if transactions_df.empty or proofs_df.empty:
-                return (
-                    jsonify(
-                        {
-                            "error": (
-                                "No saved inputs found for this session. "
-                                "Upload transactions and proofs first."
-                            )
-                        }
-                    ),
-                    400,
+                raise ValueError(
+                    "No saved inputs found for this session. "
+                    "Upload transactions and proofs first."
                 )
 
+        emit("Validating transactions against proofs...", 60)
         validator = Validator(
             transactions_df,
             proofs_df,
             parsed_config=shared_config,
         )
         results = validator.validate()
+
+        emit("Building summary and recommendations...", 78)
         summary_text, recommendations_df = validator.analyze_results(results)
         categorize_cost = validator.categorize_cost
         enriched_transactions_df = validator.transactions
@@ -637,6 +632,8 @@ def validate():
             "recommendations": _frame_to_records(recommendations_df),
         }
 
+        emit("Saving validation results...", 90)
+
         # Auto-save full session state after each successful validation run.
         existing_state = database.load_session_state(session_id) or {}
         database.save_session_state(
@@ -655,11 +652,92 @@ def validate():
             },
         )
 
-        return jsonify(payload)
-    except Exception as exc:
-        return jsonify({"error": f"Validation failed: {exc}"}), 500
+        emit("Validation complete.", 100)
+        return payload
     finally:
         _cleanup_temp_files(transaction_paths + proof_paths)
+
+
+@app.post("/api/validate")
+def validate():
+    """Run the full validation pipeline on uploaded or saved session data."""
+    session_id = str(request.form.get("sessionId", "")).strip()
+    transactions = request.files.getlist("transactions")
+    proofs = request.files.getlist("proofs")
+
+    try:
+        payload = _run_validation_pipeline(
+            session_id=session_id,
+            transactions=transactions,
+            proofs=proofs,
+        )
+        return jsonify(payload)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Validation failed: {exc}"}), 500
+
+
+@app.post("/api/validate/stream")
+def validate_stream():
+    """Stream validation progress events and final payload over SSE."""
+    session_id = str(request.form.get("sessionId", "")).strip()
+    transactions = request.files.getlist("transactions")
+    proofs = request.files.getlist("proofs")
+
+    if not session_id:
+        return jsonify({"error": "sessionId is required."}), 400
+
+    def generate() -> Any:
+        yield _sse("start", {"sessionId": session_id})
+
+        queue: Queue[tuple[str, dict[str, Any]]] = Queue()
+
+        def on_progress(stage: str, percent: int) -> None:
+            queue.put(("progress", {"stage": stage, "percent": percent}))
+
+        def worker() -> None:
+            try:
+                payload = _run_validation_pipeline(
+                    session_id=session_id,
+                    transactions=transactions,
+                    proofs=proofs,
+                    progress_callback=on_progress,
+                )
+                queue.put(("done", payload))
+            except ValueError as exc:
+                queue.put(("error", {"error": str(exc)}))
+            except Exception as exc:
+                queue.put(("error", {"error": f"Validation failed: {exc}"}))
+            finally:
+                queue.put(("end", {}))
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+
+        while True:
+            event, payload = queue.get()
+            if event == "progress":
+                yield _sse("progress", payload)
+                continue
+            if event == "done":
+                yield _sse("done", payload)
+                continue
+            if event == "error":
+                yield _sse("error", payload)
+                continue
+            if event == "end":
+                break
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/api/export/validated")
@@ -820,7 +898,7 @@ def chat_ask_stream():
         try:
             yield _sse("start", {"sessionId": session_id})
             yield _sse(
-                "progress", {"stage": "Understanding your question...", "percent": 15}
+                "progress", {"stage": "Looking into your request...", "percent": 15}
             )
             result = router.ask(
                 message,
@@ -830,7 +908,7 @@ def chat_ask_stream():
             yield _sse(
                 "progress",
                 {
-                    "stage": "Reviewing your latest validated transactions...",
+                    "stage": "Analyzing your validated transactions...",
                     "percent": 65,
                 },
             )

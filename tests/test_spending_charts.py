@@ -181,4 +181,34 @@ def test_spending_no_results_with_timeframe_returns_suggestions() -> None:
     assert payload.get("timeframe_suggestions")
 
     answer = AgentTools.render_answer("spending_breakdown", payload)
-    assert "Try one of these queries" in answer
+    assert "could not find any transactions" in answer.lower()
+
+
+def test_spending_total_payload_does_not_include_top_categories() -> None:
+    tools = AgentTools(
+        validated_rows=[
+            {
+                "Transaction Business Name": "Cafe",
+                "Transaction Total": 14.5,
+                "Transaction Date": "2026-05-01",
+                "Transaction Category": "Food",
+            },
+            {
+                "Transaction Business Name": "Grocer",
+                "Transaction Total": 40.0,
+                "Transaction Date": "2026-05-02",
+                "Transaction Category": "Grocery",
+            },
+        ]
+    )
+
+    payload = tools.execute_spending_breakdown(
+        category="Food",
+        this_month=False,
+        top_n=0,
+        include_chart=False,
+    )
+
+    assert payload["status"] == "ok"
+    assert payload["type"] == "total"
+    assert "top_categories" not in payload

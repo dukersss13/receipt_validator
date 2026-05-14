@@ -126,6 +126,11 @@ class RouterAgent(LLMBase):
             "toolUsed": True,
         }
 
+        if isinstance(tool_output, dict):
+            suggestions = tool_output.get("timeframe_suggestions")
+            if isinstance(suggestions, list) and suggestions:
+                result["quickReplies"] = [str(item) for item in suggestions[:3]]
+
         if isinstance(tool_output, dict) and tool_output.get("chart") is not None:
             result["chart"] = tool_output.get("chart")
 

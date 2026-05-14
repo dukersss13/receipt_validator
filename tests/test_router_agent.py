@@ -206,6 +206,47 @@ def test_router_dispatches_routed_tool(monkeypatch: Any) -> None:
     assert result["rowsScanned"] == 1
 
 
+def test_router_maps_timeframe_suggestions_to_quick_replies(monkeypatch: Any) -> None:
+    router = RouterAgent()
+
+    monkeypatch.setattr(
+        router,
+        "_invoke_router_model",
+        lambda question, chat_history: (
+            '{"route":"helper_agent","tool_name":"spending_breakdown",'
+            '"tool_params":{"category":"food","this_month":true,'
+            '"aggregation_method":"sum","top_n":0},'
+            '"needs_clarification":false,"clarification_question":"",'
+            '"confidence":"high"}'
+        ),
+    )
+
+    monkeypatch.setattr(
+        "src.agents.agent_tools.AgentTools.execute_tool",
+        lambda self, tool_name, tool_params: {
+            "status": "no_results",
+            "timeframe_suggestions": [
+                "total spending for food in 2026-05",
+                "compare spending for food in 2026-05 vs 2026-04",
+                "total spending for food across all transactions",
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        "src.agents.agent_tools.AgentTools.render_answer",
+        lambda tool_name, tool_output: "I could not find any transactions for that timeframe.",
+    )
+
+    result = router.ask("How much did I spend on food this month?", [])
+
+    assert result["toolUsed"] is True
+    assert result["quickReplies"] == [
+        "total spending for food in 2026-05",
+        "compare spending for food in 2026-05 vs 2026-04",
+        "total spending for food across all transactions",
+    ]
+
+
 def router_input(question: str) -> Any:
     return RouterInput(question=question, chat_history=None)
 

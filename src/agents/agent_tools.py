@@ -72,14 +72,7 @@ class AgentTools:
         if status == "no_data":
             return "No validated transactions are available yet."
         if status == "no_results":
-            suggestions = tool_output.get("timeframe_suggestions") or []
-            if isinstance(suggestions, list) and suggestions:
-                joined = "; ".join(str(item) for item in suggestions[:3])
-                return (
-                    "No transactions matched that timeframe. "
-                    f"Try one of these queries: {joined}."
-                )
-            return "No transactions matched that filter for the selected period."
+            return "I could not find any transactions for that timeframe."
 
         has_chart = isinstance(tool_output.get("chart"), dict)
         result_type = str(tool_output.get("type", "") or "").strip().lower()
@@ -245,7 +238,6 @@ class AgentTools:
                 "period": period,
                 "category_filter": category or None,
                 "value": round(float(scoped["Transaction Total"].mean()), 2),
-                "top_categories": top_categories_table,
             }
             if include_chart:
                 payload["chart"] = AgentTools._build_spending_breakdown_chart(
@@ -264,7 +256,6 @@ class AgentTools:
             "period": period,
             "category_filter": category or None,
             "value": round(total, 2),
-            "top_categories": top_categories_table,
         }
         if include_chart:
             payload["chart"] = AgentTools._build_spending_breakdown_chart(
