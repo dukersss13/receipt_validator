@@ -625,7 +625,21 @@ class Validator:
         date_window_days = int(self.recommendation_matching["date_window_days"])
         amount_threshold = float(self.recommendation_matching["amount_threshold"])
 
-        user_facing_reason = "Similar names, dates or amount"
+        def build_user_facing_reason(
+            name_match: bool, date_match: bool, amount_match: bool
+        ) -> str:
+            labels: list[str] = []
+            if name_match:
+                labels.append("names")
+            if date_match:
+                labels.append("dates")
+            if amount_match:
+                labels.append("totals")
+
+            if not labels:
+                return ""
+
+            return f"Similar {', '.join(labels)}"
 
         tx = unmatched_transactions.copy()
         pr = unmatched_proofs.copy()
@@ -701,13 +715,11 @@ class Validator:
                 )
 
                 def build_reason(row: pd.Series) -> str:
-                    if (
-                        bool(row["__name_match"])
-                        or bool(row["__date_match"])
-                        or bool(row["__amount_match"])
-                    ):
-                        return user_facing_reason
-                    return ""
+                    return build_user_facing_reason(
+                        name_match=bool(row["__name_match"]),
+                        date_match=bool(row["__date_match"]),
+                        amount_match=bool(row["__amount_match"]),
+                    )
 
                 candidate_pairs["__reason"] = candidate_pairs.apply(
                     build_reason, axis=1
@@ -739,16 +751,28 @@ class Validator:
 
         recommendations = pd.DataFrame([])
         if not candidate_pairs.empty:
+            tx_category = candidate_pairs.get("Category_tx")
+            if tx_category is None:
+                tx_category = candidate_pairs.get("category_tx")
+            if tx_category is None:
+                tx_category = ""
+
+            pr_category = candidate_pairs.get("Category_pr")
+            if pr_category is None:
+                pr_category = candidate_pairs.get("category_pr")
+            if pr_category is None:
+                pr_category = ""
+
             recommendations = pd.DataFrame(
                 {
                     "Transaction Business Name": candidate_pairs["Business Name_tx"],
                     "Transaction Total": candidate_pairs["Total_tx"],
                     "Transaction Date": candidate_pairs["Date_tx"],
-                    "Transaction Category": candidate_pairs.get("Category_tx", ""),
+                    "Transaction Category": tx_category,
                     "Proof Business Name": candidate_pairs["Business Name_pr"],
                     "Proof Total": candidate_pairs["Total_pr"],
                     "Proof Date": candidate_pairs["Date_pr"],
-                    "Proof Category": candidate_pairs.get("Category_pr", ""),
+                    "Proof Category": pr_category,
                     "Reason": candidate_pairs["__reason"],
                 }
             )

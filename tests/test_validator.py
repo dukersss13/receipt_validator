@@ -292,6 +292,7 @@ def test_recommend_when_unmatched_date_and_totals_match_even_if_names_differ():
                 "Business Name": "XQZ-718-ALPHA",
                 "Total": 44.10,
                 "Date": "2024-02-20",
+                "Category": "Food",
             }
         ]
     )
@@ -301,6 +302,7 @@ def test_recommend_when_unmatched_date_and_totals_match_even_if_names_differ():
                 "Business Name": "MNR-004-BETA",
                 "Total": 44.10,
                 "Date": "2024-02-21",
+                "Category": "Food",
             }
         ]
     )
@@ -313,10 +315,9 @@ def test_recommend_when_unmatched_date_and_totals_match_even_if_names_differ():
     assert len(recommendations) == 1
     assert recommendations["Transaction Total"].iloc[0] == 44.10
     assert recommendations["Proof Total"].iloc[0] == 44.10
-    assert (
-        recommendations["Reason"].iloc[0]
-        == "Date within +/-1 day + Amount within +/-$0.05"
-    )
+    assert recommendations["Transaction Category"].iloc[0] == "Food"
+    assert recommendations["Proof Category"].iloc[0] == "Food"
+    assert recommendations["Reason"].iloc[0] == "Similar dates, totals"
 
 
 def test_recommend_when_unmatched_dates_within_one_day_and_totals_within_cent():
@@ -348,10 +349,7 @@ def test_recommend_when_unmatched_dates_within_one_day_and_totals_within_cent():
     assert len(recommendations) == 1
     assert recommendations["Transaction Total"].iloc[0] == 10.00
     assert recommendations["Proof Total"].iloc[0] == 10.01
-    assert (
-        recommendations["Reason"].iloc[0]
-        == "Date within +/-1 day + Amount within +/-$0.05"
-    )
+    assert recommendations["Reason"].iloc[0] == "Similar dates, totals"
 
 
 def test_recommend_when_only_name_is_similar():
@@ -381,7 +379,7 @@ def test_recommend_when_only_name_is_similar():
     )
 
     assert len(recommendations) == 1
-    assert recommendations["Reason"].iloc[0] == "Similar business name"
+    assert recommendations["Reason"].iloc[0] == "Similar names"
 
 
 def test_recommend_when_only_date_is_similar():
@@ -399,7 +397,7 @@ def test_recommend_when_only_date_is_similar():
     )
 
     assert len(recommendations) == 1
-    assert recommendations["Reason"].iloc[0] == "Date within +/-1 day"
+    assert recommendations["Reason"].iloc[0] == "Similar dates"
 
 
 def test_recommend_when_only_amount_is_similar():
@@ -417,7 +415,7 @@ def test_recommend_when_only_amount_is_similar():
     )
 
     assert len(recommendations) == 1
-    assert recommendations["Reason"].iloc[0] == "Amount within +/-$0.05"
+    assert recommendations["Reason"].iloc[0] == "Similar totals"
 
 
 def test_recommend_reason_includes_all_three_matching_factors():
@@ -441,10 +439,7 @@ def test_recommend_reason_includes_all_three_matching_factors():
     )
 
     assert len(recommendations) == 1
-    assert (
-        recommendations["Reason"].iloc[0]
-        == "Similar business name + Date within +/-1 day + Amount within +/-$0.05"
-    )
+    assert recommendations["Reason"].iloc[0] == "Similar names, dates, totals"
 
 
 def test_recommendation_thresholds_are_configurable():
@@ -472,4 +467,4 @@ def test_recommendation_thresholds_are_configurable():
     )
 
     assert len(recommendations) == 1
-    assert recommendations["Reason"].iloc[0] == "Amount within +/-$2.00"
+    assert recommendations["Reason"].iloc[0] == "Similar totals"
