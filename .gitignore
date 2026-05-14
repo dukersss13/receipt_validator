@@ -1,6 +1,8 @@
 # Misc
 __pycache__/
 .DS_Store
+.local/
+.tools/
 venv/
 .venv/
 pyrightconfig.json
