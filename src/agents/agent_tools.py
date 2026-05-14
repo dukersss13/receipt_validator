@@ -369,12 +369,11 @@ class AgentTools:
         latest = unique_months[-1]
         latest_label = latest.strftime("%Y-%m")
         category_prefix = f"for {category} " if category else ""
-        chart_prefix = "chart " if include_chart else ""
 
         suggestions = [
-            f"{chart_prefix}total spending {category_prefix}in {latest_label}",
+            f"total spending {category_prefix}in {latest_label}",
             f"compare spending {category_prefix}this month vs last month",
-            f"{chart_prefix}total spending {category_prefix}across all transactions",
+            f"total spending {category_prefix}across all transactions",
         ]
 
         if len(unique_months) > 1:
