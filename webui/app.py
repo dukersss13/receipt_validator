@@ -429,8 +429,11 @@ def save_session_state(session_id: str):
         return jsonify({"error": "state must be an object."}), 400
 
     try:
-        transactions_rows = state.get("loadedTransactions")
-        proofs_rows = state.get("loadedProofs")
+        existing_state = database.load_session_state(session_id) or {}
+        merged_state = {**existing_state, **state}
+
+        transactions_rows = merged_state.get("loadedTransactions")
+        proofs_rows = merged_state.get("loadedProofs")
 
         if isinstance(transactions_rows, list) and isinstance(proofs_rows, list):
             # Keep session inputs aligned with what the user saved in UI state.
@@ -440,7 +443,7 @@ def save_session_state(session_id: str):
                 _records_to_input_frame(proofs_rows),
             )
 
-        database.save_session_state(session_id, state)
+        database.save_session_state(session_id, merged_state)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
