@@ -4,7 +4,7 @@ ArVee is a native iOS companion to the Receipt Validator web application. It con
 
 ### App Architecture Diagram
 
-<img width="1020" height="920" alt="ArVee iOS App Architecture" src="arvee_app_architecture.svg" />
+<img width="1020" height="1000" alt="ArVee iOS App Architecture" src="arvee_app_architecture.svg" />
 
 ---
 
