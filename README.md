@@ -43,7 +43,8 @@ The system consists of the following key components:
 
 6. **Architecture Diagram**
 
-![Receipt Validator System Architecture](md/system_architecture.svg)
+The web UI system architecture diagram now lives in the separate frontend repository:
+[dukersss13/arvee_web_ui/docs/system_architecture.svg](https://github.com/dukersss13/arvee_web_ui/blob/main/docs/system_architecture.svg)
 
 
 
@@ -72,14 +73,18 @@ For Cloud Run deployments, store secrets in Secret Manager and inject them at de
 Do not mount or commit secret files in production images.
 
 ### ArVee in Action 💻
-Refer to [this](md/application.md) to see the application's UI and workflow.
+Web UI walkthrough moved to:
+[dukersss13/arvee_web_ui/docs/application.md](https://github.com/dukersss13/arvee_web_ui/blob/main/docs/application.md)
 
 ## ArVee Agent
 
 For a focused overview of RouterAgent + AgentTools architecture, clarification flow, and functionality, see [ArVee Agent details](md/arvee_agent.md).
 
 ### Custom Website UI
-This repository now includes a custom website UI powered by Flask.
+The web frontend has been split into a separate repository:
+[dukersss13/arvee_web_ui](https://github.com/dukersss13/arvee_web_ui)
+
+This backend repository now serves API endpoints only.
 
 1. Install dependencies:
     `pip install -r requirements.txt`

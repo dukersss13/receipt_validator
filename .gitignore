@@ -4,6 +4,8 @@ __pycache__/
 venv/
 .venv/
 pyrightconfig.json
+arvee_web_ui/
+google-cloud-cli-linux-arm.tar.gz
 
 # Secrets
 secrets/*
