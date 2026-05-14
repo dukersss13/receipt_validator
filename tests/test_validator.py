@@ -264,7 +264,7 @@ def test_recommend_when_unmatched_date_and_totals_match_even_if_names_differ():
     unmatched_transactions = pd.DataFrame(
         [
             {
-                "Business Name": "Completely Different Tx Name",
+                "Business Name": "XQZ-718-ALPHA",
                 "Total": 44.10,
                 "Date": "2024-02-20",
             }
@@ -273,7 +273,7 @@ def test_recommend_when_unmatched_date_and_totals_match_even_if_names_differ():
     unmatched_proofs = pd.DataFrame(
         [
             {
-                "Business Name": "Totally Different Proof Name",
+                "Business Name": "MNR-004-BETA",
                 "Total": 44.10,
                 "Date": "2024-02-21",
             }
@@ -288,14 +288,18 @@ def test_recommend_when_unmatched_date_and_totals_match_even_if_names_differ():
     assert len(recommendations) == 1
     assert recommendations["Transaction Total"].iloc[0] == 44.10
     assert recommendations["Proof Total"].iloc[0] == 44.10
+    assert (
+        recommendations["Reason"].iloc[0]
+        == "Date within +/-1 day + Amount within +/-$0.05"
+    )
 
 
-def test_recommend_when_unmatched_dates_within_two_days_and_totals_within_cent():
+def test_recommend_when_unmatched_dates_within_one_day_and_totals_within_cent():
     validator = Validator(pd.DataFrame([]), pd.DataFrame([]))
     unmatched_transactions = pd.DataFrame(
         [
             {
-                "Business Name": "Merchant A",
+                "Business Name": "XQZ-718-ALPHA",
                 "Total": 10.00,
                 "Date": "2024-02-20",
             }
@@ -304,9 +308,9 @@ def test_recommend_when_unmatched_dates_within_two_days_and_totals_within_cent()
     unmatched_proofs = pd.DataFrame(
         [
             {
-                "Business Name": "Merchant B",
+                "Business Name": "MNR-004-BETA",
                 "Total": 10.01,
-                "Date": "2024-02-22",
+                "Date": "2024-02-21",
             }
         ]
     )
@@ -319,3 +323,128 @@ def test_recommend_when_unmatched_dates_within_two_days_and_totals_within_cent()
     assert len(recommendations) == 1
     assert recommendations["Transaction Total"].iloc[0] == 10.00
     assert recommendations["Proof Total"].iloc[0] == 10.01
+    assert (
+        recommendations["Reason"].iloc[0]
+        == "Date within +/-1 day + Amount within +/-$0.05"
+    )
+
+
+def test_recommend_when_only_name_is_similar():
+    validator = Validator(pd.DataFrame([]), pd.DataFrame([]))
+    unmatched_transactions = pd.DataFrame(
+        [
+            {
+                "Business Name": "Starbucks Costa Mesa",
+                "Total": 20.00,
+                "Date": "2024-02-20",
+            }
+        ]
+    )
+    unmatched_proofs = pd.DataFrame(
+        [
+            {
+                "Business Name": "Starbucks",
+                "Total": 90.00,
+                "Date": "2024-04-20",
+            }
+        ]
+    )
+
+    recommendations = validator.analyze_unmatched_results(
+        unmatched_transactions,
+        unmatched_proofs,
+    )
+
+    assert len(recommendations) == 1
+    assert recommendations["Reason"].iloc[0] == "Similar business name"
+
+
+def test_recommend_when_only_date_is_similar():
+    validator = Validator(pd.DataFrame([]), pd.DataFrame([]))
+    unmatched_transactions = pd.DataFrame(
+        [{"Business Name": "XQZ-718-ALPHA", "Total": 10.00, "Date": "2024-02-20"}]
+    )
+    unmatched_proofs = pd.DataFrame(
+        [{"Business Name": "MNR-004-BETA", "Total": 99.00, "Date": "2024-02-21"}]
+    )
+
+    recommendations = validator.analyze_unmatched_results(
+        unmatched_transactions,
+        unmatched_proofs,
+    )
+
+    assert len(recommendations) == 1
+    assert recommendations["Reason"].iloc[0] == "Date within +/-1 day"
+
+
+def test_recommend_when_only_amount_is_similar():
+    validator = Validator(pd.DataFrame([]), pd.DataFrame([]))
+    unmatched_transactions = pd.DataFrame(
+        [{"Business Name": "XQZ-718-ALPHA", "Total": 10.00, "Date": "2024-02-20"}]
+    )
+    unmatched_proofs = pd.DataFrame(
+        [{"Business Name": "MNR-004-BETA", "Total": 10.03, "Date": "2024-03-20"}]
+    )
+
+    recommendations = validator.analyze_unmatched_results(
+        unmatched_transactions,
+        unmatched_proofs,
+    )
+
+    assert len(recommendations) == 1
+    assert recommendations["Reason"].iloc[0] == "Amount within +/-$0.05"
+
+
+def test_recommend_reason_includes_all_three_matching_factors():
+    validator = Validator(pd.DataFrame([]), pd.DataFrame([]))
+    unmatched_transactions = pd.DataFrame(
+        [
+            {
+                "Business Name": "Whole Foods Market",
+                "Total": 45.00,
+                "Date": "2024-02-20",
+            }
+        ]
+    )
+    unmatched_proofs = pd.DataFrame(
+        [{"Business Name": "Whole Foods", "Total": 45.02, "Date": "2024-02-21"}]
+    )
+
+    recommendations = validator.analyze_unmatched_results(
+        unmatched_transactions,
+        unmatched_proofs,
+    )
+
+    assert len(recommendations) == 1
+    assert (
+        recommendations["Reason"].iloc[0]
+        == "Similar business name + Date within +/-1 day + Amount within +/-$0.05"
+    )
+
+
+def test_recommendation_thresholds_are_configurable():
+    validator = Validator(
+        pd.DataFrame([]),
+        pd.DataFrame([]),
+        parsed_config={
+            "recommendation_matching": {
+                "name_similarity_threshold": 0.95,
+                "date_window_days": 0,
+                "amount_threshold": 2.0,
+            }
+        },
+    )
+    unmatched_transactions = pd.DataFrame(
+        [{"Business Name": "XQZ-718-ALPHA", "Total": 10.00, "Date": "2024-02-20"}]
+    )
+    unmatched_proofs = pd.DataFrame(
+        [{"Business Name": "MNR-004-BETA", "Total": 11.50, "Date": "2024-02-22"}]
+    )
+
+    recommendations = validator.analyze_unmatched_results(
+        unmatched_transactions,
+        unmatched_proofs,
+    )
+
+    assert len(recommendations) == 1
+    assert recommendations["Reason"].iloc[0] == "Amount within +/-$2.00"
