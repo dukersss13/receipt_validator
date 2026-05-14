@@ -28,6 +28,42 @@ from src.utils.utils import create_session_id
 app = Flask(__name__)
 
 
+def _read_secret_file(path: str) -> str:
+    candidate = str(path or "").strip()
+    if not candidate:
+        return ""
+    try:
+        with open(candidate, "r", encoding="utf-8") as handle:
+            return handle.read().strip()
+    except OSError:
+        return ""
+
+
+def _resolve_secret(
+    env_name: str,
+    fallback_env_name: str,
+    default_file_paths: tuple[str, ...] = (),
+) -> str:
+    direct = str(os.getenv(env_name, os.getenv(fallback_env_name, ""))).strip()
+    if direct:
+        return direct
+
+    file_from_env = str(
+        os.getenv(f"{env_name}_FILE", os.getenv(f"{fallback_env_name}_FILE", ""))
+    ).strip()
+    if file_from_env:
+        value = _read_secret_file(file_from_env)
+        if value:
+            return value
+
+    for file_path in default_file_paths:
+        value = _read_secret_file(file_path)
+        if value:
+            return value
+
+    return ""
+
+
 def _env_flag(name: str, default: bool = False) -> bool:
     raw = str(os.getenv(name, str(default))).strip().lower()
     return raw in {"1", "true", "yes", "on"}
@@ -127,11 +163,14 @@ def _api_base_url() -> str:
 
 
 def _google_oauth_client_id() -> str:
-    configured = str(
-        os.getenv(
-            "ARVEE_GOOGLE_OAUTH_CLIENT_ID", os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
-        )
-    ).strip()
+    configured = _resolve_secret(
+        "ARVEE_GOOGLE_OAUTH_CLIENT_ID",
+        "GOOGLE_OAUTH_CLIENT_ID",
+        default_file_paths=(
+            "/secrets/google_oauth_client_id",
+            "secrets/google_oauth_client_id",
+        ),
+    )
     return configured
 
 

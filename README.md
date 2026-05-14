@@ -115,6 +115,9 @@ Initial production hardening is now included for container deployment.
 - `ARVEE_DB_ECHO` (default: `false`)
 - `ARVEE_REQUIRE_USER_ID` (default: `false`; when `true`, requires `X-User-Id` header on session/validate endpoints)
 - `GEMINI_API_KEY` (required for LLM calls)
+- `ARVEE_GOOGLE_OAUTH_CLIENT_ID` (or `GOOGLE_OAUTH_CLIENT_ID`) for Google sign-in
+- `ARVEE_GOOGLE_OAUTH_CLIENT_ID_FILE` (or `GOOGLE_OAUTH_CLIENT_ID_FILE`) path to a file containing the OAuth client ID
+- `ARVEE_GOOGLE_REDIRECT_SCHEME` (default: `arvee`; must match iOS URL scheme)
 
 ### Docker Run
 
