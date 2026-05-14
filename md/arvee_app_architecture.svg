@@ -177,7 +177,7 @@
   <rect x="50" y="634" width="140" height="48" rx="6" fill="white" stroke="#EA8F58"
         stroke-width="1" filter="url(#shadow)"/>
   <text x="120" y="652" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1F1D1A">DiscrepancyCard</text>
-  <text x="120" y="664" text-anchor="middle" font-size="8" fill="#5A554D">Adjust & accept</text>
+  <text x="120" y="664" text-anchor="middle" font-size="8" fill="#5A554D">Adjust &amp; accept</text>
 
   <!-- RecommendationCardView -->
   <rect x="200" y="634" width="140" height="48" rx="6" fill="white" stroke="#0F7B6C"
