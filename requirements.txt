@@ -3,9 +3,8 @@ pandas==2.3.1
 fuzzywuzzy==0.18.0
 pyhocon==0.3.61
 flask==3.0.3
-langchain-google-genai>=4.2.2
-google-genai>=1.35.0
-google-auth==2.40.3
+langchain-google-genai==4.2.2
+google-genai==1.65.0
 pypdf==5.9.0
 pillow==11.3.0
 requests==2.32.4

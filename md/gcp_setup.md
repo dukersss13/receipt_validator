@@ -168,6 +168,15 @@ Get service URL:
 
 ```bash
 gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)'
+
+Run health checks (replace URL):
+
+```bash
+curl -sS https://YOUR_SERVICE_URL/api/health | jq .
+curl -sS https://YOUR_SERVICE_URL/api/health/deep | jq .
+```
+
+`/api/health/deep` should report `status: "ok"` and `checks.database.ok: true` before iOS signup/Google auth tests.
 ```
 
 ## 8. Database Options

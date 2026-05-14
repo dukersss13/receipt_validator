@@ -89,7 +89,10 @@ def test_google_token_login_rejects_invalid_token(monkeypatch: Any) -> None:
     response = client.post("/api/auth/google/token", json={"idToken": "invalid"})
 
     assert response.status_code == 400
-    assert response.get_json() == {"error": "Invalid Google identity token."}
+    assert response.get_json() == {
+        "error": "Invalid Google identity token.",
+        "errorClass": "oauth_verify_failure",
+    }
 
 
 def test_google_token_login_requires_id_token() -> None:
@@ -97,4 +100,7 @@ def test_google_token_login_requires_id_token() -> None:
     response = client.post("/api/auth/google/token", json={})
 
     assert response.status_code == 400
-    assert response.get_json() == {"error": "idToken is required."}
+    assert response.get_json() == {
+        "error": "idToken is required.",
+        "errorClass": "validation_error",
+    }

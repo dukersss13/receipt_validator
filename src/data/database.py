@@ -82,6 +82,18 @@ class DataBase:
             else:
                 print(f"🆕 Creating new database '{self.db_path}'.")
         else:
+            connect_timeout = int(os.getenv("ARVEE_DB_CONNECT_TIMEOUT", "5"))
+            pool_timeout = int(os.getenv("ARVEE_DB_POOL_TIMEOUT", "15"))
+            connect_args: dict[str, int] = {}
+            engine_name_lower = str(engine_name).lower()
+            if connect_timeout > 0 and (
+                engine_name_lower.startswith("postgresql")
+                or engine_name_lower.startswith("postgres")
+                or engine_name_lower.startswith("mysql")
+            ):
+                # Prevent long hangs on unreachable remote databases.
+                connect_args["connect_timeout"] = connect_timeout
+
             self.engine = create_engine(
                 engine_name,
                 echo=echo,
@@ -89,6 +101,8 @@ class DataBase:
                 max_overflow=40,
                 pool_pre_ping=True,
                 pool_recycle=3600,
+                pool_timeout=pool_timeout,
+                connect_args=connect_args,
             )
             if reset_db:
                 Base.metadata.drop_all(bind=self.engine)

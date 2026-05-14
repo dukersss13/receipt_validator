@@ -6,8 +6,10 @@ import os
 import re
 import tempfile
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from functools import wraps
 from queue import Queue
 from typing import Any
 from urllib.parse import urlparse
@@ -26,6 +28,120 @@ from src.agents.validator import Validator
 from src.utils.utils import create_session_id
 
 app = Flask(__name__)
+
+
+def _response_status_code(result: Any) -> int:
+    """Best-effort status code extraction from Flask view return values."""
+    if isinstance(result, Response):
+        return int(result.status_code)
+
+    if isinstance(result, tuple) and result:
+        if len(result) >= 2 and isinstance(result[1], int):
+            return int(result[1])
+        first = result[0]
+        if isinstance(first, Response):
+            return int(first.status_code)
+
+    return 200
+
+
+def _response_error_class(result: Any) -> str:
+    """Extract errorClass from a Flask view result when present."""
+    try:
+        response = app.make_response(result)
+        payload = response.get_json(silent=True)
+        if isinstance(payload, dict):
+            value = str(payload.get("errorClass", "")).strip()
+            if value:
+                return value
+    except Exception:
+        pass
+    return ""
+
+
+def _auth_error_response(message: str, status_code: int, error_class: str):
+    return jsonify({"error": message, "errorClass": error_class}), status_code
+
+
+def _classify_auth_exception(exc: Exception) -> str:
+    text = str(exc).strip().lower()
+    if not text:
+        return "internal_error"
+
+    if "already exists" in text:
+        return "email_conflict"
+    if "email and password are required" in text:
+        return "validation_error"
+    if "valid email" in text or "at least 8 characters" in text:
+        return "validation_error"
+    if "idtoken is required" in text:
+        return "validation_error"
+    if "invalid email or password" in text:
+        return "invalid_credentials"
+
+    if "google oauth is not configured" in text:
+        return "oauth_not_configured"
+    if "invalid google" in text or "token issuer" in text or "not verified" in text:
+        return "oauth_verify_failure"
+    if "missing subject" in text or "missing a valid email" in text:
+        return "oauth_verify_failure"
+
+    if "token expired" in text:
+        return "auth_token_expired"
+    if "invalid authentication token" in text:
+        return "auth_token_invalid"
+
+    if "no such column" in text or "undefined column" in text or "provider_id" in text:
+        return "schema_mismatch"
+
+    if "timed out" in text or "timeout" in text:
+        return "db_timeout"
+    if "database" in text or "sql" in text or "connection" in text:
+        return "database_error"
+
+    return "internal_error"
+
+
+def _instrument_auth_endpoint(endpoint_name: str):
+    """Log auth endpoint latency and status to make dependency stalls visible."""
+
+    def _decorator(fn):
+        @wraps(fn)
+        def _wrapper(*args, **kwargs):
+            started = time.perf_counter()
+            try:
+                result = fn(*args, **kwargs)
+            except Exception:
+                elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
+                app.logger.exception(
+                    "auth_request endpoint=%s status=500 duration_ms=%s outcome=exception",
+                    endpoint_name,
+                    elapsed_ms,
+                )
+                raise
+
+            status_code = _response_status_code(result)
+            error_class = _response_error_class(result)
+            elapsed_ms = round((time.perf_counter() - started) * 1000.0, 2)
+            outcome = "success"
+            if status_code >= 500:
+                outcome = "server_error"
+            elif status_code >= 400:
+                outcome = "client_error"
+
+            app.logger.info(
+                "auth_request endpoint=%s status=%s duration_ms=%s outcome=%s error_class=%s",
+                endpoint_name,
+                status_code,
+                elapsed_ms,
+                outcome,
+                error_class,
+            )
+            return result
+
+        return _wrapper
+
+    return _decorator
 
 
 def _read_secret_file(path: str) -> str:
@@ -635,6 +751,70 @@ def health():
     return jsonify({"status": "ok"})
 
 
+@app.get("/api/health/deep")
+def health_deep():
+    """Return dependency-aware health details used for production diagnostics."""
+    started = time.perf_counter()
+
+    db_check_started = time.perf_counter()
+    db_ok = True
+    db_error = ""
+    try:
+        database.get_user_auth("healthcheck@example.com")
+    except Exception as exc:
+        db_ok = False
+        db_error = str(exc)
+    db_duration_ms = round((time.perf_counter() - db_check_started) * 1000.0, 2)
+
+    google_client_id = _google_oauth_client_id()
+    google_enabled = bool(str(google_client_id).strip())
+
+    auth_secret = str(os.getenv("ARVEE_AUTH_SECRET", "")).strip()
+    auth_secret_configured = bool(auth_secret)
+    auth_secret_is_default = auth_secret == "arvee-dev-auth-secret"
+
+    checks = {
+        "database": {
+            "ok": db_ok,
+            "durationMs": db_duration_ms,
+            "error": db_error or None,
+        },
+        "authSecret": {
+            "configured": auth_secret_configured,
+            "usingDevDefault": auth_secret_is_default,
+        },
+        "googleOAuth": {
+            "enabled": google_enabled,
+            "redirectScheme": _google_oauth_redirect_scheme(),
+        },
+    }
+
+    overall_ok = db_ok
+    status_code = 200 if overall_ok else 503
+    total_duration_ms = round((time.perf_counter() - started) * 1000.0, 2)
+
+    if not overall_ok:
+        app.logger.warning(
+            "health_deep status=%s duration_ms=%s database_ok=%s auth_secret_configured=%s google_enabled=%s",
+            status_code,
+            total_duration_ms,
+            db_ok,
+            auth_secret_configured,
+            google_enabled,
+        )
+
+    return (
+        jsonify(
+            {
+                "status": "ok" if overall_ok else "degraded",
+                "durationMs": total_duration_ms,
+                "checks": checks,
+            }
+        ),
+        status_code,
+    )
+
+
 @app.get("/api/meta")
 def api_meta():
     """Return API metadata for standalone frontend clients."""
@@ -662,15 +842,24 @@ def api_meta():
 
 
 @app.post("/api/auth/signup")
+@_instrument_auth_endpoint("signup")
 def auth_signup():
     payload = request.get_json(silent=True) or {}
     email = str(payload.get("email", "")).strip().lower()
     password = str(payload.get("password", ""))
 
     if not email or "@" not in email:
-        return jsonify({"error": "A valid email is required."}), 400
+        return _auth_error_response(
+            "A valid email is required.",
+            400,
+            "validation_error",
+        )
     if len(password) < 8:
-        return jsonify({"error": "Password must be at least 8 characters."}), 400
+        return _auth_error_response(
+            "Password must be at least 8 characters.",
+            400,
+            "validation_error",
+        )
 
     password_hash = generate_password_hash(password)
 
@@ -678,7 +867,7 @@ def auth_signup():
         user = database.create_user_auth(email, password_hash)
     except ValueError as exc:
         if "already exists" not in str(exc).lower():
-            return jsonify({"error": str(exc)}), 400
+            return _auth_error_response(str(exc), 400, _classify_auth_exception(exc))
 
         try:
             existing_user = database.get_user_auth(email)
@@ -694,16 +883,25 @@ def auth_signup():
             try:
                 user = database.set_user_auth_password(email, password_hash)
             except ValueError as update_exc:
-                return jsonify({"error": str(update_exc)}), 400
+                return _auth_error_response(
+                    str(update_exc),
+                    400,
+                    _classify_auth_exception(update_exc),
+                )
             except Exception as update_exc:
-                return (
-                    jsonify({"error": f"Failed to update account: {update_exc}"}),
+                return _auth_error_response(
+                    f"Failed to update account: {update_exc}",
                     500,
+                    _classify_auth_exception(update_exc),
                 )
         else:
-            return jsonify({"error": str(exc)}), 409
+            return _auth_error_response(str(exc), 409, _classify_auth_exception(exc))
     except Exception as exc:
-        return jsonify({"error": f"Failed to create account: {exc}"}), 500
+        return _auth_error_response(
+            f"Failed to create account: {exc}",
+            500,
+            _classify_auth_exception(exc),
+        )
 
     token = _create_access_token(user.email)
     return jsonify(
@@ -718,24 +916,39 @@ def auth_signup():
 
 
 @app.post("/api/auth/login")
+@_instrument_auth_endpoint("login")
 def auth_login():
     payload = request.get_json(silent=True) or {}
     email = str(payload.get("email", "")).strip().lower()
     password = str(payload.get("password", ""))
 
     if not email or not password:
-        return jsonify({"error": "email and password are required."}), 400
+        return _auth_error_response(
+            "email and password are required.",
+            400,
+            "validation_error",
+        )
 
     try:
         user = database.get_user_auth(email)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return _auth_error_response(str(exc), 400, _classify_auth_exception(exc))
+    except Exception as exc:
+        return _auth_error_response(str(exc), 500, _classify_auth_exception(exc))
 
     if user is None or not str(user.password_hash).strip():
-        return jsonify({"error": "Invalid email or password."}), 401
+        return _auth_error_response(
+            "Invalid email or password.",
+            401,
+            "invalid_credentials",
+        )
 
     if not check_password_hash(user.password_hash, password):
-        return jsonify({"error": "Invalid email or password."}), 401
+        return _auth_error_response(
+            "Invalid email or password.",
+            401,
+            "invalid_credentials",
+        )
 
     token = _create_access_token(user.email)
     return jsonify(
@@ -762,11 +975,16 @@ def auth_google_config():
 
 
 @app.post("/api/auth/google/token")
+@_instrument_auth_endpoint("google_token")
 def auth_google_token():
     payload = request.get_json(silent=True) or {}
     id_token = str(payload.get("idToken", "")).strip()
     if not id_token:
-        return jsonify({"error": "idToken is required."}), 400
+        return _auth_error_response(
+            "idToken is required.",
+            400,
+            "validation_error",
+        )
 
     try:
         profile = _verify_google_id_token(id_token)
@@ -779,9 +997,13 @@ def auth_google_token():
             password_hash_fallback=fallback_hash,
         )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return _auth_error_response(str(exc), 400, _classify_auth_exception(exc))
     except Exception as exc:
-        return jsonify({"error": f"Failed Google authentication: {exc}"}), 500
+        return _auth_error_response(
+            f"Failed Google authentication: {exc}",
+            500,
+            _classify_auth_exception(exc),
+        )
 
     token = _create_access_token(user.email)
     return jsonify(
@@ -812,7 +1034,7 @@ def auth_me():
             }
         )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 401
+        return _auth_error_response(str(exc), 401, _classify_auth_exception(exc))
 
 
 @app.post("/api/session/new")

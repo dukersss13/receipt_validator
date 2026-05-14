@@ -80,4 +80,6 @@ def test_signup_duplicate_email_account_still_conflicts(monkeypatch: Any) -> Non
         json={"email": "dup@example.com", "password": "AnotherPass123!"},
     )
     assert second.status_code == 409
-    assert "already exists" in second.get_json()["error"].lower()
+    payload = second.get_json()
+    assert "already exists" in payload["error"].lower()
+    assert payload["errorClass"] == "email_conflict"

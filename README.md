@@ -113,11 +113,39 @@ Initial production hardening is now included for container deployment.
 - `ARVEE_DB_URL` (optional, SQLAlchemy URL for remote DB; when unset uses local SQLite)
 - `ARVEE_LOCAL_DB_NAME` (default: `receipt_validator_db`)
 - `ARVEE_DB_ECHO` (default: `false`)
+- `ARVEE_DB_CONNECT_TIMEOUT` (default: `5`; remote DB connect timeout seconds)
+- `ARVEE_DB_POOL_TIMEOUT` (default: `15`; SQLAlchemy pool checkout timeout seconds)
 - `ARVEE_REQUIRE_USER_ID` (default: `false`; when `true`, requires `X-User-Id` header on session/validate endpoints)
 - `GEMINI_API_KEY` (required for LLM calls)
 - `ARVEE_GOOGLE_OAUTH_CLIENT_ID` (or `GOOGLE_OAUTH_CLIENT_ID`) for Google sign-in
 - `ARVEE_GOOGLE_OAUTH_CLIENT_ID_FILE` (or `GOOGLE_OAUTH_CLIENT_ID_FILE`) path to a file containing the OAuth client ID
 - `ARVEE_GOOGLE_REDIRECT_SCHEME` (default: `arvee`; must match iOS URL scheme)
+
+### Health Endpoints
+
+- `GET /api/health`: shallow liveness check
+- `GET /api/health/deep`: dependency-aware readiness check (DB connectivity and auth/OAuth config summary)
+
+### Auth Error Contract
+
+Auth endpoints return structured failures with:
+
+- `error`: human-readable message
+- `errorClass`: machine-readable category for client UX mapping
+
+Current classes include:
+
+- `validation_error`
+- `invalid_credentials`
+- `email_conflict`
+- `oauth_not_configured`
+- `oauth_verify_failure`
+- `db_timeout`
+- `database_error`
+- `schema_mismatch`
+- `auth_token_expired`
+- `auth_token_invalid`
+- `internal_error`
 
 ### Docker Run
 
