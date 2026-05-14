@@ -468,3 +468,69 @@ def test_recommendation_thresholds_are_configurable():
 
     assert len(recommendations) == 1
     assert recommendations["Reason"].iloc[0] == "Similar totals"
+
+
+def test_recommendation_categories_map_from_lowercase_category_columns():
+    validator = Validator(pd.DataFrame([]), pd.DataFrame([]))
+    unmatched_transactions = pd.DataFrame(
+        [
+            {
+                "Business Name": "Bakery North",
+                "Total": 12.34,
+                "Date": "2024-07-01",
+                "category": "Food",
+            }
+        ]
+    )
+    unmatched_proofs = pd.DataFrame(
+        [
+            {
+                "Business Name": "Bakery N.",
+                "Total": 12.34,
+                "Date": "2024-07-02",
+                "category": "Groceries",
+            }
+        ]
+    )
+
+    recommendations = validator.analyze_unmatched_results(
+        unmatched_transactions,
+        unmatched_proofs,
+    )
+
+    assert len(recommendations) == 1
+    assert recommendations["Transaction Category"].iloc[0] == "Food"
+    assert recommendations["Proof Category"].iloc[0] == "Groceries"
+
+
+def test_recommendation_categories_become_empty_strings_when_missing():
+    validator = Validator(pd.DataFrame([]), pd.DataFrame([]))
+    unmatched_transactions = pd.DataFrame(
+        [
+            {
+                "Business Name": "Store A",
+                "Total": 15.00,
+                "Date": "2024-01-10",
+                "Category": None,
+            }
+        ]
+    )
+    unmatched_proofs = pd.DataFrame(
+        [
+            {
+                "Business Name": "Store B",
+                "Total": 15.00,
+                "Date": "2024-01-11",
+                "Category": None,
+            }
+        ]
+    )
+
+    recommendations = validator.analyze_unmatched_results(
+        unmatched_transactions,
+        unmatched_proofs,
+    )
+
+    assert len(recommendations) == 1
+    assert recommendations["Transaction Category"].iloc[0] == ""
+    assert recommendations["Proof Category"].iloc[0] == ""

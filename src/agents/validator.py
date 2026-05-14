@@ -749,19 +749,27 @@ class Validator:
 
                 candidate_pairs = pd.DataFrame(selected_rows)
 
+        def category_series(
+            frame: pd.DataFrame, preferred_keys: list[str]
+        ) -> pd.Series:
+            """Return the first matching category column as cleaned strings."""
+            for key in preferred_keys:
+                if key in frame.columns:
+                    return frame[key].apply(
+                        lambda value: "" if pd.isna(value) else str(value).strip()
+                    )
+            return pd.Series([""] * len(frame), index=frame.index, dtype="object")
+
         recommendations = pd.DataFrame([])
         if not candidate_pairs.empty:
-            tx_category = candidate_pairs.get("Category_tx")
-            if tx_category is None:
-                tx_category = candidate_pairs.get("category_tx")
-            if tx_category is None:
-                tx_category = ""
-
-            pr_category = candidate_pairs.get("Category_pr")
-            if pr_category is None:
-                pr_category = candidate_pairs.get("category_pr")
-            if pr_category is None:
-                pr_category = ""
+            tx_category = category_series(
+                candidate_pairs,
+                ["Category_tx", "category_tx"],
+            )
+            pr_category = category_series(
+                candidate_pairs,
+                ["Category_pr", "category_pr"],
+            )
 
             recommendations = pd.DataFrame(
                 {
