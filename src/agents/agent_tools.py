@@ -185,7 +185,9 @@ class AgentTools:
                 "requested_timeframe_label": requested_label,
                 "timeframe_requested": timeframe_requested,
                 "timeframe_suggestions": (
-                    AgentTools._build_timeframe_suggestions(frame, category)
+                    AgentTools._build_timeframe_suggestions(
+                        frame, category, include_chart=include_chart
+                    )
                     if timeframe_requested
                     else []
                 ),
@@ -353,6 +355,7 @@ class AgentTools:
     def _build_timeframe_suggestions(
         frame: pd.DataFrame,
         category: str = "",
+        include_chart: bool = False,
     ) -> list[str]:
         """Suggest valid timeframe queries based on available data."""
         if frame.empty:
@@ -366,11 +369,12 @@ class AgentTools:
         latest = unique_months[-1]
         latest_label = latest.strftime("%Y-%m")
         category_prefix = f"for {category} " if category else ""
+        chart_prefix = "chart " if include_chart else ""
 
         suggestions = [
-            f"total spending {category_prefix}in {latest_label}",
+            f"{chart_prefix}total spending {category_prefix}in {latest_label}",
             f"compare spending {category_prefix}this month vs last month",
-            f"total spending {category_prefix}across all transactions",
+            f"{chart_prefix}total spending {category_prefix}across all transactions",
         ]
 
         if len(unique_months) > 1:
