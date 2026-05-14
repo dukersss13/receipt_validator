@@ -672,11 +672,36 @@ def auth_signup():
     if len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters."}), 400
 
+    password_hash = generate_password_hash(password)
+
     try:
-        user = database.create_user_auth(email, generate_password_hash(password))
+        user = database.create_user_auth(email, password_hash)
     except ValueError as exc:
-        status = 409 if "already exists" in str(exc).lower() else 400
-        return jsonify({"error": str(exc)}), status
+        if "already exists" not in str(exc).lower():
+            return jsonify({"error": str(exc)}), 400
+
+        try:
+            existing_user = database.get_user_auth(email)
+        except ValueError:
+            existing_user = None
+
+        # If the email already belongs to a Google-linked account, allow signup
+        # to set a real password so email/password login works as expected.
+        if (
+            existing_user is not None
+            and str(existing_user.provider or "").lower() == "google"
+        ):
+            try:
+                user = database.set_user_auth_password(email, password_hash)
+            except ValueError as update_exc:
+                return jsonify({"error": str(update_exc)}), 400
+            except Exception as update_exc:
+                return (
+                    jsonify({"error": f"Failed to update account: {update_exc}"}),
+                    500,
+                )
+        else:
+            return jsonify({"error": str(exc)}), 409
     except Exception as exc:
         return jsonify({"error": f"Failed to create account: {exc}"}), 500
 
@@ -686,7 +711,7 @@ def auth_signup():
             "token": token,
             "user": {
                 "email": user.email,
-                "provider": "email",
+                "provider": str(user.provider or "email"),
             },
         }
     )

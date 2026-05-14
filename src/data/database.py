@@ -289,6 +289,24 @@ class DataBase:
             db.refresh(user)
             return user
 
+    def set_user_auth_password(self, email: str, password_hash: str) -> UserAuth:
+        """Set/replace a user's password hash and return the stored row."""
+        normalized_email = self._normalize_email(email)
+        if not str(password_hash).strip():
+            raise ValueError("password_hash cannot be empty.")
+
+        with self.SessionLocal() as db:
+            user = db.query(UserAuth).filter(UserAuth.email == normalized_email).first()
+            if user is None:
+                raise ValueError("No account found for that email.")
+
+            user.password_hash = password_hash
+            if not str(user.provider or "").strip():
+                user.provider = "email"
+            db.commit()
+            db.refresh(user)
+            return user
+
     def create_or_link_google_user(
         self,
         email: str,
