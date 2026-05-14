@@ -380,6 +380,18 @@ def _google_oauth_client_id() -> str:
     return configured
 
 
+def _google_oauth_ios_client_id() -> str:
+    configured = _resolve_secret(
+        "ARVEE_GOOGLE_OAUTH_IOS_CLIENT_ID",
+        "GOOGLE_OAUTH_IOS_CLIENT_ID",
+        default_file_paths=(
+            "/secrets/google_oauth_ios_client_id",
+            "secrets/google_oauth_ios_client_id",
+        ),
+    )
+    return configured
+
+
 def _google_oauth_redirect_scheme() -> str:
     configured = str(os.getenv("ARVEE_GOOGLE_REDIRECT_SCHEME", "arvee")).strip()
     return configured or "arvee"
@@ -390,18 +402,28 @@ def _verify_google_id_token(id_token: str) -> dict[str, Any]:
     if not token:
         raise ValueError("idToken is required.")
 
-    client_id = _google_oauth_client_id()
-    if not client_id:
+    web_client_id = _google_oauth_client_id()
+    ios_client_id = _google_oauth_ios_client_id()
+    if not web_client_id and not ios_client_id:
         raise ValueError("Google OAuth is not configured on this server.")
 
-    try:
-        claims = google_id_token.verify_oauth2_token(
-            token,
-            google_auth_requests.Request(),
-            client_id,
-        )
-    except Exception as exc:
-        raise ValueError("Invalid Google identity token.") from exc
+    claims: dict[str, Any] | None = None
+    last_exc: Exception | None = None
+    for candidate_id in (ios_client_id, web_client_id):
+        if not candidate_id:
+            continue
+        try:
+            claims = google_id_token.verify_oauth2_token(
+                token,
+                google_auth_requests.Request(),
+                candidate_id,
+            )
+            break
+        except Exception as exc:
+            last_exc = exc
+
+    if claims is None:
+        raise ValueError("Invalid Google identity token.") from last_exc
 
     issuer = str(claims.get("iss", "")).strip().lower()
     if issuer not in {"accounts.google.com", "https://accounts.google.com"}:
@@ -1065,10 +1087,12 @@ def auth_login():
 @app.get("/api/auth/google/config")
 def auth_google_config():
     client_id = _google_oauth_client_id()
+    ios_client_id = _google_oauth_ios_client_id()
     return jsonify(
         {
-            "enabled": bool(client_id),
+            "enabled": bool(client_id or ios_client_id),
             "clientId": client_id,
+            "iosClientId": ios_client_id,
             "redirectScheme": _google_oauth_redirect_scheme(),
         }
     )

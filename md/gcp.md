@@ -48,6 +48,7 @@ Current Cloud Run env/secret wiring includes:
 - `GEMINI_API_KEY` from Secret Manager (`gemini-api-key`)
 - `EXCHANGE_RATE_KEY` from Secret Manager (`exchange-rate-key`)
 - `ARVEE_GOOGLE_OAUTH_CLIENT_ID` from Secret Manager (`arvee-google-oauth-client-id`)
+- `ARVEE_GOOGLE_OAUTH_IOS_CLIENT_ID` from Secret Manager (`arvee-google-oauth-ios-client-id`)
 - `ARVEE_GOOGLE_REDIRECT_SCHEME=arvee`
 - `ARVEE_AUTH_SECRET` set directly as an env value
 

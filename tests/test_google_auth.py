@@ -5,6 +5,7 @@ import backend_app as webapp_module
 
 def test_google_config_disabled_when_client_id_missing(monkeypatch: Any) -> None:
     monkeypatch.setattr(webapp_module, "_google_oauth_client_id", lambda: "")
+    monkeypatch.setattr(webapp_module, "_google_oauth_ios_client_id", lambda: "")
     monkeypatch.setattr(webapp_module, "_google_oauth_redirect_scheme", lambda: "arvee")
 
     client = webapp_module.app.test_client()
@@ -14,6 +15,7 @@ def test_google_config_disabled_when_client_id_missing(monkeypatch: Any) -> None
     assert response.get_json() == {
         "enabled": False,
         "clientId": "",
+        "iosClientId": "",
         "redirectScheme": "arvee",
     }
 
@@ -24,6 +26,7 @@ def test_google_config_enabled_when_client_id_present(monkeypatch: Any) -> None:
         "_google_oauth_client_id",
         lambda: "demo-client.apps.googleusercontent.com",
     )
+    monkeypatch.setattr(webapp_module, "_google_oauth_ios_client_id", lambda: "")
     monkeypatch.setattr(webapp_module, "_google_oauth_redirect_scheme", lambda: "arvee")
 
     client = webapp_module.app.test_client()
@@ -33,8 +36,27 @@ def test_google_config_enabled_when_client_id_present(monkeypatch: Any) -> None:
     assert response.get_json() == {
         "enabled": True,
         "clientId": "demo-client.apps.googleusercontent.com",
+        "iosClientId": "",
         "redirectScheme": "arvee",
     }
+
+
+def test_google_config_enabled_with_ios_client_id(monkeypatch: Any) -> None:
+    monkeypatch.setattr(webapp_module, "_google_oauth_client_id", lambda: "")
+    monkeypatch.setattr(
+        webapp_module,
+        "_google_oauth_ios_client_id",
+        lambda: "ios-client.apps.googleusercontent.com",
+    )
+    monkeypatch.setattr(webapp_module, "_google_oauth_redirect_scheme", lambda: "arvee")
+
+    client = webapp_module.app.test_client()
+    response = client.get("/api/auth/google/config")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["enabled"] is True
+    assert payload["iosClientId"] == "ios-client.apps.googleusercontent.com"
 
 
 def test_google_token_login_success(monkeypatch: Any) -> None:
