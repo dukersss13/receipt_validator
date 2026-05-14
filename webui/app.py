@@ -702,7 +702,7 @@ def chat_ask():
         validated_rows = state.get("validatedTransactions", [])
 
         if not isinstance(validated_rows, list) or not validated_rows:
-            guidance = _validation_required_chat_payload()
+            guidance = _validation_required_chat_payload(message)
             return jsonify({"sessionId": session_id, "question": message, **guidance})
 
         router = RouterAgent()
@@ -738,13 +738,20 @@ def _sse(event: str, payload: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
 
-def _validation_required_chat_payload() -> dict[str, Any]:
+def _validation_required_chat_payload(question: str = "") -> dict[str, Any]:
     """Build a friendly chat response when validation data is missing."""
+    normalized = str(question or "").strip().lower()
+
+    if "what should i do after upload" in normalized:
+        answer = "Run validation and wait for the results"
+    else:
+        answer = (
+            "Please upload your transactions and proofs in the Upload tab, "
+            "then validate before asking questions"
+        )
+
     return {
-        "answer": (
-            "Please add transactions and proofs in Validation first, then tap "
-            "Validate before asking Chat questions."
-        ),
+        "answer": answer,
         "rowsScanned": 0,
         "confidence": "high",
         "toolUsed": False,
@@ -752,8 +759,7 @@ def _validation_required_chat_payload() -> dict[str, Any]:
         "route": "validation_required",
         "needsClarification": True,
         "quickReplies": [
-            "How do I upload transactions?",
-            "How do I upload proofs?",
+            "How do I upload Transactions/Proofs?",
             "What should I do after upload?",
         ],
         "chart": None,
@@ -779,7 +785,7 @@ def chat_ask_stream():
     validated_rows = state.get("validatedTransactions", [])
 
     if not isinstance(validated_rows, list) or not validated_rows:
-        guidance = _validation_required_chat_payload()
+        guidance = _validation_required_chat_payload(message)
 
         def generate_validation_guidance() -> Any:
             yield _sse("start", {"sessionId": session_id})

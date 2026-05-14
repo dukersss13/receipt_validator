@@ -150,3 +150,35 @@ def test_compare_spending_periods_chart_payload() -> None:
     assert chart["series"][1]["name"]
     assert len(chart["series"][0]["values"]) == len(chart["x"])
     assert chart.get("currency") == "USD"
+
+
+def test_spending_no_results_with_timeframe_returns_suggestions() -> None:
+    tools = AgentTools(
+        validated_rows=[
+            {
+                "Transaction Business Name": "Cafe",
+                "Transaction Total": 14.5,
+                "Transaction Date": "2020-01-01",
+                "Transaction Category": "Food",
+            },
+            {
+                "Transaction Business Name": "Grocer",
+                "Transaction Total": 40.0,
+                "Transaction Date": "2020-01-02",
+                "Transaction Category": "Grocery",
+            },
+        ]
+    )
+
+    payload = tools.execute_spending_breakdown(
+        this_month=True,
+        include_chart=False,
+    )
+
+    assert payload["status"] == "no_results"
+    assert payload["timeframe_requested"] is True
+    assert isinstance(payload.get("timeframe_suggestions"), list)
+    assert payload.get("timeframe_suggestions")
+
+    answer = AgentTools.render_answer("spending_breakdown", payload)
+    assert "Try one of these queries" in answer

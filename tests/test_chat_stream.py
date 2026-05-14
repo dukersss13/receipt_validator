@@ -45,6 +45,33 @@ def test_chat_stream_emits_progress_when_validation_required(monkeypatch: Any) -
         "done",
     ]
     assert "Validation is needed before chat can answer this." in events[1]["data"]
+    assert (
+        "Please upload your transactions and proofs in the Upload tab, then validate before asking questions"
+        in events[2]["data"]
+    )
+    assert "How do I upload Transactions/Proofs?" in events[3]["data"]
+    assert "How do I upload proofs?" not in events[3]["data"]
+
+
+def test_chat_stream_validation_followup_after_upload(monkeypatch: Any) -> None:
+    class StubDB:
+        def load_session_state(self, session_id: str) -> dict[str, Any]:
+            return {}
+
+        def save_session_state(self, session_id: str, state: dict[str, Any]) -> None:
+            return None
+
+    monkeypatch.setattr(webapp_module, "database", StubDB())
+
+    client = webapp_module.app.test_client()
+    response = client.post(
+        "/api/chat/ask/stream",
+        json={"sessionId": "session-1", "message": "What should I do after upload?"},
+    )
+
+    assert response.status_code == 200
+    events = _parse_sse_events(response.get_data(as_text=True))
+    assert "Run validation and wait for the results" in events[2]["data"]
 
 
 def test_chat_stream_emits_progress_for_routed_answer(monkeypatch: Any) -> None:

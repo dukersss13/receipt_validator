@@ -39,7 +39,7 @@ class AgentTools:
         if selected_tool is AgentTool.SPENDING_BREAKDOWN:
             return self.execute_spending_breakdown(
                 category=str(params.get("category", "") or ""),
-                this_month=bool(params.get("this_month", True)),
+                this_month=bool(params.get("this_month", False)),
                 aggregation_method=str(
                     params.get("aggregation_method", "sum") or "sum"
                 ),
@@ -72,6 +72,13 @@ class AgentTools:
         if status == "no_data":
             return "No validated transactions are available yet."
         if status == "no_results":
+            suggestions = tool_output.get("timeframe_suggestions") or []
+            if isinstance(suggestions, list) and suggestions:
+                joined = "; ".join(str(item) for item in suggestions[:3])
+                return (
+                    "No transactions matched that timeframe. "
+                    f"Try one of these queries: {joined}."
+                )
             return "No transactions matched that filter for the selected period."
 
         has_chart = isinstance(tool_output.get("chart"), dict)
@@ -147,11 +154,15 @@ class AgentTools:
             return {"status": "no_data"}
 
         scoped = frame.copy()
+        requested_label: str | None = None
         if period is not None:
-            start, end, _ = AgentTools._resolve_period(period, frame=frame)
+            start, end, requested_label = AgentTools._resolve_period(
+                period, frame=frame
+            )
             scoped = AgentTools._slice_period(scoped, start, end, category="")
         elif this_month:
             now = pd.Timestamp(date.today())
+            requested_label = "this month"
             scoped = scoped[
                 (scoped["Transaction Date"].dt.year == now.year)
                 & (scoped["Transaction Date"].dt.month == now.month)
@@ -172,11 +183,19 @@ class AgentTools:
             ]
 
         if scoped.empty:
+            timeframe_requested = bool(period is not None or this_month)
             return {
                 "status": "no_results",
                 "category_filter": category or None,
                 "this_month": bool(this_month),
                 "period": period,
+                "requested_timeframe_label": requested_label,
+                "timeframe_requested": timeframe_requested,
+                "timeframe_suggestions": (
+                    AgentTools._build_timeframe_suggestions(frame, category)
+                    if timeframe_requested
+                    else []
+                ),
             }
 
         method = normalize_aggregation_method(aggregation_method)
@@ -338,6 +357,38 @@ class AgentTools:
                 else None
             ),
         }
+
+    @staticmethod
+    def _build_timeframe_suggestions(
+        frame: pd.DataFrame,
+        category: str = "",
+    ) -> list[str]:
+        """Suggest valid timeframe queries based on available data."""
+        if frame.empty:
+            return []
+
+        month_periods = frame["Transaction Date"].dropna().dt.to_period("M")
+        unique_months = sorted(set(month_periods.tolist()))
+        if not unique_months:
+            return []
+
+        latest = unique_months[-1]
+        latest_label = latest.strftime("%Y-%m")
+        category_prefix = f"for {category} " if category else ""
+
+        suggestions = [
+            f"total spending {category_prefix}in {latest_label}",
+            f"compare spending {category_prefix}this month vs last month",
+            f"total spending {category_prefix}across all transactions",
+        ]
+
+        if len(unique_months) > 1:
+            prev_label = unique_months[-2].strftime("%Y-%m")
+            suggestions[1] = (
+                f"compare spending {category_prefix}in {latest_label} vs {prev_label}"
+            )
+
+        return suggestions
 
     @staticmethod
     def _resolve_period(
