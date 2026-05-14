@@ -145,7 +145,7 @@ def _resolve_port(default_port: int = 7860) -> int:
 
 if __name__ == "__main__":
     # Defer heavy web app imports until script execution time.
-    from webui.app import app, database
+    from backend_app import app, database
     from flask import redirect, request
 
     session_id = seed_test_session(database)

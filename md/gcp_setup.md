@@ -272,7 +272,7 @@ This avoids storing long-lived GCP JSON keys in GitHub secrets.
 
 ## 10. Repo Runtime Mapping (Quick Reference)
 
-- Entry web service: webui/app.py (served by Gunicorn via Docker CMD)
+- Entry web service: backend_app.py (served by Gunicorn via Docker CMD)
 - Container port: 7860
 - Runtime env toggles:
   - ARVEE_PORT, ARVEE_HOST, ARVEE_DEBUG

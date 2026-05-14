@@ -3,7 +3,7 @@ import webbrowser
 import os
 from urllib.parse import urlparse
 
-from webui.app import app
+from backend_app import app
 
 if __name__ == "__main__":
     host = os.getenv("ARVEE_HOST", "0.0.0.0")

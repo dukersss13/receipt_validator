@@ -7,7 +7,7 @@ The iOS app connects to http://<your-ip>:7860 (configured in Settings).
 import os
 import socket
 
-from webui.app import app
+from backend_app import app
 
 
 def detect_lan_ip() -> str:

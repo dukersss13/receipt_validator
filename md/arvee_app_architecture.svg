@@ -203,7 +203,7 @@
   <!-- Flask API Label -->
   <rect x="555" y="96" width="420" height="44" rx="22" fill="#F59E0B" filter="url(#shadow)"/>
   <text x="765" y="118" text-anchor="middle" font-size="14" font-weight="600" fill="white">
-    Flask API (webui/app.py) — http://localhost:7860</text>
+      Flask API (backend_app.py) — http://localhost:7860</text>
 
   <!-- ====== ENDPOINTS ====== -->
   <text x="555" y="162" font-size="10" font-weight="700" fill="#92400E" letter-spacing="1">API ENDPOINTS</text>

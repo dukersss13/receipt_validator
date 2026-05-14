@@ -16,7 +16,7 @@ from pathlib import Path
 from functools import lru_cache
 
 from google.genai import types
-from langchain_community.document_loaders import PyPDFLoader
+from pypdf import PdfReader
 from pyhocon import ConfigFactory
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
@@ -572,12 +572,11 @@ class DataReader(LLMBase):
         Returns:
             Plain text string with all page contents joined together.
         """
-        loader = PyPDFLoader(pdf_path)
-        docs = loader.load()
-        text = ""
-        for doc in docs:
-            text += doc.page_content
-        return text
+        reader = PdfReader(pdf_path)
+        chunks: list[str] = []
+        for page in reader.pages:
+            chunks.append(page.extract_text() or "")
+        return "\n".join(chunks)
 
     def batch_read_data(self, image_payloads: list[dict]) -> list[str]:
         """
@@ -692,8 +691,7 @@ class DataReader(LLMBase):
         """
         semaphore = asyncio.Semaphore(self.async_max_concurrent)
         tasks = [
-            self._async_extract_single(payload, semaphore)
-            for payload in image_payloads
+            self._async_extract_single(payload, semaphore) for payload in image_payloads
         ]
         return await asyncio.gather(*tasks)
 
@@ -765,7 +763,13 @@ class DataReader(LLMBase):
                     # Only retry on transient / rate-limit errors.
                     is_retryable = any(
                         code in error_str
-                        for code in ("429", "503", "rate", "resource_exhausted", "unavailable")
+                        for code in (
+                            "429",
+                            "503",
+                            "rate",
+                            "resource_exhausted",
+                            "unavailable",
+                        )
                     )
 
                     if not is_retryable or attempt >= max_retries:
@@ -781,7 +785,7 @@ class DataReader(LLMBase):
                         ) from e
 
                     # Exponential backoff with full jitter, capped at 60s.
-                    max_delay = min(base_delay * (2 ** attempt), 60.0)
+                    max_delay = min(base_delay * (2**attempt), 60.0)
                     jittered_delay = _random.uniform(0, max_delay)
                     logger.warning(
                         "[Async] Retryable error (attempt %d/%d), "

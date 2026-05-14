@@ -19,4 +19,4 @@ COPY . .
 ENV ARVEE_PORT=7860
 EXPOSE 7860
 
-CMD ["gunicorn", "-c", "gunicorn.conf.py", "webui.app:app"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "backend_app:app"]

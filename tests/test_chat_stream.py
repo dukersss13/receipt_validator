@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from webui import app as webapp_module
+import backend_app as webapp_module
 
 
 def _parse_sse_events(payload: str) -> list[dict[str, Any]]:

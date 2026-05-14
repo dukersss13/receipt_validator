@@ -36,7 +36,7 @@ The system consists of the following key components:
     * **Conversation Context:** RouterAgent tracks the last 10 turns internally, so follow-up questions reference prior context.
     * **More Info:** See [ArVee Agent details](md/arvee_agent.md).
 
-5.  **Web/UI & Persistence (`webui/`, `src/data/database.py`):**
+5.  **Web/API & Persistence (`backend_app.py`, `src/data/database.py`):**
     * Flask web app provides upload, validation, result tables, and chat endpoints.
     * Each session can be saved and loaded via a Session ID (`session_id`) for resume/load workflows.
     * Users can download validated transaction outputs as CSV.
@@ -89,7 +89,7 @@ This backend repository now serves API endpoints only.
 1. Install dependencies:
     `pip install -r requirements.txt`
 2. Run the web app:
-    `python3 webui/app.py`
+    `python3 backend_app.py`
 3. Open your browser at:
     `http://localhost:7860`
 
@@ -103,7 +103,7 @@ Initial production hardening is now included for container deployment.
 1. Install/update dependencies:
     `pip install -r requirements.txt`
 2. Start with Gunicorn:
-    `gunicorn -c gunicorn.conf.py webui.app:app`
+    `gunicorn -c gunicorn.conf.py backend_app:app`
 
 ### Runtime Environment Variables
 
