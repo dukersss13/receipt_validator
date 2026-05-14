@@ -10,10 +10,11 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from queue import Queue
 from typing import Any
+from urllib.parse import urlparse
 
 import pandas as pd
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from flask import Flask, Response, jsonify, render_template, request, send_file
+from flask import Flask, Response, jsonify, request, send_file
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from src.data.database import DataBase
@@ -21,7 +22,7 @@ from src.agents.router_agent import RouterAgent
 from src.agents.validator import Validator
 from src.utils.utils import create_session_id
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
+app = Flask(__name__)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -98,6 +99,49 @@ def _build_database() -> DataBase:
 
 
 database = _build_database()
+
+
+def _parse_cors_origins() -> list[str]:
+    raw = str(os.getenv("ARVEE_CORS_ORIGINS", "")).strip()
+    if not raw:
+        return []
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def _origin_allowed(origin: str, allow_list: list[str]) -> bool:
+    if not origin:
+        return False
+    if "*" in allow_list:
+        return True
+    return origin in allow_list
+
+
+def _api_base_url() -> str:
+    configured = str(os.getenv("ARVEE_PUBLIC_BASE_URL", "")).strip()
+    if configured:
+        return configured.rstrip("/")
+    return request.host_url.rstrip("/")
+
+
+@app.after_request
+def _apply_cors(response: Response) -> Response:
+    allow_list = _parse_cors_origins()
+    origin = str(request.headers.get("Origin", "")).strip()
+    if allow_list and _origin_allowed(origin, allow_list):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Headers"] = (
+            "Authorization, Content-Type, X-User-Id"
+        )
+        response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    return response
+
+
+@app.route("/api/<path:_path>", methods=["OPTIONS"])
+@app.route("/api", methods=["OPTIONS"])
+def api_options(_path: str = "") -> Response:
+    return Response(status=204)
 
 
 def _pdf_escape(text: str) -> str:
@@ -464,14 +508,55 @@ def _merge_ingestion_costs(costs: list[dict[str, Any]]) -> dict[str, Any]:
 
 @app.get("/")
 def index():
-    """Serve the main single-page application."""
-    return render_template("index.html")
+    """Service root: API metadata, or legacy web UI when explicitly enabled."""
+    if _env_flag("ARVEE_ENABLE_LEGACY_WEB_UI", default=False):
+        return jsonify(
+            {
+                "name": "ArVee Backend",
+                "status": "ok",
+                "mode": "legacy-web-ui",
+                "message": "Legacy bundled web UI mode is deprecated.",
+            }
+        )
+
+    return jsonify(
+        {
+            "name": "ArVee Backend",
+            "status": "ok",
+            "mode": "api-only",
+            "frontend": {
+                "separateRepo": "arvee_web_ui",
+                "apiBaseUrl": _api_base_url(),
+            },
+        }
+    )
 
 
 @app.get("/api/health")
 def health():
     """Return a simple health-check response."""
     return jsonify({"status": "ok"})
+
+
+@app.get("/api/meta")
+def api_meta():
+    """Return API metadata for standalone frontend clients."""
+    return jsonify(
+        {
+            "service": "arvee-backend",
+            "apiBaseUrl": _api_base_url(),
+            "auth": {
+                "methods": ["bearer-token", "x-user-id-legacy"],
+                "requireUserId": _env_flag("ARVEE_REQUIRE_USER_ID", default=False),
+                "signupEndpoint": "/api/auth/signup",
+                "loginEndpoint": "/api/auth/login",
+                "currentUserEndpoint": "/api/auth/me",
+            },
+            "cors": {
+                "configuredOrigins": _parse_cors_origins(),
+            },
+        }
+    )
 
 
 @app.post("/api/auth/signup")
