@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from webui import app as webapp_module
@@ -127,18 +128,17 @@ def test_chat_stream_emits_progress_for_routed_answer(monkeypatch: Any) -> None:
     events = _parse_sse_events(response.get_data(as_text=True))
     event_names = [event["event"] for event in events]
 
-    assert event_names == [
-        "start",
-        "progress",
-        "progress",
-        "progress",
-        "token",
-        "progress",
-        "done",
-    ]
+    assert event_names[0:4] == ["start", "progress", "progress", "progress"]
+    assert event_names[-2:] == ["progress", "done"]
+    token_events = [event for event in events if event["event"] == "token"]
+    assert len(token_events) >= 2
+
+    streamed_answer = "".join(
+        json.loads(event["data"]).get("token", "") for event in token_events
+    )
+    assert streamed_answer.strip() == "Here is your latest spend summary."
     assert "Looking into your request..." in events[1]["data"]
     assert "Analyzing your validated transactions..." in events[2]["data"]
     assert "Finalizing the response..." in events[3]["data"]
-    assert "Here is your latest spend summary." in events[4]["data"]
-    assert "Done." in events[5]["data"]
+    assert "Done." in events[-2]["data"]
     assert stub_db.saved_state is not None

@@ -1,6 +1,8 @@
 import io
 import json
+import math
 import os
+import re
 import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -816,6 +818,39 @@ def _sse(event: str, payload: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
 
+def _stream_token_chunks(
+    text: str,
+    target_chunk_chars: int = 22,
+    max_chunks: int = 160,
+) -> list[str]:
+    """Split answer text into readable chunks for incremental SSE token streaming."""
+    normalized = str(text or "")
+    parts = re.findall(r"\S+\s*", normalized)
+    if not parts:
+        return [normalized] if normalized else []
+
+    chunks: list[str] = []
+    current = ""
+    for part in parts:
+        if current and len(current) + len(part) > max(8, target_chunk_chars):
+            chunks.append(current)
+            current = part
+        else:
+            current += part
+
+    if current:
+        chunks.append(current)
+
+    if len(chunks) > max_chunks:
+        group_size = max(1, math.ceil(len(chunks) / max_chunks))
+        chunks = [
+            "".join(chunks[idx : idx + group_size])
+            for idx in range(0, len(chunks), group_size)
+        ]
+
+    return [chunk for chunk in chunks if chunk]
+
+
 def _validation_required_chat_payload(question: str = "") -> dict[str, Any]:
     """Build a friendly chat response when validation data is missing."""
     normalized = str(question or "").strip().lower()
@@ -894,7 +929,7 @@ def chat_ask_stream():
 
     def generate() -> Any:
         """Yield SSE frames for the streamed chat response."""
-        assembled: list[str] = []
+        streamed_chunks: list[str] = []
         try:
             yield _sse("start", {"sessionId": session_id})
             yield _sse(
@@ -916,11 +951,16 @@ def chat_ask_stream():
             if not final_answer:
                 final_answer = "I could not generate an answer."
 
-            assembled.append(final_answer)
             yield _sse(
                 "progress", {"stage": "Finalizing the response...", "percent": 90}
             )
-            yield _sse("token", {"token": final_answer})
+            for token_chunk in _stream_token_chunks(final_answer):
+                streamed_chunks.append(token_chunk)
+                yield _sse("token", {"token": token_chunk})
+
+            assembled_answer = "".join(streamed_chunks)
+            if assembled_answer:
+                final_answer = assembled_answer.strip() or final_answer
 
             chat_history.extend(
                 [
