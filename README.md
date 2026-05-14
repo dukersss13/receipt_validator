@@ -74,6 +74,37 @@ This repository now includes a custom website UI powered by Flask.
 The website supports session generation, uploading transaction/proof files, running validation, viewing results tables, and downloading validated CSV records.
 Each session can be saved and loaded via a Session ID (`session_id`), and extracted transaction/proof inputs are persisted so previous sessions can be restored in the UI.
 
+## Always-On Backend (Phase 1)
+
+Initial production hardening is now included for container deployment.
+
+1. Install/update dependencies:
+    `pip install -r requirements.txt`
+2. Start with Gunicorn:
+    `gunicorn -c gunicorn.conf.py webui.app:app`
+
+### Runtime Environment Variables
+
+- `ARVEE_PORT` (default: `7860`)
+- `ARVEE_HOST` (default: `0.0.0.0` for local launchers)
+- `ARVEE_DEBUG` (default: `false`)
+- `ARVEE_DB_URL` (optional, SQLAlchemy URL for remote DB; when unset uses local SQLite)
+- `ARVEE_LOCAL_DB_NAME` (default: `receipt_validator_db`)
+- `ARVEE_DB_ECHO` (default: `false`)
+- `ARVEE_REQUIRE_USER_ID` (default: `false`; when `true`, requires `X-User-Id` header on session/validate endpoints)
+
+### Docker Run
+
+1. Build image:
+    `docker build -t arvee-backend:latest .`
+2. Run container:
+    `docker run --rm -p 7860:7860 -e ARVEE_PORT=7860 arvee-backend:latest`
+
+### Multi-User Header (Current Step)
+
+For user-scoped session access, include an `X-User-Id` header in API requests.
+If `ARVEE_REQUIRE_USER_ID=true`, requests without this header are rejected.
+
 
  ## 📌 TODO
 Extend ArVee AgentTools Capability

@@ -11,3 +11,6 @@ langchain-google-genai>=4.2.2
 google-genai>=1.35.0
 pypdf==5.9.0
 sqlalchemy==2.0.42
+gunicorn==23.0.0
+psycopg[binary]==3.2.9
+alembic==1.16.4

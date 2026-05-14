@@ -1,4 +1,5 @@
 import io
+import inspect
 import json
 import math
 import os
@@ -19,7 +20,40 @@ from src.agents.validator import Validator
 from src.utils.utils import create_session_id
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
-database = DataBase(engine_name="receipt_validator_db", local_db=True)
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = str(os.getenv(name, str(default))).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _request_user_id() -> str:
+    """Resolve user identity from headers with optional strict enforcement."""
+    user_id = str(request.headers.get("X-User-Id", "")).strip()
+    if user_id:
+        return user_id
+
+    if _env_flag("ARVEE_REQUIRE_USER_ID", default=False):
+        raise ValueError("Missing X-User-Id header.")
+
+    # Dev-friendly fallback for local testing when auth is not wired yet.
+    return "anonymous"
+
+
+def _build_database() -> DataBase:
+    db_url = str(os.getenv("ARVEE_DB_URL", "")).strip()
+    db_echo = _env_flag("ARVEE_DB_ECHO", default=False)
+
+    if db_url:
+        return DataBase(engine_name=db_url, local_db=False, echo=db_echo)
+
+    db_name = str(os.getenv("ARVEE_LOCAL_DB_NAME", "receipt_validator_db")).strip()
+    if not db_name:
+        db_name = "receipt_validator_db"
+    return DataBase(engine_name=db_name, local_db=True, echo=db_echo)
+
+
+database = _build_database()
 
 
 def _pdf_escape(text: str) -> str:
@@ -399,18 +433,26 @@ def health():
 @app.post("/api/session/new")
 def new_session():
     """Create a new session and return its ID."""
-    session_id = create_session_id()
-    database.get_or_create_session(session_id)
-    return jsonify({"sessionId": session_id})
+    try:
+        user_id = _request_user_id()
+        session_id = create_session_id()
+        database.get_or_create_session(session_id, user_id=user_id)
+        return jsonify({"sessionId": session_id})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 401
 
 
 @app.get("/api/session/<session_id>")
 def get_session_inputs(session_id: str):
     """Return saved transactions and proofs for a session."""
     try:
-        transactions_df, proofs_df = database.load_session_history(session_id)
+        user_id = _request_user_id()
+        transactions_df, proofs_df = database.load_session_history(
+            session_id, user_id=user_id
+        )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 404
+        status = 401 if "Missing X-User-Id" in str(exc) else 404
+        return jsonify({"error": str(exc)}), status
     except Exception as exc:
         return jsonify({"error": f"Failed to load session: {exc}"}), 500
 
@@ -433,7 +475,8 @@ def save_session_state(session_id: str):
         return jsonify({"error": "state must be an object."}), 400
 
     try:
-        existing_state = database.load_session_state(session_id) or {}
+        user_id = _request_user_id()
+        existing_state = database.load_session_state(session_id, user_id=user_id) or {}
         merged_state = {**existing_state, **state}
 
         transactions_rows = merged_state.get("loadedTransactions")
@@ -445,11 +488,13 @@ def save_session_state(session_id: str):
                 session_id,
                 _records_to_input_frame(transactions_rows),
                 _records_to_input_frame(proofs_rows),
+                user_id=user_id,
             )
 
-        database.save_session_state(session_id, merged_state)
+        database.save_session_state(session_id, merged_state, user_id=user_id)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        status = 401 if "Missing X-User-Id" in str(exc) else 400
+        return jsonify({"error": str(exc)}), status
     except Exception as exc:
         return jsonify({"error": f"Failed to save session: {exc}"}), 500
 
@@ -460,9 +505,11 @@ def save_session_state(session_id: str):
 def get_session_state(session_id: str):
     """Load and return the saved UI state for a session."""
     try:
-        state = database.load_session_state(session_id)
+        user_id = _request_user_id()
+        state = database.load_session_state(session_id, user_id=user_id)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 404
+        status = 401 if "Missing X-User-Id" in str(exc) else 404
+        return jsonify({"error": str(exc)}), status
     except Exception as exc:
         return jsonify({"error": f"Failed to load session state: {exc}"}), 500
 
@@ -471,6 +518,7 @@ def get_session_state(session_id: str):
 
 def _run_validation_pipeline(
     session_id: str,
+    user_id: str,
     transactions: list[Any],
     proofs: list[Any],
     progress_callback: Any | None = None,
@@ -571,7 +619,9 @@ def _run_validation_pipeline(
 
         else:
             emit("Loading saved session inputs...", 20)
-            transactions_df, proofs_df = database.load_session_history(session_id)
+            transactions_df, proofs_df = database.load_session_history(
+                session_id, user_id=user_id
+            )
             if transactions_df.empty or proofs_df.empty:
                 raise ValueError(
                     "No saved inputs found for this session. "
@@ -618,7 +668,9 @@ def _run_validation_pipeline(
 
         if use_uploaded_files:
             # Persist canonical extracted inputs in DB; categorization is preserved in session state.
-            database.save_session_inputs(session_id, transactions_df, proofs_df)
+            database.save_session_inputs(
+                session_id, transactions_df, proofs_df, user_id=user_id
+            )
 
         payload = {
             "sessionId": session_id,
@@ -637,7 +689,7 @@ def _run_validation_pipeline(
         emit("Saving validation results...", 90)
 
         # Auto-save full session state after each successful validation run.
-        existing_state = database.load_session_state(session_id) or {}
+        existing_state = database.load_session_state(session_id, user_id=user_id) or {}
         database.save_session_state(
             session_id,
             {
@@ -652,12 +704,39 @@ def _run_validation_pipeline(
                 "recommendations": payload["recommendations"],
                 "chatHistory": existing_state.get("chatHistory", []),
             },
+            user_id=user_id,
         )
 
         emit("Validation complete.", 100)
         return payload
     finally:
         _cleanup_temp_files(transaction_paths + proof_paths)
+
+
+def _call_validation_pipeline(
+    session_id: str,
+    user_id: str,
+    transactions: list[Any],
+    proofs: list[Any],
+    progress_callback: Any | None = None,
+) -> dict[str, Any]:
+    """Call pipeline in a backward-compatible way for monkeypatched test stubs."""
+    params = inspect.signature(_run_validation_pipeline).parameters
+    if "user_id" in params:
+        return _run_validation_pipeline(
+            session_id=session_id,
+            user_id=user_id,
+            transactions=transactions,
+            proofs=proofs,
+            progress_callback=progress_callback,
+        )
+
+    return _run_validation_pipeline(
+        session_id=session_id,
+        transactions=transactions,
+        proofs=proofs,
+        progress_callback=progress_callback,
+    )
 
 
 @app.post("/api/validate")
@@ -668,14 +747,17 @@ def validate():
     proofs = request.files.getlist("proofs")
 
     try:
-        payload = _run_validation_pipeline(
+        user_id = _request_user_id()
+        payload = _call_validation_pipeline(
             session_id=session_id,
+            user_id=user_id,
             transactions=transactions,
             proofs=proofs,
         )
         return jsonify(payload)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        status = 401 if "Missing X-User-Id" in str(exc) else 400
+        return jsonify({"error": str(exc)}), status
     except Exception as exc:
         return jsonify({"error": f"Validation failed: {exc}"}), 500
 
@@ -690,6 +772,11 @@ def validate_stream():
     if not session_id:
         return jsonify({"error": "sessionId is required."}), 400
 
+    try:
+        user_id = _request_user_id()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 401
+
     def generate() -> Any:
         yield _sse("start", {"sessionId": session_id})
 
@@ -700,8 +787,9 @@ def validate_stream():
 
         def worker() -> None:
             try:
-                payload = _run_validation_pipeline(
+                payload = _call_validation_pipeline(
                     session_id=session_id,
+                    user_id=user_id,
                     transactions=transactions,
                     proofs=proofs,
                     progress_callback=on_progress,

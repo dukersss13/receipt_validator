@@ -30,8 +30,14 @@ def detect_lan_ip() -> str:
 
 
 if __name__ == "__main__":
-    host = "0.0.0.0"
-    port = 7860
+    host = os.getenv("ARVEE_HOST", "0.0.0.0")
+    port = int(os.getenv("ARVEE_PORT", "7860"))
+    debug = str(os.getenv("ARVEE_DEBUG", "false")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     lan_ip = detect_lan_ip()
     ios_api_base_url = f"http://{lan_ip}:{port}"
 
@@ -45,4 +51,4 @@ if __name__ == "__main__":
         )
         print("Set ARVEE_LAN_IP=<your-mac-ip> when starting backend.py to override.")
 
-    app.run(host=host, port=port, debug=True, use_reloader=False)
+    app.run(host=host, port=port, debug=debug, use_reloader=False)
