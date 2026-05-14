@@ -246,6 +246,9 @@ class RouterAgent(LLMBase):
         Returns:
             A list of suggested reply strings the UI can render as buttons.
         """
+        wants_chart = bool(plan.tool_params.get("include_chart", False))
+        chart_prefix = "Chart " if wants_chart else ""
+
         # Pie chart not supported for comparison.
         if (
             plan.tool_name is AgentTool.COMPARE_SPENDING_PERIODS
@@ -256,16 +259,16 @@ class RouterAgent(LLMBase):
         # Missing periods — suggest common comparisons.
         if plan.tool_name is AgentTool.COMPARE_SPENDING_PERIODS:
             return [
-                "This month vs last month",
-                "This month vs 2 months ago",
-                "Past 3 months vs prior 3 months",
+                f"{chart_prefix}This month vs last month",
+                f"{chart_prefix}This month vs 2 months ago",
+                f"{chart_prefix}Past 3 months vs prior 3 months",
             ]
 
         # Fallback / ambiguous single-period request.
         return [
-            "Total spending this month",
-            "Compare this month vs last month",
-            "Top 5 categories",
+            f"{chart_prefix}Total spending this month",
+            f"{chart_prefix}Compare this month vs last month",
+            f"{chart_prefix}Top 5 categories",
         ]
 
     def plan_with_schema(self, payload: RouterInput) -> RouterPlan:
