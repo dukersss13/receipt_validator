@@ -534,3 +534,36 @@ def test_recommendation_categories_become_empty_strings_when_missing():
     assert len(recommendations) == 1
     assert recommendations["Transaction Category"].iloc[0] == ""
     assert recommendations["Proof Category"].iloc[0] == ""
+
+
+def test_unmatched_column_rename_uses_dict_not_positional():
+    """Ensure unmatched DataFrames are renamed by column name, not position,
+    so categories survive even when the DataFrame has extra columns."""
+    transactions = pd.DataFrame(
+        {
+            "business_name": ["Coffee House", "Pet Store"],
+            "total": [5.50, 22.00],
+            "date": ["2024-06-01", "2024-06-02"],
+            "category": ["Food", "Shopping"],
+        }
+    )
+    proofs = pd.DataFrame(
+        {
+            "business_name": ["Deli Corner"],
+            "total": [9.99],
+            "date": ["2024-06-03"],
+            "category": ["Food"],
+        }
+    )
+
+    validator = Validator(transactions, proofs)
+    results = validator.validate()
+
+    # Unmatched DataFrames must have the renamed "Category" column
+    if not results.unmatched_transactions.empty:
+        assert "Category" in results.unmatched_transactions.columns
+        for val in results.unmatched_transactions["Category"]:
+            assert val in ("Food", "Shopping", "Other", "")
+
+    if not results.unmatched_proofs.empty:
+        assert "Category" in results.unmatched_proofs.columns

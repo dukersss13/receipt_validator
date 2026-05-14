@@ -576,13 +576,23 @@ class Validator:
             }
         )
 
-        unmatched_cols = ["Business Name", "Total", "Date"]
-        if "category" in unmatched_transactions.columns:
-            unmatched_cols.append("Category")
+        unmatched_rename = {
+            "business_name": "Business Name",
+            "total": "Total",
+            "date": "Date",
+            "category": "Category",
+        }
         unmatched_transactions = unmatched_transactions.reset_index(drop=True)
         unmatched_proofs = unmatched_proofs.reset_index(drop=True)
-        unmatched_transactions.columns = unmatched_cols
-        unmatched_proofs.columns = unmatched_cols
+        unmatched_transactions = unmatched_transactions.rename(columns=unmatched_rename)
+        unmatched_proofs = unmatched_proofs.rename(columns=unmatched_rename)
+        expected_cols = {"Business Name", "Total", "Date", "Category"}
+        unmatched_transactions = unmatched_transactions[
+            [c for c in unmatched_transactions.columns if c in expected_cols]
+        ]
+        unmatched_proofs = unmatched_proofs[
+            [c for c in unmatched_proofs.columns if c in expected_cols]
+        ]
 
         return Results(
             validated_transactions,
