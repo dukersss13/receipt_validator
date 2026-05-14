@@ -801,9 +801,12 @@ class Validator:
             analysis = "Unmatched transactions found, but no unmatched proofs are available to recommend pairings."
             recommendations = pd.DataFrame([])
         else:
-            analysis = "I finished the validation process and provided some recommendations for you."
             recommendations = self.analyze_unmatched_results(
                 unmatched_transactions, unmatched_proofs
             )
+            if recommendations.empty:
+                analysis = "I finished the validation process."
+            else:
+                analysis = "I finished the validation process and provided some recommendations for you."
 
         return analysis, recommendations

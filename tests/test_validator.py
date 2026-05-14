@@ -235,6 +235,31 @@ def test_no_recommendations_without_unmatched_transactions():
     assert "no recommendations" in analysis.lower()
 
 
+def test_analysis_does_not_claim_recommendations_when_none_generated(monkeypatch):
+    validator = Validator(pd.DataFrame([]), pd.DataFrame([]))
+    results = Results(
+        validated_transactions=pd.DataFrame([]),
+        discrepancies=pd.DataFrame([]),
+        unmatched_transactions=pd.DataFrame(
+            [{"Business Name": "Store A", "Total": 10.0, "Date": "2024-01-01"}]
+        ),
+        unmatched_proofs=pd.DataFrame(
+            [{"Business Name": "Store B", "Total": 11.0, "Date": "2024-01-02"}]
+        ),
+    )
+
+    monkeypatch.setattr(
+        validator,
+        "analyze_unmatched_results",
+        lambda unmatched_transactions, unmatched_proofs: pd.DataFrame([]),
+    )
+
+    analysis, recommendations = validator.analyze_results(results)
+
+    assert recommendations.empty
+    assert "provided some recommendations" not in analysis.lower()
+
+
 def test_validate_matches_with_noisy_date_text():
     transactions = pd.DataFrame(
         {
