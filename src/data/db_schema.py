@@ -14,6 +14,8 @@ class UserAuth(Base):
     id = Column(Integer, primary_key=True)
     email = Column(String(320), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
+    provider = Column(String(32), nullable=False, default="email", index=True)
+    provider_id = Column(String(255), nullable=True, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 

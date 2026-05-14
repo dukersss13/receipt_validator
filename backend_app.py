@@ -11,8 +11,11 @@ from datetime import datetime
 from queue import Queue
 from typing import Any
 from urllib.parse import urlparse
+from uuid import uuid4
 
 import pandas as pd
+from google.auth.transport import requests as google_auth_requests
+from google.oauth2 import id_token as google_id_token
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from flask import Flask, Response, jsonify, request, send_file
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -121,6 +124,61 @@ def _api_base_url() -> str:
     if configured:
         return configured.rstrip("/")
     return request.host_url.rstrip("/")
+
+
+def _google_oauth_client_id() -> str:
+    configured = str(
+        os.getenv(
+            "ARVEE_GOOGLE_OAUTH_CLIENT_ID", os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
+        )
+    ).strip()
+    return configured
+
+
+def _google_oauth_redirect_scheme() -> str:
+    configured = str(os.getenv("ARVEE_GOOGLE_REDIRECT_SCHEME", "arvee")).strip()
+    return configured or "arvee"
+
+
+def _verify_google_id_token(id_token: str) -> dict[str, Any]:
+    token = str(id_token).strip()
+    if not token:
+        raise ValueError("idToken is required.")
+
+    client_id = _google_oauth_client_id()
+    if not client_id:
+        raise ValueError("Google OAuth is not configured on this server.")
+
+    try:
+        claims = google_id_token.verify_oauth2_token(
+            token,
+            google_auth_requests.Request(),
+            client_id,
+        )
+    except Exception as exc:
+        raise ValueError("Invalid Google identity token.") from exc
+
+    issuer = str(claims.get("iss", "")).strip().lower()
+    if issuer not in {"accounts.google.com", "https://accounts.google.com"}:
+        raise ValueError("Invalid Google token issuer.")
+
+    email = str(claims.get("email", "")).strip().lower()
+    if not email or "@" not in email:
+        raise ValueError("Google token is missing a valid email.")
+
+    if not bool(claims.get("email_verified", False)):
+        raise ValueError("Google account email is not verified.")
+
+    provider_id = str(claims.get("sub", "")).strip()
+    if not provider_id:
+        raise ValueError("Google token is missing subject.")
+
+    return {
+        "email": email,
+        "providerId": provider_id,
+        "name": str(claims.get("name", "")).strip() or None,
+        "picture": str(claims.get("picture", "")).strip() or None,
+    }
 
 
 @app.after_request
@@ -546,11 +604,16 @@ def api_meta():
             "service": "arvee-backend",
             "apiBaseUrl": _api_base_url(),
             "auth": {
-                "methods": ["bearer-token", "x-user-id-legacy"],
+                "methods": ["bearer-token", "x-user-id-legacy", "google-oauth"],
                 "requireUserId": _env_flag("ARVEE_REQUIRE_USER_ID", default=False),
                 "signupEndpoint": "/api/auth/signup",
                 "loginEndpoint": "/api/auth/login",
+                "googleTokenEndpoint": "/api/auth/google/token",
                 "currentUserEndpoint": "/api/auth/me",
+                "google": {
+                    "enabled": bool(_google_oauth_client_id()),
+                    "redirectScheme": _google_oauth_redirect_scheme(),
+                },
             },
             "cors": {
                 "configuredOrigins": _parse_cors_origins(),
@@ -579,7 +642,15 @@ def auth_signup():
         return jsonify({"error": f"Failed to create account: {exc}"}), 500
 
     token = _create_access_token(user.email)
-    return jsonify({"token": token, "user": {"email": user.email}})
+    return jsonify(
+        {
+            "token": token,
+            "user": {
+                "email": user.email,
+                "provider": "email",
+            },
+        }
+    )
 
 
 @app.post("/api/auth/login")
@@ -596,18 +667,86 @@ def auth_login():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    if user is None or not check_password_hash(user.password_hash, password):
+    if user is None or not str(user.password_hash).strip():
+        return jsonify({"error": "Invalid email or password."}), 401
+
+    if not check_password_hash(user.password_hash, password):
         return jsonify({"error": "Invalid email or password."}), 401
 
     token = _create_access_token(user.email)
-    return jsonify({"token": token, "user": {"email": user.email}})
+    return jsonify(
+        {
+            "token": token,
+            "user": {
+                "email": user.email,
+                "provider": str(user.provider or "email"),
+            },
+        }
+    )
+
+
+@app.get("/api/auth/google/config")
+def auth_google_config():
+    client_id = _google_oauth_client_id()
+    return jsonify(
+        {
+            "enabled": bool(client_id),
+            "clientId": client_id,
+            "redirectScheme": _google_oauth_redirect_scheme(),
+        }
+    )
+
+
+@app.post("/api/auth/google/token")
+def auth_google_token():
+    payload = request.get_json(silent=True) or {}
+    id_token = str(payload.get("idToken", "")).strip()
+    if not id_token:
+        return jsonify({"error": "idToken is required."}), 400
+
+    try:
+        profile = _verify_google_id_token(id_token)
+        fallback_hash = generate_password_hash(
+            f"google-only:{profile['providerId']}:{uuid4().hex}"
+        )
+        user = database.create_or_link_google_user(
+            email=profile["email"],
+            provider_id=profile["providerId"],
+            password_hash_fallback=fallback_hash,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Failed Google authentication: {exc}"}), 500
+
+    token = _create_access_token(user.email)
+    return jsonify(
+        {
+            "token": token,
+            "user": {
+                "email": user.email,
+                "provider": "google",
+                "name": profile.get("name"),
+                "picture": profile.get("picture"),
+            },
+        }
+    )
 
 
 @app.get("/api/auth/me")
 def auth_me():
     try:
         user_id = _request_user_id()
-        return jsonify({"user": {"id": user_id, "email": user_id}})
+        user = database.get_user_auth(user_id)
+        return jsonify(
+            {
+                "user": {
+                    "id": user_id,
+                    "email": user_id,
+                    "provider": str(getattr(user, "provider", "email") or "email"),
+                }
+            }
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 401
 

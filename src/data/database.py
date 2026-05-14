@@ -5,6 +5,7 @@ from datetime import datetime
 import pandas as pd
 
 from sqlalchemy import create_engine
+from sqlalchemy import inspect
 from sqlalchemy.orm import sessionmaker
 
 from src.data.db_schema import (
@@ -94,6 +95,42 @@ class DataBase:
             Base.metadata.create_all(bind=self.engine)
 
         self.SessionLocal = sessionmaker(bind=self.engine, expire_on_commit=False)
+        self._ensure_auth_schema_compatibility()
+
+    def _ensure_auth_schema_compatibility(self) -> None:
+        """Ensure new auth columns/indexes exist for backward-compatible upgrades."""
+        try:
+            dialect = self.engine.dialect.name
+            with self.engine.begin() as conn:
+                if dialect == "sqlite":
+                    rows = conn.exec_driver_sql(
+                        "PRAGMA table_info(user_auth);"
+                    ).fetchall()
+                    existing_cols = {str(row[1]) for row in rows}
+                else:
+                    inspector = inspect(self.engine)
+                    existing_cols = {
+                        str(col.get("name", ""))
+                        for col in inspector.get_columns("user_auth")
+                    }
+
+                if "provider" not in existing_cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE user_auth ADD COLUMN provider VARCHAR(32) DEFAULT 'email'"
+                    )
+                if "provider_id" not in existing_cols:
+                    conn.exec_driver_sql(
+                        "ALTER TABLE user_auth ADD COLUMN provider_id VARCHAR(255)"
+                    )
+
+                conn.exec_driver_sql(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ux_user_auth_provider_provider_id "
+                    "ON user_auth(provider, provider_id)"
+                )
+        except Exception:
+            # Keep startup resilient for fresh databases and environments where
+            # the schema is already current.
+            pass
 
     @staticmethod
     def _normalize_date_series(series: pd.Series) -> pd.Series:
@@ -241,7 +278,64 @@ class DataBase:
             if existing is not None:
                 raise ValueError("An account with that email already exists.")
 
-            user = UserAuth(email=normalized_email, password_hash=password_hash)
+            user = UserAuth(
+                email=normalized_email,
+                password_hash=password_hash,
+                provider="email",
+                provider_id=None,
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            return user
+
+    def create_or_link_google_user(
+        self,
+        email: str,
+        provider_id: str,
+        password_hash_fallback: str,
+    ) -> UserAuth:
+        """Find or create a Google-authenticated user and return the stored row."""
+        normalized_email = self._normalize_email(email)
+        normalized_provider_id = str(provider_id).strip()
+        if not normalized_provider_id:
+            raise ValueError("provider_id cannot be empty.")
+        if not str(password_hash_fallback).strip():
+            raise ValueError("password_hash_fallback cannot be empty.")
+
+        with self.SessionLocal() as db:
+            provider_user = (
+                db.query(UserAuth)
+                .filter(
+                    UserAuth.provider == "google",
+                    UserAuth.provider_id == normalized_provider_id,
+                )
+                .first()
+            )
+            if provider_user is not None:
+                if provider_user.email != normalized_email:
+                    provider_user.email = normalized_email
+                    db.commit()
+                    db.refresh(provider_user)
+                return provider_user
+
+            existing_by_email = (
+                db.query(UserAuth).filter(UserAuth.email == normalized_email).first()
+            )
+            if existing_by_email is not None:
+                if not str(existing_by_email.password_hash or "").strip():
+                    existing_by_email.password_hash = password_hash_fallback
+                existing_by_email.provider_id = normalized_provider_id
+                db.commit()
+                db.refresh(existing_by_email)
+                return existing_by_email
+
+            user = UserAuth(
+                email=normalized_email,
+                password_hash=password_hash_fallback,
+                provider="google",
+                provider_id=normalized_provider_id,
+            )
             db.add(user)
             db.commit()
             db.refresh(user)
