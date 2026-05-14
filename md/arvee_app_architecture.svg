@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 780"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 920"
      font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
 
   <defs>
@@ -37,8 +37,8 @@
   </defs>
 
   <!-- Background -->
-  <rect width="1020" height="780" fill="url(#bg-grad)" rx="12"/>
-  <rect x="1" y="1" width="1018" height="778" fill="none" stroke="#E9DBC1" rx="12" stroke-width="1"/>
+  <rect width="1020" height="920" fill="url(#bg-grad)" rx="12"/>
+  <rect x="1" y="1" width="1018" height="918" fill="none" stroke="#E9DBC1" rx="12" stroke-width="1"/>
 
   <!-- ===== TITLE ===== -->
   <text x="510" y="34" text-anchor="middle" font-size="22" font-weight="700" fill="#1F1D1A"
@@ -49,7 +49,7 @@
   <!-- ================================================================== -->
   <!-- LEFT COLUMN: iOS APP                                                -->
   <!-- ================================================================== -->
-  <rect x="25" y="72" width="480" height="548" rx="10" fill="none" stroke="#0F7B6C"
+  <rect x="25" y="72" width="480" height="688" rx="10" fill="none" stroke="#0F7B6C"
         stroke-width="2" stroke-dasharray="8 4"/>
   <rect x="35" y="62" width="140" height="22" rx="4" fill="#F4EFE4"/>
   <text x="40" y="78" font-size="12" font-weight="700" fill="#0F7B6C" letter-spacing="1">iOS APP (SwiftUI)</text>
@@ -83,7 +83,7 @@
   <rect x="130" y="222" width="68" height="8" rx="2" fill="#0F7B6C" opacity="0.25"/>
   <text x="164" y="228" text-anchor="middle" font-size="7" font-weight="600" fill="#0F7B6C">Upload</text>
   <rect x="204" y="222" width="84" height="8" rx="2" fill="#0F7B6C" opacity="0.35"/>
-  <text x="246" y="228" text-anchor="middle" font-size="7" font-weight="600" fill="#0F7B6C">Validation</text>
+  <text x="246" y="228" text-anchor="middle" font-size="7" font-weight="600" fill="#0F7B6C">Results</text>
   <rect x="294" y="222" width="68" height="8" rx="2" fill="#0F7B6C" opacity="0.45"/>
   <text x="328" y="228" text-anchor="middle" font-size="7" font-weight="600" fill="#0F7B6C">Chat</text>
   <rect x="368" y="222" width="78" height="8" rx="2" fill="#0F7B6C" opacity="0.55"/>
@@ -100,19 +100,19 @@
   <text x="153" y="310" text-anchor="middle" font-size="9" fill="#5A554D">PhotosPicker + fileImporter</text>
   <text x="153" y="322" text-anchor="middle" font-size="9" fill="#5A554D">StepIndicator progress</text>
 
-  <!-- ValidationView -->
+  <!-- ValidationView (now Results) -->
   <rect x="274" y="264" width="206" height="72" rx="8" fill="white" stroke="#EA8F58"
         stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="377" y="284" text-anchor="middle" font-size="12" font-weight="600" fill="#1F1D1A">ValidationView</text>
-  <text x="377" y="298" text-anchor="middle" font-size="9" fill="#5A554D">KPI metric cards</text>
-  <text x="377" y="310" text-anchor="middle" font-size="9" fill="#5A554D">Pill tab picker (4 result types)</text>
-  <text x="377" y="322" text-anchor="middle" font-size="9" fill="#5A554D">ResultTableView + PDF export</text>
+  <text x="377" y="284" text-anchor="middle" font-size="12" font-weight="600" fill="#1F1D1A">ResultsView</text>
+  <text x="377" y="298" text-anchor="middle" font-size="9" fill="#5A554D">5 collapsible sections</text>
+  <text x="377" y="310" text-anchor="middle" font-size="9" fill="#5A554D">Interactive: accept/match/adjust</text>
+  <text x="377" y="322" text-anchor="middle" font-size="9" fill="#5A554D">ScrollViewReader deep-link</text>
 
   <!-- ChatView -->
   <rect x="50" y="348" width="206" height="72" rx="8" fill="white" stroke="#EA8F58"
         stroke-width="1.5" filter="url(#shadow)"/>
   <text x="153" y="368" text-anchor="middle" font-size="12" font-weight="600" fill="#1F1D1A">ChatView</text>
-  <text x="153" y="382" text-anchor="middle" font-size="9" fill="#5A554D">Welcome screen + suggestion pills</text>
+  <text x="153" y="382" text-anchor="middle" font-size="9" fill="#5A554D">Auto-session on appear</text>
   <text x="153" y="394" text-anchor="middle" font-size="9" fill="#5A554D">Real-time SSE streaming bubbles</text>
   <text x="153" y="406" text-anchor="middle" font-size="9" fill="#5A554D">Quick reply pills + charts</text>
 
@@ -138,8 +138,8 @@
   <rect x="204" y="450" width="140" height="60" rx="8" fill="#EDE9FE" stroke="#7C3AED"
         stroke-width="1.5" filter="url(#shadow)"/>
   <text x="274" y="470" text-anchor="middle" font-size="11" font-weight="600" fill="#5B21B6">ValidationVM</text>
-  <text x="274" y="484" text-anchor="middle" font-size="8.5" fill="#7C3AED">loadAllFiles()</text>
-  <text x="274" y="496" text-anchor="middle" font-size="8.5" fill="#7C3AED">validate(sessionId:)</text>
+  <text x="274" y="484" text-anchor="middle" font-size="8.5" fill="#7C3AED">acceptDiscrepancy/Rec</text>
+  <text x="274" y="496" text-anchor="middle" font-size="8.5" fill="#7C3AED">manualMatch(tx, proof)</text>
 
   <!-- ChatViewModel -->
   <rect x="358" y="450" width="140" height="60" rx="8" fill="#EDE9FE" stroke="#7C3AED"
@@ -170,11 +170,32 @@
   <line x1="274" y1="510" x2="190" y2="538" stroke="#7C3AED" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
   <line x1="428" y1="510" x2="420" y2="538" stroke="#7C3AED" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
 
+  <!-- ====== INTERACTIVE VIEWS (Results tab) ====== -->
+  <text x="50" y="624" font-size="10" font-weight="700" fill="#5A554D" letter-spacing="1">INTERACTIVE RESULT VIEWS</text>
+
+  <!-- DiscrepancyCardView -->
+  <rect x="50" y="634" width="140" height="48" rx="6" fill="white" stroke="#EA8F58"
+        stroke-width="1" filter="url(#shadow)"/>
+  <text x="120" y="652" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1F1D1A">DiscrepancyCard</text>
+  <text x="120" y="664" text-anchor="middle" font-size="8" fill="#5A554D">Adjust & accept</text>
+
+  <!-- RecommendationCardView -->
+  <rect x="200" y="634" width="140" height="48" rx="6" fill="white" stroke="#0F7B6C"
+        stroke-width="1" filter="url(#shadow)"/>
+  <text x="270" y="652" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1F1D1A">RecommendationCard</text>
+  <text x="270" y="664" text-anchor="middle" font-size="8" fill="#5A554D">Accept / accept all</text>
+
+  <!-- ManualMatchView -->
+  <rect x="350" y="634" width="140" height="48" rx="6" fill="white" stroke="#7C3AED"
+        stroke-width="1" filter="url(#shadow)"/>
+  <text x="420" y="652" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1F1D1A">ManualMatchView</text>
+  <text x="420" y="664" text-anchor="middle" font-size="8" fill="#5A554D">Pair unmatched items</text>
+
 
   <!-- ================================================================== -->
   <!-- RIGHT COLUMN: FLASK BACKEND                                         -->
   <!-- ================================================================== -->
-  <rect x="530" y="72" width="465" height="700" rx="10" fill="none" stroke="#F59E0B"
+  <rect x="530" y="72" width="465" height="840" rx="10" fill="none" stroke="#F59E0B"
         stroke-width="2" stroke-dasharray="8 4"/>
   <rect x="540" y="62" width="170" height="22" rx="4" fill="#F4EFE4"/>
   <text x="545" y="78" font-size="12" font-weight="700" fill="#92400E" letter-spacing="1">FLASK BACKEND (:7860)</text>
@@ -309,67 +330,67 @@
     SSE: token → token → done</text>
 
   <!-- ====== DATABASE ====== -->
-  <rect x="555" y="710" width="420" height="56" rx="8" fill="#FFFBEB" stroke="#F59E0B"
+  <rect x="555" y="850" width="420" height="56" rx="8" fill="#FFFBEB" stroke="#F59E0B"
         stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="765" y="732" text-anchor="middle" font-size="14" font-weight="700" fill="#92400E">SQLite Database</text>
-  <text x="765" y="748" text-anchor="middle" font-size="10" fill="#B45309">
+  <text x="765" y="872" text-anchor="middle" font-size="14" font-weight="700" fill="#92400E">SQLite Database</text>
+  <text x="765" y="888" text-anchor="middle" font-size="10" fill="#B45309">
     Sessions · Validation State · Chat History · Inputs</text>
 
   <!-- Arrow: Pipeline → Database -->
-  <line x1="765" y1="690" x2="765" y2="708" stroke="#F59E0B" stroke-width="1.5" marker-end="url(#arrow-amber)"/>
+  <line x1="765" y1="690" x2="765" y2="848" stroke="#F59E0B" stroke-width="1.5" marker-end="url(#arrow-amber)"/>
 
   <!-- ================================================================== -->
   <!-- DATA FLOW (bottom)                                                  -->
   <!-- ================================================================== -->
-  <rect x="25" y="632" width="480" height="140" rx="8" fill="white" stroke="#E9DBC1" stroke-width="1"/>
-  <text x="265" y="652" text-anchor="middle" font-size="11" font-weight="700" fill="#1F1D1A">Data Flow Summary</text>
+  <rect x="25" y="772" width="480" height="140" rx="8" fill="white" stroke="#E9DBC1" stroke-width="1"/>
+  <text x="265" y="792" text-anchor="middle" font-size="11" font-weight="700" fill="#1F1D1A">Data Flow Summary</text>
 
   <!-- Upload flow -->
-  <rect x="42" y="664" width="8" height="8" rx="2" fill="#EA8F58"/>
-  <text x="58" y="672" font-size="9.5" font-weight="600" fill="#1F1D1A">Upload:</text>
-  <text x="106" y="672" font-size="9" fill="#5A554D">
+  <rect x="42" y="804" width="8" height="8" rx="2" fill="#EA8F58"/>
+  <text x="58" y="812" font-size="9.5" font-weight="600" fill="#1F1D1A">Upload:</text>
+  <text x="106" y="812" font-size="9" fill="#5A554D">
     Photos/Files → ValidationVM.loadAllFiles() → POST /api/validate → Results</text>
 
   <!-- Validate flow -->
-  <rect x="42" y="684" width="8" height="8" rx="2" fill="#F87171"/>
-  <text x="58" y="692" font-size="9.5" font-weight="600" fill="#1F1D1A">Validate:</text>
-  <text x="110" y="692" font-size="9" fill="#5A554D">
+  <rect x="42" y="824" width="8" height="8" rx="2" fill="#F87171"/>
+  <text x="58" y="832" font-size="9.5" font-weight="600" fill="#1F1D1A">Validate:</text>
+  <text x="110" y="832" font-size="9" fill="#5A554D">
     DataReader → Categorizer → Validator → validated/discrepancy/unmatched</text>
 
   <!-- Chat flow -->
-  <rect x="42" y="704" width="8" height="8" rx="2" fill="#7C3AED"/>
-  <text x="58" y="712" font-size="9.5" font-weight="600" fill="#1F1D1A">Chat:</text>
-  <text x="90" y="712" font-size="9" fill="#5A554D">
+  <rect x="42" y="844" width="8" height="8" rx="2" fill="#7C3AED"/>
+  <text x="58" y="852" font-size="9.5" font-weight="600" fill="#1F1D1A">Chat:</text>
+  <text x="90" y="852" font-size="9" fill="#5A554D">
     Message → SSEClient → POST /api/chat/ask/stream → token · token · done</text>
 
   <!-- Session flow -->
-  <rect x="42" y="724" width="8" height="8" rx="2" fill="#F59E0B"/>
-  <text x="58" y="732" font-size="9.5" font-weight="600" fill="#1F1D1A">Session:</text>
-  <text x="104" y="732" font-size="9" fill="#5A554D">
-    POST /api/session/new → sessionId → persists across tabs via SessionVM</text>
+  <rect x="42" y="864" width="8" height="8" rx="2" fill="#F59E0B"/>
+  <text x="58" y="872" font-size="9.5" font-weight="600" fill="#1F1D1A">Session:</text>
+  <text x="104" y="872" font-size="9" fill="#5A554D">
+    Lazy: ensureSession() on tab appear → POST /api/session/new if needed</text>
 
-  <!-- Settings flow -->
-  <rect x="42" y="744" width="8" height="8" rx="2" fill="#0F7B6C"/>
-  <text x="58" y="752" font-size="9.5" font-weight="600" fill="#1F1D1A">Settings:</text>
-  <text x="110" y="752" font-size="9" fill="#5A554D">
-    @AppStorage → APIService.baseURL → GET /api/health → status indicator</text>
+  <!-- Interactive flow -->
+  <rect x="42" y="884" width="8" height="8" rx="2" fill="#0F7B6C"/>
+  <text x="58" y="892" font-size="9.5" font-weight="600" fill="#1F1D1A">Results:</text>
+  <text x="108" y="892" font-size="9" fill="#5A554D">
+    Accept/match/adjust → move between result categories → live KPI updates</text>
 
   <!-- ================================================================== -->
   <!-- LEGEND                                                              -->
   <!-- ================================================================== -->
-  <rect x="790" y="640" width="192" height="112" rx="8" fill="white" stroke="#E9DBC1" stroke-width="1"/>
-  <text x="886" y="658" text-anchor="middle" font-size="11" font-weight="700" fill="#1F1D1A">Legend</text>
+  <rect x="790" y="780" width="192" height="112" rx="8" fill="white" stroke="#E9DBC1" stroke-width="1"/>
+  <text x="886" y="798" text-anchor="middle" font-size="11" font-weight="700" fill="#1F1D1A">Legend</text>
 
-  <rect x="804" y="668" width="14" height="14" rx="3" fill="#0F7B6C"/>
-  <text x="826" y="679" font-size="9.5" fill="#5A554D">iOS App / Services</text>
+  <rect x="804" y="808" width="14" height="14" rx="3" fill="#0F7B6C"/>
+  <text x="826" y="819" font-size="9.5" fill="#5A554D">iOS App / Services</text>
 
-  <rect x="804" y="688" width="14" height="14" rx="3" fill="#7C3AED"/>
-  <text x="826" y="699" font-size="9.5" fill="#5A554D">ViewModels / SSE</text>
+  <rect x="804" y="828" width="14" height="14" rx="3" fill="#7C3AED"/>
+  <text x="826" y="839" font-size="9.5" fill="#5A554D">ViewModels / SSE</text>
 
-  <rect x="804" y="708" width="14" height="14" rx="3" fill="#F59E0B"/>
-  <text x="826" y="719" font-size="9.5" fill="#5A554D">Flask / Database</text>
+  <rect x="804" y="848" width="14" height="14" rx="3" fill="#F59E0B"/>
+  <text x="826" y="859" font-size="9.5" fill="#5A554D">Flask / Database</text>
 
-  <rect x="804" y="728" width="14" height="14" rx="3" fill="#3B82F6"/>
-  <text x="826" y="739" font-size="9.5" fill="#5A554D">LLM (Gemini)</text>
+  <rect x="804" y="868" width="14" height="14" rx="3" fill="#3B82F6"/>
+  <text x="826" y="879" font-size="9.5" fill="#5A554D">LLM (Gemini)</text>
 
 </svg>

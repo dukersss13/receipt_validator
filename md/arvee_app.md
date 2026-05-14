@@ -14,7 +14,7 @@ The app is built with **SwiftUI** (iOS 17.0+, Swift 5.0, Xcode 15) and follows t
 
 | Layer | Components |
 |-------|-----------|
-| **Views** | MainTabView · HomeView · UploadView · ValidationView · ChatView · SettingsView |
+| **Views** | MainTabView · HomeView · UploadView · ValidationView (Results) · ChatView · SettingsView · DiscrepancyCardView · RecommendationCardView · ManualMatchView · ResultCardView |
 | **ViewModels** | SessionViewModel · ValidationViewModel · ChatViewModel |
 | **Services** | APIService (HTTP singleton) · SSEClient (streaming) |
 | **Models** | ChatMessage · ChatAskResponse · ChartData · ValidationResult · Session |
@@ -29,9 +29,10 @@ The iOS app communicates with the Flask backend over HTTP/JSON. The backend runs
 ### Connection Bootstrap
 
 1. On first launch, `ArVeeApp.init()` checks `UserDefaults` for a saved `apiBaseURL`.
-2. If none exists, it writes `http://localhost:7860` as the default and sets `APIService.shared.baseURL`.
-3. The user can change the URL in the **Settings** tab — changes are persisted via `@AppStorage("apiBaseURL")` and immediately synced to `APIService.shared.baseURL`.
+2. If none exists, it writes `http://localhost:7860` as the default and sets `APIService.shared.baseURL`. The API service also supports LAN auto-discovery — scanning the local subnet for the backend.
+3. The user can change the URL in the **Settings** tab — changes are persisted via `@AppStorage("apiBaseURL")` and immediately synced to `APIService.shared.baseURL`. Local HTTPS URLs are auto-normalized to HTTP.
 4. A health check (`GET /api/health`) runs on the Settings screen to show a live connectivity indicator.
+5. Sessions are created lazily — the Chat and Upload tabs call `ensureSession()` on appear, so users never need to manually create a session.
 
 ### API Endpoints Used
 
@@ -66,7 +67,7 @@ The iOS app communicates with the Flask backend over HTTP/JSON. The backend runs
 ## Tab-by-Tab Walkthrough
 
 ### 1. Home (Tab 0)
-Landing screen with the ArVee brand and session status overview.
+Landing screen with the ArVee brand and session status overview. The metric cards (Validated, Discrepancies, Unmatched) are tappable — tapping one switches to the Results tab and auto-scrolls to the corresponding section via a `resultsScrollTarget` binding.
 
 ### 2. Upload (Tab 1)
 A 3-step guided flow: **Upload → Validate → Review**.
@@ -77,22 +78,30 @@ A 3-step guided flow: **Upload → Validate → Review**.
 
 A `StepIndicator` at the top tracks progress with numbered circles and connecting line segments.
 
-### 3. Validation (Tab 2)
-Displays validation results in four categories:
+### 3. Results (Tab 2)
+Displays validation results across five collapsible sections shown simultaneously (no tab switching):
 
-| Tab | Content |
-|-----|---------|
-| Validated | Successfully matched transaction-receipt pairs |
-| Discrepancies | Matched but with amount/date mismatches |
-| Unmatched Tx | Transactions with no matching receipt |
-| Unmatched Proofs | Receipts with no matching transaction |
+| Section | Content | Interactive Actions |
+|---------|---------|--------------------|
+| Validated | Successfully matched transaction-receipt pairs | — |
+| Discrepancies | Matched but with amount/date mismatches | Adjust amount, add comment, accept match |
+| Unmatched Tx | Transactions with no matching receipt | Open Manual Match sheet |
+| Unmatched Proofs | Receipts with no matching transaction | Open Manual Match sheet |
+| Recommendations | AI-suggested matches with confidence scores | Accept individual or accept all |
 
-Each category shows KPI metric cards at the top and a scrollable `ResultTableView` below. A pill-style tab picker switches between categories. Results can be exported as PDF via `POST /api/export/validated`.
+A KPI row of gradient metric cards sits at the top. Each section has a collapsible header with item count badge and optional action button. Rows use `ResultCardView` — a compact card that shows matched-pair data (TX ↔ Proof) in a stacked layout.
+
+**Interactive features:**
+- **DiscrepancyCardView**: Shows TX vs Proof side-by-side with editable "Adjusted Amount" field and optional comment. "Accept Match" moves the item to Validated.
+- **RecommendationCardView**: Shows the suggested match with reason/confidence. "Accept" moves it to Validated and removes matched items from unmatched lists. "Accept All" bulk-accepts.
+- **ManualMatchView**: A sheet with selectable lists of unmatched transactions and proofs. Select one from each list and tap "Match Selected Pair" to create a validated row.
+
+Supports deep-linking from the Home tab via `ScrollViewReader` — tapping a Home metric card scrolls directly to the corresponding section. Results can be exported as PDF via `POST /api/export/validated`.
 
 ### 4. Chat (Tab 3)
-A native chat interface connected to the ArVee analytics agent.
+A native chat interface connected to the ArVee analytics agent. The chat tab automatically starts a session on appear via `.task { await sessionVM.ensureSession() }` — no manual session creation needed.
 
-- **Welcome screen**: Shows when a session exists but no messages have been sent. Displays the ArVee avatar with pill-style suggestion chips (e.g. "How much did I spend on food?", "Show my top 5 categories").
+- **Welcome screen**: Shows when no messages have been sent. Displays the ArVee avatar with pill-style suggestion chips (e.g. "How much did I spend on food?", "Show my top 5 categories").
 - **Chat bubbles**: User messages appear on the right in teal; assistant messages on the left in cream. Messages stream in real-time via SSE — tokens appear as they arrive from the backend.
 - **Rich content**: Assistant messages can include inline charts (`ChartData`), category breakdowns (`topCategories`), and comparison tables (`comparisonTable`) — rendered as cards below the text.
 - **Quick replies**: After an assistant response, if `quickReplies` are present in the payload, horizontal pill buttons appear for one-tap follow-up questions.
