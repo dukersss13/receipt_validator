@@ -783,6 +783,13 @@ def chat_ask_stream():
 
         def generate_validation_guidance() -> Any:
             yield _sse("start", {"sessionId": session_id})
+            yield _sse(
+                "progress",
+                {
+                    "stage": "Validation is needed before chat can answer this.",
+                    "percent": 100,
+                },
+            )
             yield _sse("token", {"token": guidance["answer"]})
             yield _sse("done", guidance)
 
@@ -806,16 +813,29 @@ def chat_ask_stream():
         assembled: list[str] = []
         try:
             yield _sse("start", {"sessionId": session_id})
+            yield _sse(
+                "progress", {"stage": "Understanding your question...", "percent": 15}
+            )
             result = router.ask(
                 message,
                 validated_rows,
                 chat_history=chat_history,
+            )
+            yield _sse(
+                "progress",
+                {
+                    "stage": "Reviewing your latest validated transactions...",
+                    "percent": 65,
+                },
             )
             final_answer = str(result.get("answer", "") or "").strip()
             if not final_answer:
                 final_answer = "I could not generate an answer."
 
             assembled.append(final_answer)
+            yield _sse(
+                "progress", {"stage": "Finalizing the response...", "percent": 90}
+            )
             yield _sse("token", {"token": final_answer})
 
             chat_history.extend(
@@ -835,6 +855,7 @@ def chat_ask_stream():
             state["chatHistory"] = chat_history
             database.save_session_state(session_id, state)
 
+            yield _sse("progress", {"stage": "Done.", "percent": 100})
             yield _sse(
                 "done",
                 {

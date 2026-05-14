@@ -203,6 +203,46 @@ def test_data_hash_changes_with_data() -> None:
     assert QueryCache.compute_data_hash(rows_a) != QueryCache.compute_data_hash(rows_b)
 
 
+def test_data_hash_changes_when_row_content_changes_with_same_totals() -> None:
+    rows_a = [
+        {
+            "Transaction Business Name": "Store A",
+            "Transaction Total": 10.0,
+            "Transaction Category": "Food",
+        },
+        {
+            "Transaction Business Name": "Store B",
+            "Transaction Total": 20.0,
+            "Transaction Category": "Travel",
+        },
+    ]
+    rows_b = [
+        {
+            "Transaction Business Name": "Store A",
+            "Transaction Total": 10.0,
+            "Transaction Category": "Utilities",
+        },
+        {
+            "Transaction Business Name": "Store B",
+            "Transaction Total": 20.0,
+            "Transaction Category": "Travel",
+        },
+    ]
+    assert QueryCache.compute_data_hash(rows_a) != QueryCache.compute_data_hash(rows_b)
+
+
+def test_data_hash_order_independent_for_same_rows() -> None:
+    rows_a = [
+        {"Transaction Business Name": "Store A", "Transaction Total": 10.0},
+        {"Transaction Business Name": "Store B", "Transaction Total": 20.0},
+    ]
+    rows_b = [
+        {"Transaction Business Name": "Store B", "Transaction Total": 20.0},
+        {"Transaction Business Name": "Store A", "Transaction Total": 10.0},
+    ]
+    assert QueryCache.compute_data_hash(rows_a) == QueryCache.compute_data_hash(rows_b)
+
+
 # ── from_config ───────────────────────────────────────────────────────
 
 

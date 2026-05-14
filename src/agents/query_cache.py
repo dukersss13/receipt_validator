@@ -142,8 +142,8 @@ class QueryCache:
     def compute_data_hash(validated_rows: list[dict[str, Any]]) -> str:
         """Compute a lightweight hash over validated rows for staleness detection.
 
-        Uses row count and the sum of transaction totals so that any data
-        change (add, remove, edit) produces a different hash.
+        Builds a deterministic canonical representation of row content so
+        semantically meaningful edits produce a new hash fingerprint.
 
         Args:
             validated_rows: Validated transaction records.
@@ -154,16 +154,26 @@ class QueryCache:
         if not validated_rows:
             return "empty"
 
-        # Compact fingerprint: fast to compute and good enough for cache staleness.
-        row_count = len(validated_rows)
-        total_sum = 0.0
+        canonical_rows: list[dict[str, Any]] = []
         for row in validated_rows:
-            try:
-                total_sum += float(row.get("Transaction Total", 0) or 0)
-            except (TypeError, ValueError):
-                pass
+            if not isinstance(row, dict):
+                continue
 
-        raw = f"{row_count}:{total_sum:.4f}"
+            canonical_row: dict[str, Any] = {}
+            for key in sorted(row.keys()):
+                value = row.get(key)
+                if isinstance(value, (int, float)):
+                    canonical_row[key] = round(float(value), 6)
+                elif value is None:
+                    canonical_row[key] = ""
+                else:
+                    canonical_row[key] = str(value).strip()
+            canonical_rows.append(canonical_row)
+
+        canonical_rows.sort(
+            key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":"))
+        )
+        raw = json.dumps(canonical_rows, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
     @classmethod
