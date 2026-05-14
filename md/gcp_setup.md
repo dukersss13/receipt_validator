@@ -101,6 +101,9 @@ This app reads Gemini credentials and exchange-rate credentials. In local develo
 
 - ARVEE_DB_URL: SQLAlchemy URL for remote DB (recommended for production)
 - ARVEE_REQUIRE_USER_ID: set true to enforce X-User-Id header
+- ARVEE_AUTH_RATE_LIMIT_ENABLED: enable per-IP auth throttling
+- ARVEE_AUTH_RATE_LIMIT_MAX_REQUESTS: max auth attempts inside rolling window
+- ARVEE_AUTH_RATE_LIMIT_WINDOW_SECONDS: auth rolling window length
 - ARVEE_DB_ECHO: SQL logging toggle (usually false)
 
 Create secrets:
@@ -307,6 +310,19 @@ This avoids storing long-lived GCP JSON keys in GitHub secrets.
 4. Confirm non-USD conversion succeeds (exchange key wired).
 5. If ARVEE_REQUIRE_USER_ID=true, verify API requests include X-User-Id.
 6. If using Cloud SQL, verify session data persists across revisions/restarts.
+
+Automate these checks with the repository helper script:
+
+```bash
+chmod +x scripts/verify_deployment.sh
+scripts/verify_deployment.sh https://YOUR_SERVICE_URL
+```
+
+If Google sign-in is required in the target environment:
+
+```bash
+scripts/verify_deployment.sh https://YOUR_SERVICE_URL --require-google
+```
 
 ## 12. Troubleshooting
 

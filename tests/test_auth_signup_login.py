@@ -140,3 +140,37 @@ def test_signup_password_requires_special_character(monkeypatch: Any) -> None:
     payload = response.get_json()
     assert payload["errorClass"] == "validation_error"
     assert "special character" in payload["error"]
+
+
+def test_auth_login_rate_limit_returns_429(monkeypatch: Any) -> None:
+    db = DataBase(
+        engine_name="tests/data/db/test_auth_login_rate_limit",
+        reset_db=True,
+    )
+    monkeypatch.setattr(webapp_module, "database", db)
+    webapp_module._AUTH_RATE_LIMIT_EVENTS.clear()
+    monkeypatch.setenv("ARVEE_AUTH_RATE_LIMIT_ENABLED", "true")
+    monkeypatch.setenv("ARVEE_AUTH_RATE_LIMIT_MAX_REQUESTS", "2")
+    monkeypatch.setenv("ARVEE_AUTH_RATE_LIMIT_WINDOW_SECONDS", "60")
+
+    client = webapp_module.app.test_client()
+
+    first = client.post(
+        "/api/auth/login",
+        json={"email": "none@example.com", "password": "bad"},
+    )
+    second = client.post(
+        "/api/auth/login",
+        json={"email": "none@example.com", "password": "bad"},
+    )
+    third = client.post(
+        "/api/auth/login",
+        json={"email": "none@example.com", "password": "bad"},
+    )
+
+    assert first.status_code in {400, 401}
+    assert second.status_code in {400, 401}
+    assert third.status_code == 429
+    payload = third.get_json()
+    assert payload["errorClass"] == "rate_limited"
+    assert third.headers.get("Retry-After")

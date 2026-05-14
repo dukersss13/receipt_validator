@@ -7,6 +7,7 @@ import re
 import tempfile
 import threading
 import time
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import wraps
@@ -201,6 +202,70 @@ def _env_flag(name: str, default: bool = False) -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+_AUTH_RATE_LIMIT_LOCK = threading.Lock()
+_AUTH_RATE_LIMIT_EVENTS: dict[str, deque[float]] = {}
+
+
+def _auth_rate_limit_window_seconds() -> int:
+    try:
+        value = int(os.getenv("ARVEE_AUTH_RATE_LIMIT_WINDOW_SECONDS", "60"))
+    except ValueError:
+        return 60
+    return max(1, value)
+
+
+def _auth_rate_limit_max_requests() -> int:
+    try:
+        value = int(os.getenv("ARVEE_AUTH_RATE_LIMIT_MAX_REQUESTS", "20"))
+    except ValueError:
+        return 20
+    return max(1, value)
+
+
+def _auth_request_client_ip() -> str:
+    forwarded = str(request.headers.get("X-Forwarded-For", "")).strip()
+    if forwarded:
+        first = forwarded.split(",", 1)[0].strip()
+        if first:
+            return first
+    return str(request.remote_addr or "unknown").strip() or "unknown"
+
+
+def _auth_rate_limit_response(endpoint_name: str):
+    if not _env_flag("ARVEE_AUTH_RATE_LIMIT_ENABLED", default=False):
+        return None
+
+    now = time.time()
+    window_seconds = _auth_rate_limit_window_seconds()
+    max_requests = _auth_rate_limit_max_requests()
+    cutoff = now - float(window_seconds)
+    client_ip = _auth_request_client_ip()
+    key = f"{endpoint_name}:{client_ip}"
+
+    with _AUTH_RATE_LIMIT_LOCK:
+        events = _AUTH_RATE_LIMIT_EVENTS.get(key)
+        if events is None:
+            events = deque()
+            _AUTH_RATE_LIMIT_EVENTS[key] = events
+
+        while events and events[0] <= cutoff:
+            events.popleft()
+
+        if len(events) >= max_requests:
+            retry_after = max(1, int(events[0] + float(window_seconds) - now))
+            response, status_code = _auth_error_response(
+                "Too many authentication requests. Please retry later.",
+                429,
+                "rate_limited",
+            )
+            response.headers["Retry-After"] = str(retry_after)
+            return response, status_code
+
+        events.append(now)
+
+    return None
+
+
 def _request_user_id() -> str:
     """Resolve user identity from bearer token first, then fallback headers."""
     auth_header = str(request.headers.get("Authorization", "")).strip()
@@ -270,6 +335,15 @@ def _build_database() -> DataBase:
 
 
 database = _build_database()
+
+
+def _database_runtime_mode() -> dict[str, Any]:
+    """Summarize active database mode for production diagnostics."""
+    is_local = bool(getattr(database, "local_db", True))
+    return {
+        "mode": "sqlite-local" if is_local else "remote-sql",
+        "isEphemeralRisk": is_local,
+    }
 
 
 def _parse_cors_origins() -> list[str]:
@@ -794,6 +868,7 @@ def health_deep():
             "ok": db_ok,
             "durationMs": db_duration_ms,
             "error": db_error or None,
+            "runtime": _database_runtime_mode(),
         },
         "authSecret": {
             "configured": auth_secret_configured,
@@ -860,6 +935,10 @@ def api_meta():
 @app.post("/api/auth/signup")
 @_instrument_auth_endpoint("signup")
 def auth_signup():
+    rate_limited = _auth_rate_limit_response("signup")
+    if rate_limited is not None:
+        return rate_limited
+
     payload = request.get_json(silent=True) or {}
     email = str(payload.get("email", "")).strip().lower()
     password = str(payload.get("password", ""))
@@ -935,6 +1014,10 @@ def auth_signup():
 @app.post("/api/auth/login")
 @_instrument_auth_endpoint("login")
 def auth_login():
+    rate_limited = _auth_rate_limit_response("login")
+    if rate_limited is not None:
+        return rate_limited
+
     payload = request.get_json(silent=True) or {}
     email = str(payload.get("email", "")).strip().lower()
     password = str(payload.get("password", ""))
@@ -994,6 +1077,10 @@ def auth_google_config():
 @app.post("/api/auth/google/token")
 @_instrument_auth_endpoint("google_token")
 def auth_google_token():
+    rate_limited = _auth_rate_limit_response("google_token")
+    if rate_limited is not None:
+        return rate_limited
+
     payload = request.get_json(silent=True) or {}
     id_token = str(payload.get("idToken", "")).strip()
     if not id_token:

@@ -31,6 +31,8 @@ def test_health_deep_reports_dependency_status(monkeypatch: Any) -> None:
     payload = response.get_json()
     assert payload["status"] == "ok"
     assert payload["checks"]["database"]["ok"] is True
+    assert payload["checks"]["database"]["runtime"]["mode"] == "sqlite-local"
+    assert payload["checks"]["database"]["runtime"]["isEphemeralRisk"] is True
     assert payload["checks"]["googleOAuth"]["enabled"] is True
 
 
@@ -46,4 +48,28 @@ def test_health_deep_returns_503_when_database_fails(monkeypatch: Any) -> None:
     payload = response.get_json()
     assert payload["status"] == "degraded"
     assert payload["checks"]["database"]["ok"] is False
+    assert payload["checks"]["database"]["runtime"]["mode"] == "sqlite-local"
+    assert payload["checks"]["database"]["runtime"]["isEphemeralRisk"] is True
     assert "db unavailable" in str(payload["checks"]["database"]["error"])
+
+
+class _RemoteDB:
+    local_db = False
+
+    def get_user_auth(self, email: str) -> None:
+        assert email == "healthcheck@example.com"
+        return None
+
+
+def test_health_deep_reports_remote_database_mode(monkeypatch: Any) -> None:
+    monkeypatch.setattr(webapp_module, "database", _RemoteDB())
+    monkeypatch.setattr(webapp_module, "_google_oauth_client_id", lambda: "")
+    monkeypatch.setattr(webapp_module, "_google_oauth_redirect_scheme", lambda: "arvee")
+
+    client = webapp_module.app.test_client()
+    response = client.get("/api/health/deep")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["checks"]["database"]["runtime"]["mode"] == "remote-sql"
+    assert payload["checks"]["database"]["runtime"]["isEphemeralRisk"] is False

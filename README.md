@@ -105,6 +105,11 @@ Initial production hardening is now included for container deployment.
 2. Start with Gunicorn:
     `gunicorn -c gunicorn.conf.py backend_app:app`
 
+Deployment verification helper:
+
+- Run `scripts/verify_deployment.sh https://YOUR_SERVICE_URL` after each Cloud Run rollout.
+- Add `--require-google` when Google OAuth must be enabled in that environment.
+
 ### Runtime Environment Variables
 
 - `ARVEE_PORT` (default: `7860`)
@@ -116,6 +121,9 @@ Initial production hardening is now included for container deployment.
 - `ARVEE_DB_CONNECT_TIMEOUT` (default: `5`; remote DB connect timeout seconds)
 - `ARVEE_DB_POOL_TIMEOUT` (default: `15`; SQLAlchemy pool checkout timeout seconds)
 - `ARVEE_REQUIRE_USER_ID` (default: `false`; when `true`, requires `X-User-Id` header on session/validate endpoints)
+- `ARVEE_AUTH_RATE_LIMIT_ENABLED` (default: `false`; enables per-IP auth endpoint throttling)
+- `ARVEE_AUTH_RATE_LIMIT_MAX_REQUESTS` (default: `20`; max auth attempts within rate-limit window)
+- `ARVEE_AUTH_RATE_LIMIT_WINDOW_SECONDS` (default: `60`; auth rate-limit rolling window)
 - `GEMINI_API_KEY` (required for LLM calls)
 - `ARVEE_GOOGLE_OAUTH_CLIENT_ID` (or `GOOGLE_OAUTH_CLIENT_ID`) for Google sign-in
 - `ARVEE_GOOGLE_OAUTH_CLIENT_ID_FILE` (or `GOOGLE_OAUTH_CLIENT_ID_FILE`) path to a file containing the OAuth client ID
@@ -145,6 +153,7 @@ Current classes include:
 - `schema_mismatch`
 - `auth_token_expired`
 - `auth_token_invalid`
+- `rate_limited`
 - `internal_error`
 
 ### Docker Run
