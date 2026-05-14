@@ -3,8 +3,18 @@ from datetime import datetime
 from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship, declarative_base
 
-
 Base = declarative_base()
+
+
+class UserAuth(Base):
+    """ORM model for basic email/password authentication accounts."""
+
+    __tablename__ = "user_auth"
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String(320), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class Session(Base):

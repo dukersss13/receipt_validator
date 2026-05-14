@@ -7,7 +7,14 @@ import pandas as pd
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.data.db_schema import Base, Session, Transaction, Proof, SessionState
+from src.data.db_schema import (
+    Base,
+    Proof,
+    Session,
+    SessionState,
+    Transaction,
+    UserAuth,
+)
 
 
 class DataBase:
@@ -214,6 +221,38 @@ class DataBase:
 
             return session_obj
 
+    @staticmethod
+    def _normalize_email(email: str) -> str:
+        normalized = str(email).strip().lower()
+        if not normalized or "@" not in normalized:
+            raise ValueError("A valid email address is required.")
+        return normalized
+
+    def create_user_auth(self, email: str, password_hash: str) -> UserAuth:
+        """Create an auth account and return the stored user row."""
+        normalized_email = self._normalize_email(email)
+        if not str(password_hash).strip():
+            raise ValueError("password_hash cannot be empty.")
+
+        with self.SessionLocal() as db:
+            existing = (
+                db.query(UserAuth).filter(UserAuth.email == normalized_email).first()
+            )
+            if existing is not None:
+                raise ValueError("An account with that email already exists.")
+
+            user = UserAuth(email=normalized_email, password_hash=password_hash)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            return user
+
+    def get_user_auth(self, email: str) -> UserAuth | None:
+        """Fetch an auth account by normalized email."""
+        normalized_email = self._normalize_email(email)
+        with self.SessionLocal() as db:
+            return db.query(UserAuth).filter(UserAuth.email == normalized_email).first()
+
     def save_session_inputs(
         self,
         session_id: str,
@@ -413,6 +452,7 @@ class DataBase:
             db.query(Proof).delete()
             db.query(Transaction).delete()
             db.query(Session).delete()
+            db.query(UserAuth).delete()
             db.commit()
 
     def save_session_state(

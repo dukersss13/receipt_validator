@@ -12,7 +12,9 @@ from queue import Queue
 from typing import Any
 
 import pandas as pd
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from flask import Flask, Response, jsonify, render_template, request, send_file
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from src.data.database import DataBase
 from src.agents.router_agent import RouterAgent
@@ -28,16 +30,58 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 
 def _request_user_id() -> str:
-    """Resolve user identity from headers with optional strict enforcement."""
+    """Resolve user identity from bearer token first, then fallback headers."""
+    auth_header = str(request.headers.get("Authorization", "")).strip()
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+        if token:
+            return _verify_access_token(token)
+
     user_id = str(request.headers.get("X-User-Id", "")).strip()
     if user_id:
         return user_id
 
     if _env_flag("ARVEE_REQUIRE_USER_ID", default=False):
-        raise ValueError("Missing X-User-Id header.")
+        raise ValueError("Missing authentication. Provide bearer token or X-User-Id.")
 
     # Dev-friendly fallback for local testing when auth is not wired yet.
     return "anonymous"
+
+
+def _is_auth_error(exc: ValueError) -> bool:
+    text = str(exc).lower()
+    return "authentication" in text or "x-user-id" in text or "token" in text
+
+
+def _auth_serializer() -> URLSafeTimedSerializer:
+    secret = str(os.getenv("ARVEE_AUTH_SECRET", "")).strip()
+    if not secret:
+        # Dev fallback only; set ARVEE_AUTH_SECRET in production.
+        secret = "arvee-dev-auth-secret"
+    return URLSafeTimedSerializer(secret_key=secret, salt="arvee-auth-v1")
+
+
+def _create_access_token(user_id: str) -> str:
+    payload = {
+        "sub": str(user_id).strip().lower(),
+        "iat": int(datetime.utcnow().timestamp()),
+    }
+    return _auth_serializer().dumps(payload)
+
+
+def _verify_access_token(token: str) -> str:
+    max_age_seconds = int(os.getenv("ARVEE_AUTH_TOKEN_MAX_AGE", "604800"))
+    try:
+        payload = _auth_serializer().loads(token, max_age=max_age_seconds)
+    except SignatureExpired as exc:
+        raise ValueError("Authentication token expired.") from exc
+    except BadSignature as exc:
+        raise ValueError("Invalid authentication token.") from exc
+
+    user_id = str(payload.get("sub", "")).strip().lower()
+    if not user_id:
+        raise ValueError("Invalid authentication token payload.")
+    return user_id
 
 
 def _build_database() -> DataBase:
@@ -430,6 +474,59 @@ def health():
     return jsonify({"status": "ok"})
 
 
+@app.post("/api/auth/signup")
+def auth_signup():
+    payload = request.get_json(silent=True) or {}
+    email = str(payload.get("email", "")).strip().lower()
+    password = str(payload.get("password", ""))
+
+    if not email or "@" not in email:
+        return jsonify({"error": "A valid email is required."}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters."}), 400
+
+    try:
+        user = database.create_user_auth(email, generate_password_hash(password))
+    except ValueError as exc:
+        status = 409 if "already exists" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    except Exception as exc:
+        return jsonify({"error": f"Failed to create account: {exc}"}), 500
+
+    token = _create_access_token(user.email)
+    return jsonify({"token": token, "user": {"email": user.email}})
+
+
+@app.post("/api/auth/login")
+def auth_login():
+    payload = request.get_json(silent=True) or {}
+    email = str(payload.get("email", "")).strip().lower()
+    password = str(payload.get("password", ""))
+
+    if not email or not password:
+        return jsonify({"error": "email and password are required."}), 400
+
+    try:
+        user = database.get_user_auth(email)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if user is None or not check_password_hash(user.password_hash, password):
+        return jsonify({"error": "Invalid email or password."}), 401
+
+    token = _create_access_token(user.email)
+    return jsonify({"token": token, "user": {"email": user.email}})
+
+
+@app.get("/api/auth/me")
+def auth_me():
+    try:
+        user_id = _request_user_id()
+        return jsonify({"user": {"id": user_id, "email": user_id}})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 401
+
+
 @app.post("/api/session/new")
 def new_session():
     """Create a new session and return its ID."""
@@ -451,7 +548,7 @@ def get_session_inputs(session_id: str):
             session_id, user_id=user_id
         )
     except ValueError as exc:
-        status = 401 if "Missing X-User-Id" in str(exc) else 404
+        status = 401 if _is_auth_error(exc) else 404
         return jsonify({"error": str(exc)}), status
     except Exception as exc:
         return jsonify({"error": f"Failed to load session: {exc}"}), 500
@@ -493,7 +590,7 @@ def save_session_state(session_id: str):
 
         database.save_session_state(session_id, merged_state, user_id=user_id)
     except ValueError as exc:
-        status = 401 if "Missing X-User-Id" in str(exc) else 400
+        status = 401 if _is_auth_error(exc) else 400
         return jsonify({"error": str(exc)}), status
     except Exception as exc:
         return jsonify({"error": f"Failed to save session: {exc}"}), 500
@@ -508,7 +605,7 @@ def get_session_state(session_id: str):
         user_id = _request_user_id()
         state = database.load_session_state(session_id, user_id=user_id)
     except ValueError as exc:
-        status = 401 if "Missing X-User-Id" in str(exc) else 404
+        status = 401 if _is_auth_error(exc) else 404
         return jsonify({"error": str(exc)}), status
     except Exception as exc:
         return jsonify({"error": f"Failed to load session state: {exc}"}), 500
@@ -756,7 +853,7 @@ def validate():
         )
         return jsonify(payload)
     except ValueError as exc:
-        status = 401 if "Missing X-User-Id" in str(exc) else 400
+        status = 401 if _is_auth_error(exc) else 400
         return jsonify({"error": str(exc)}), status
     except Exception as exc:
         return jsonify({"error": f"Validation failed: {exc}"}), 500
