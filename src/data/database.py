@@ -7,7 +7,14 @@ import pandas as pd
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.data.db_schema import Base, Session, Transaction, Proof, SessionState
+from src.data.db_schema import (
+    Base,
+    Proof,
+    Session,
+    SessionState,
+    Transaction,
+    UserAuth,
+)
 
 
 class DataBase:
@@ -52,19 +59,36 @@ class DataBase:
                 os.makedirs(parent_dir, exist_ok=True)
 
             db_exists = os.path.exists(self.db_path)
-            self.engine = create_engine(f"sqlite:///{self.db_path}", echo=echo)
+            self.engine = create_engine(
+                f"sqlite:///{self.db_path}",
+                echo=echo,
+                connect_args={"timeout": 30, "check_same_thread": False},
+            )
 
             if reset_db:
                 Base.metadata.drop_all(bind=self.engine)
 
             Base.metadata.create_all(bind=self.engine)
 
+            # Improve read/write concurrency for SQLite in local/dev mode.
+            with self.engine.begin() as conn:
+                conn.exec_driver_sql("PRAGMA journal_mode=WAL;")
+                conn.exec_driver_sql("PRAGMA synchronous=NORMAL;")
+                conn.exec_driver_sql("PRAGMA foreign_keys=ON;")
+
             if db_exists:
                 print(f"📂 Found existing database '{self.db_path}'.")
             else:
                 print(f"🆕 Creating new database '{self.db_path}'.")
         else:
-            self.engine = create_engine(engine_name, echo=echo)
+            self.engine = create_engine(
+                engine_name,
+                echo=echo,
+                pool_size=20,
+                max_overflow=40,
+                pool_pre_ping=True,
+                pool_recycle=3600,
+            )
             if reset_db:
                 Base.metadata.drop_all(bind=self.engine)
             Base.metadata.create_all(bind=self.engine)
@@ -186,8 +210,48 @@ class DataBase:
                 db.add(session_obj)
                 db.commit()
                 db.refresh(session_obj)
+            elif user_id and session_obj.user_id and session_obj.user_id != user_id:
+                raise ValueError(
+                    f"Session '{normalized_session_id}' does not belong to user '{user_id}'."
+                )
+            elif user_id and not session_obj.user_id:
+                session_obj.user_id = user_id
+                db.commit()
+                db.refresh(session_obj)
 
             return session_obj
+
+    @staticmethod
+    def _normalize_email(email: str) -> str:
+        normalized = str(email).strip().lower()
+        if not normalized or "@" not in normalized:
+            raise ValueError("A valid email address is required.")
+        return normalized
+
+    def create_user_auth(self, email: str, password_hash: str) -> UserAuth:
+        """Create an auth account and return the stored user row."""
+        normalized_email = self._normalize_email(email)
+        if not str(password_hash).strip():
+            raise ValueError("password_hash cannot be empty.")
+
+        with self.SessionLocal() as db:
+            existing = (
+                db.query(UserAuth).filter(UserAuth.email == normalized_email).first()
+            )
+            if existing is not None:
+                raise ValueError("An account with that email already exists.")
+
+            user = UserAuth(email=normalized_email, password_hash=password_hash)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            return user
+
+    def get_user_auth(self, email: str) -> UserAuth | None:
+        """Fetch an auth account by normalized email."""
+        normalized_email = self._normalize_email(email)
+        with self.SessionLocal() as db:
+            return db.query(UserAuth).filter(UserAuth.email == normalized_email).first()
 
     def save_session_inputs(
         self,
@@ -195,6 +259,7 @@ class DataBase:
         transaction_data: pd.DataFrame,
         proof_data: pd.DataFrame,
         replace_existing: bool = True,
+        user_id: str | None = None,
     ) -> None:
         """
         Persist transaction and proof DataFrames for a given session.
@@ -228,8 +293,15 @@ class DataBase:
             )
 
             if session_obj is None:
-                session_obj = Session(session_id=normalized_session_id)
+                session_obj = Session(session_id=normalized_session_id, user_id=user_id)
                 db.add(session_obj)
+                db.flush()
+            elif user_id and session_obj.user_id and session_obj.user_id != user_id:
+                raise ValueError(
+                    f"Session '{normalized_session_id}' does not belong to user '{user_id}'."
+                )
+            elif user_id and not session_obj.user_id:
+                session_obj.user_id = user_id
                 db.flush()
 
             if replace_existing:
@@ -263,7 +335,7 @@ class DataBase:
             db.commit()
 
     def load_session_history(
-        self, session_id: str
+        self, session_id: str, user_id: str | None = None
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Load both transaction and proof history for a given external session ID.
@@ -283,11 +355,13 @@ class DataBase:
             raise ValueError("session_id cannot be empty.")
 
         with self.SessionLocal() as db:
-            session_obj = (
-                db.query(Session)
-                .filter(Session.session_id == normalized_session_id)
-                .first()
+            query = db.query(Session).filter(
+                Session.session_id == normalized_session_id
             )
+            if user_id is not None:
+                query = query.filter(Session.user_id == user_id)
+
+            session_obj = query.first()
 
             if session_obj is None:
                 raise ValueError(f"Session '{normalized_session_id}' not found")
@@ -378,9 +452,12 @@ class DataBase:
             db.query(Proof).delete()
             db.query(Transaction).delete()
             db.query(Session).delete()
+            db.query(UserAuth).delete()
             db.commit()
 
-    def save_session_state(self, session_id: str, state: dict) -> None:
+    def save_session_state(
+        self, session_id: str, state: dict, user_id: str | None = None
+    ) -> None:
         """
         Persist frontend/UI state for a session to support resume flows.
 
@@ -390,6 +467,7 @@ class DataBase:
         Args:
             session_id: External session identifier string.
             state: Arbitrary JSON-serialisable dict of UI state.
+            user_id: Optional owning user for session scoping.
 
         Raises:
             ValueError: If *session_id* is empty or *state* is not a dict.
@@ -408,8 +486,15 @@ class DataBase:
             )
 
             if session_obj is None:
-                session_obj = Session(session_id=normalized_session_id)
+                session_obj = Session(session_id=normalized_session_id, user_id=user_id)
                 db.add(session_obj)
+                db.flush()
+            elif user_id and session_obj.user_id and session_obj.user_id != user_id:
+                raise ValueError(
+                    f"Session '{normalized_session_id}' does not belong to user '{user_id}'."
+                )
+            elif user_id and not session_obj.user_id:
+                session_obj.user_id = user_id
                 db.flush()
 
             state_obj = (
@@ -432,7 +517,9 @@ class DataBase:
 
             db.commit()
 
-    def load_session_state(self, session_id: str) -> dict | None:
+    def load_session_state(
+        self, session_id: str, user_id: str | None = None
+    ) -> dict | None:
         """
         Load previously saved frontend/UI state for a session.
 
@@ -451,11 +538,13 @@ class DataBase:
             raise ValueError("session_id cannot be empty.")
 
         with self.SessionLocal() as db:
-            session_obj = (
-                db.query(Session)
-                .filter(Session.session_id == normalized_session_id)
-                .first()
+            query = db.query(Session).filter(
+                Session.session_id == normalized_session_id
             )
+            if user_id is not None:
+                query = query.filter(Session.user_id == user_id)
+
+            session_obj = query.first()
 
             if session_obj is None:
                 raise ValueError(f"Session '{normalized_session_id}' not found")

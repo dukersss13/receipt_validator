@@ -52,7 +52,24 @@ To get started, you will need to install:
 
 1. IDE of choice ([VSCode](https://code.visualstudio.com/download) recommended)
 2. [Docker](https://www.docker.com/products/docker-desktop/) 
-3. Generate a Gemini API key and store it under **secrets/google_gemini_api_key** (or set `GEMINI_API_KEY`).
+3. Generate a Gemini API key and set `GEMINI_API_KEY` via environment.
+
+### Local Environment Configuration
+
+Use a local `.env` file for development only:
+
+1. Create local env file:
+    `cp .env.example .env`
+2. Fill in required values (at minimum `GEMINI_API_KEY`).
+3. Load variables in your shell before running the app:
+    `set -a; source .env; set +a`
+
+Do not commit `.env` or any real secret files.
+
+### Production Secrets (GCP)
+
+For Cloud Run deployments, store secrets in Secret Manager and inject them at deploy time.
+Do not mount or commit secret files in production images.
 
 ### ArVee in Action 💻
 Refer to [this](md/application.md) to see the application's UI and workflow.
@@ -73,6 +90,38 @@ This repository now includes a custom website UI powered by Flask.
 
 The website supports session generation, uploading transaction/proof files, running validation, viewing results tables, and downloading validated CSV records.
 Each session can be saved and loaded via a Session ID (`session_id`), and extracted transaction/proof inputs are persisted so previous sessions can be restored in the UI.
+
+## Always-On Backend (Phase 1)
+
+Initial production hardening is now included for container deployment.
+
+1. Install/update dependencies:
+    `pip install -r requirements.txt`
+2. Start with Gunicorn:
+    `gunicorn -c gunicorn.conf.py webui.app:app`
+
+### Runtime Environment Variables
+
+- `ARVEE_PORT` (default: `7860`)
+- `ARVEE_HOST` (default: `0.0.0.0` for local launchers)
+- `ARVEE_DEBUG` (default: `false`)
+- `ARVEE_DB_URL` (optional, SQLAlchemy URL for remote DB; when unset uses local SQLite)
+- `ARVEE_LOCAL_DB_NAME` (default: `receipt_validator_db`)
+- `ARVEE_DB_ECHO` (default: `false`)
+- `ARVEE_REQUIRE_USER_ID` (default: `false`; when `true`, requires `X-User-Id` header on session/validate endpoints)
+- `GEMINI_API_KEY` (required for LLM calls)
+
+### Docker Run
+
+1. Build image:
+    `docker build -t arvee-backend:latest .`
+2. Run container:
+    `docker run --rm -p 7860:7860 -e ARVEE_PORT=7860 arvee-backend:latest`
+
+### Multi-User Header (Current Step)
+
+For user-scoped session access, include an `X-User-Id` header in API requests.
+If `ARVEE_REQUIRE_USER_ID=true`, requests without this header are rejected.
 
 
  ## 📌 TODO

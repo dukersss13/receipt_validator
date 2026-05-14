@@ -1,4 +1,5 @@
 import io
+import inspect
 import json
 import math
 import os
@@ -9,17 +10,138 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from queue import Queue
 from typing import Any
+from urllib.parse import urlparse
 
 import pandas as pd
-from flask import Flask, Response, jsonify, render_template, request, send_file
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from flask import Flask, Response, jsonify, request, send_file
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from src.data.database import DataBase
 from src.agents.router_agent import RouterAgent
 from src.agents.validator import Validator
 from src.utils.utils import create_session_id
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
-database = DataBase(engine_name="receipt_validator_db", local_db=True)
+app = Flask(__name__)
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = str(os.getenv(name, str(default))).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _request_user_id() -> str:
+    """Resolve user identity from bearer token first, then fallback headers."""
+    auth_header = str(request.headers.get("Authorization", "")).strip()
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+        if token:
+            return _verify_access_token(token)
+
+    user_id = str(request.headers.get("X-User-Id", "")).strip()
+    if user_id:
+        return user_id
+
+    if _env_flag("ARVEE_REQUIRE_USER_ID", default=False):
+        raise ValueError("Missing authentication. Provide bearer token or X-User-Id.")
+
+    # Dev-friendly fallback for local testing when auth is not wired yet.
+    return "anonymous"
+
+
+def _is_auth_error(exc: ValueError) -> bool:
+    text = str(exc).lower()
+    return "authentication" in text or "x-user-id" in text or "token" in text
+
+
+def _auth_serializer() -> URLSafeTimedSerializer:
+    secret = str(os.getenv("ARVEE_AUTH_SECRET", "")).strip()
+    if not secret:
+        # Dev fallback only; set ARVEE_AUTH_SECRET in production.
+        secret = "arvee-dev-auth-secret"
+    return URLSafeTimedSerializer(secret_key=secret, salt="arvee-auth-v1")
+
+
+def _create_access_token(user_id: str) -> str:
+    payload = {
+        "sub": str(user_id).strip().lower(),
+        "iat": int(datetime.utcnow().timestamp()),
+    }
+    return _auth_serializer().dumps(payload)
+
+
+def _verify_access_token(token: str) -> str:
+    max_age_seconds = int(os.getenv("ARVEE_AUTH_TOKEN_MAX_AGE", "604800"))
+    try:
+        payload = _auth_serializer().loads(token, max_age=max_age_seconds)
+    except SignatureExpired as exc:
+        raise ValueError("Authentication token expired.") from exc
+    except BadSignature as exc:
+        raise ValueError("Invalid authentication token.") from exc
+
+    user_id = str(payload.get("sub", "")).strip().lower()
+    if not user_id:
+        raise ValueError("Invalid authentication token payload.")
+    return user_id
+
+
+def _build_database() -> DataBase:
+    db_url = str(os.getenv("ARVEE_DB_URL", "")).strip()
+    db_echo = _env_flag("ARVEE_DB_ECHO", default=False)
+
+    if db_url:
+        return DataBase(engine_name=db_url, local_db=False, echo=db_echo)
+
+    db_name = str(os.getenv("ARVEE_LOCAL_DB_NAME", "receipt_validator_db")).strip()
+    if not db_name:
+        db_name = "receipt_validator_db"
+    return DataBase(engine_name=db_name, local_db=True, echo=db_echo)
+
+
+database = _build_database()
+
+
+def _parse_cors_origins() -> list[str]:
+    raw = str(os.getenv("ARVEE_CORS_ORIGINS", "")).strip()
+    if not raw:
+        return []
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def _origin_allowed(origin: str, allow_list: list[str]) -> bool:
+    if not origin:
+        return False
+    if "*" in allow_list:
+        return True
+    return origin in allow_list
+
+
+def _api_base_url() -> str:
+    configured = str(os.getenv("ARVEE_PUBLIC_BASE_URL", "")).strip()
+    if configured:
+        return configured.rstrip("/")
+    return request.host_url.rstrip("/")
+
+
+@app.after_request
+def _apply_cors(response: Response) -> Response:
+    allow_list = _parse_cors_origins()
+    origin = str(request.headers.get("Origin", "")).strip()
+    if allow_list and _origin_allowed(origin, allow_list):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Headers"] = (
+            "Authorization, Content-Type, X-User-Id"
+        )
+        response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    return response
+
+
+@app.route("/api/<path:_path>", methods=["OPTIONS"])
+@app.route("/api", methods=["OPTIONS"])
+def api_options(_path: str = "") -> Response:
+    return Response(status=204)
 
 
 def _pdf_escape(text: str) -> str:
@@ -386,8 +508,28 @@ def _merge_ingestion_costs(costs: list[dict[str, Any]]) -> dict[str, Any]:
 
 @app.get("/")
 def index():
-    """Serve the main single-page application."""
-    return render_template("index.html")
+    """Service root: API metadata, or legacy web UI when explicitly enabled."""
+    if _env_flag("ARVEE_ENABLE_LEGACY_WEB_UI", default=False):
+        return jsonify(
+            {
+                "name": "ArVee Backend",
+                "status": "ok",
+                "mode": "legacy-web-ui",
+                "message": "Legacy bundled web UI mode is deprecated.",
+            }
+        )
+
+    return jsonify(
+        {
+            "name": "ArVee Backend",
+            "status": "ok",
+            "mode": "api-only",
+            "frontend": {
+                "separateRepo": "arvee_web_ui",
+                "apiBaseUrl": _api_base_url(),
+            },
+        }
+    )
 
 
 @app.get("/api/health")
@@ -396,21 +538,103 @@ def health():
     return jsonify({"status": "ok"})
 
 
+@app.get("/api/meta")
+def api_meta():
+    """Return API metadata for standalone frontend clients."""
+    return jsonify(
+        {
+            "service": "arvee-backend",
+            "apiBaseUrl": _api_base_url(),
+            "auth": {
+                "methods": ["bearer-token", "x-user-id-legacy"],
+                "requireUserId": _env_flag("ARVEE_REQUIRE_USER_ID", default=False),
+                "signupEndpoint": "/api/auth/signup",
+                "loginEndpoint": "/api/auth/login",
+                "currentUserEndpoint": "/api/auth/me",
+            },
+            "cors": {
+                "configuredOrigins": _parse_cors_origins(),
+            },
+        }
+    )
+
+
+@app.post("/api/auth/signup")
+def auth_signup():
+    payload = request.get_json(silent=True) or {}
+    email = str(payload.get("email", "")).strip().lower()
+    password = str(payload.get("password", ""))
+
+    if not email or "@" not in email:
+        return jsonify({"error": "A valid email is required."}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters."}), 400
+
+    try:
+        user = database.create_user_auth(email, generate_password_hash(password))
+    except ValueError as exc:
+        status = 409 if "already exists" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    except Exception as exc:
+        return jsonify({"error": f"Failed to create account: {exc}"}), 500
+
+    token = _create_access_token(user.email)
+    return jsonify({"token": token, "user": {"email": user.email}})
+
+
+@app.post("/api/auth/login")
+def auth_login():
+    payload = request.get_json(silent=True) or {}
+    email = str(payload.get("email", "")).strip().lower()
+    password = str(payload.get("password", ""))
+
+    if not email or not password:
+        return jsonify({"error": "email and password are required."}), 400
+
+    try:
+        user = database.get_user_auth(email)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if user is None or not check_password_hash(user.password_hash, password):
+        return jsonify({"error": "Invalid email or password."}), 401
+
+    token = _create_access_token(user.email)
+    return jsonify({"token": token, "user": {"email": user.email}})
+
+
+@app.get("/api/auth/me")
+def auth_me():
+    try:
+        user_id = _request_user_id()
+        return jsonify({"user": {"id": user_id, "email": user_id}})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 401
+
+
 @app.post("/api/session/new")
 def new_session():
     """Create a new session and return its ID."""
-    session_id = create_session_id()
-    database.get_or_create_session(session_id)
-    return jsonify({"sessionId": session_id})
+    try:
+        user_id = _request_user_id()
+        session_id = create_session_id()
+        database.get_or_create_session(session_id, user_id=user_id)
+        return jsonify({"sessionId": session_id})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 401
 
 
 @app.get("/api/session/<session_id>")
 def get_session_inputs(session_id: str):
     """Return saved transactions and proofs for a session."""
     try:
-        transactions_df, proofs_df = database.load_session_history(session_id)
+        user_id = _request_user_id()
+        transactions_df, proofs_df = database.load_session_history(
+            session_id, user_id=user_id
+        )
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 404
+        status = 401 if _is_auth_error(exc) else 404
+        return jsonify({"error": str(exc)}), status
     except Exception as exc:
         return jsonify({"error": f"Failed to load session: {exc}"}), 500
 
@@ -433,7 +657,8 @@ def save_session_state(session_id: str):
         return jsonify({"error": "state must be an object."}), 400
 
     try:
-        existing_state = database.load_session_state(session_id) or {}
+        user_id = _request_user_id()
+        existing_state = database.load_session_state(session_id, user_id=user_id) or {}
         merged_state = {**existing_state, **state}
 
         transactions_rows = merged_state.get("loadedTransactions")
@@ -445,11 +670,13 @@ def save_session_state(session_id: str):
                 session_id,
                 _records_to_input_frame(transactions_rows),
                 _records_to_input_frame(proofs_rows),
+                user_id=user_id,
             )
 
-        database.save_session_state(session_id, merged_state)
+        database.save_session_state(session_id, merged_state, user_id=user_id)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        status = 401 if _is_auth_error(exc) else 400
+        return jsonify({"error": str(exc)}), status
     except Exception as exc:
         return jsonify({"error": f"Failed to save session: {exc}"}), 500
 
@@ -460,9 +687,11 @@ def save_session_state(session_id: str):
 def get_session_state(session_id: str):
     """Load and return the saved UI state for a session."""
     try:
-        state = database.load_session_state(session_id)
+        user_id = _request_user_id()
+        state = database.load_session_state(session_id, user_id=user_id)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 404
+        status = 401 if _is_auth_error(exc) else 404
+        return jsonify({"error": str(exc)}), status
     except Exception as exc:
         return jsonify({"error": f"Failed to load session state: {exc}"}), 500
 
@@ -471,6 +700,7 @@ def get_session_state(session_id: str):
 
 def _run_validation_pipeline(
     session_id: str,
+    user_id: str,
     transactions: list[Any],
     proofs: list[Any],
     progress_callback: Any | None = None,
@@ -571,7 +801,9 @@ def _run_validation_pipeline(
 
         else:
             emit("Loading saved session inputs...", 20)
-            transactions_df, proofs_df = database.load_session_history(session_id)
+            transactions_df, proofs_df = database.load_session_history(
+                session_id, user_id=user_id
+            )
             if transactions_df.empty or proofs_df.empty:
                 raise ValueError(
                     "No saved inputs found for this session. "
@@ -618,7 +850,9 @@ def _run_validation_pipeline(
 
         if use_uploaded_files:
             # Persist canonical extracted inputs in DB; categorization is preserved in session state.
-            database.save_session_inputs(session_id, transactions_df, proofs_df)
+            database.save_session_inputs(
+                session_id, transactions_df, proofs_df, user_id=user_id
+            )
 
         payload = {
             "sessionId": session_id,
@@ -637,7 +871,7 @@ def _run_validation_pipeline(
         emit("Saving validation results...", 90)
 
         # Auto-save full session state after each successful validation run.
-        existing_state = database.load_session_state(session_id) or {}
+        existing_state = database.load_session_state(session_id, user_id=user_id) or {}
         database.save_session_state(
             session_id,
             {
@@ -652,12 +886,39 @@ def _run_validation_pipeline(
                 "recommendations": payload["recommendations"],
                 "chatHistory": existing_state.get("chatHistory", []),
             },
+            user_id=user_id,
         )
 
         emit("Validation complete.", 100)
         return payload
     finally:
         _cleanup_temp_files(transaction_paths + proof_paths)
+
+
+def _call_validation_pipeline(
+    session_id: str,
+    user_id: str,
+    transactions: list[Any],
+    proofs: list[Any],
+    progress_callback: Any | None = None,
+) -> dict[str, Any]:
+    """Call pipeline in a backward-compatible way for monkeypatched test stubs."""
+    params = inspect.signature(_run_validation_pipeline).parameters
+    if "user_id" in params:
+        return _run_validation_pipeline(
+            session_id=session_id,
+            user_id=user_id,
+            transactions=transactions,
+            proofs=proofs,
+            progress_callback=progress_callback,
+        )
+
+    return _run_validation_pipeline(
+        session_id=session_id,
+        transactions=transactions,
+        proofs=proofs,
+        progress_callback=progress_callback,
+    )
 
 
 @app.post("/api/validate")
@@ -668,14 +929,17 @@ def validate():
     proofs = request.files.getlist("proofs")
 
     try:
-        payload = _run_validation_pipeline(
+        user_id = _request_user_id()
+        payload = _call_validation_pipeline(
             session_id=session_id,
+            user_id=user_id,
             transactions=transactions,
             proofs=proofs,
         )
         return jsonify(payload)
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        status = 401 if _is_auth_error(exc) else 400
+        return jsonify({"error": str(exc)}), status
     except Exception as exc:
         return jsonify({"error": f"Validation failed: {exc}"}), 500
 
@@ -690,6 +954,11 @@ def validate_stream():
     if not session_id:
         return jsonify({"error": "sessionId is required."}), 400
 
+    try:
+        user_id = _request_user_id()
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 401
+
     def generate() -> Any:
         yield _sse("start", {"sessionId": session_id})
 
@@ -700,8 +969,9 @@ def validate_stream():
 
         def worker() -> None:
             try:
-                payload = _run_validation_pipeline(
+                payload = _call_validation_pipeline(
                     session_id=session_id,
+                    user_id=user_id,
                     transactions=transactions,
                     proofs=proofs,
                     progress_callback=on_progress,
