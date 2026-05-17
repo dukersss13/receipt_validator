@@ -1,15 +1,21 @@
 """Launch the UI with a pre-populated mock session for testing the AgentTools."""
 
+import functools
+import http.server
+import os
 import random
+import socket
+import socketserver
 import threading
 import webbrowser
-import os
-import socket
 from datetime import date, timedelta
 
 import pandas as pd
 
 TEST_SESSION_ID = "test-session-001"
+DEFAULT_BACKEND_PORT = 7860
+DEFAULT_FRONTEND_PORT = 8000
+DEFAULT_WEBUI_DIR = os.path.join(os.path.dirname(__file__), "..", "arvee_web_ui")
 
 BUSINESSES = [
     ("Starbucks", "Food & Drink"),
@@ -63,7 +69,7 @@ def _mock_validated_transactions(count: int = 500) -> list[dict]:
     return rows
 
 
-def seed_test_session(database) -> str:
+def seed_test_session(database, user_id: str = "anonymous") -> str:
     """Create (or overwrite) a test session in the database."""
     validated = _mock_validated_transactions(500)
     transactions_df = pd.DataFrame(
@@ -89,9 +95,14 @@ def seed_test_session(database) -> str:
         ]
     )
 
-    database.get_or_create_session(TEST_SESSION_ID)
+    database.get_or_create_session(TEST_SESSION_ID, user_id=user_id)
     # Seed canonical inputs so /api/session/<id> can always load rows.
-    database.save_session_inputs(TEST_SESSION_ID, transactions_df, proofs_df)
+    database.save_session_inputs(
+        TEST_SESSION_ID,
+        transactions_df,
+        proofs_df,
+        user_id=user_id,
+    )
     database.save_session_state(
         TEST_SESSION_ID,
         {
@@ -131,7 +142,7 @@ def seed_test_session(database) -> str:
     return TEST_SESSION_ID
 
 
-def _resolve_port(default_port: int = 7860) -> int:
+def _resolve_port(default_port: int = DEFAULT_BACKEND_PORT) -> int:
     """Return default_port when available, else choose an open ephemeral port."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -143,20 +154,48 @@ def _resolve_port(default_port: int = 7860) -> int:
         return int(fallback.getsockname()[1])
 
 
+class _ThreadingServer(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+
+
+def _start_static_server(directory: str, default_port: int = DEFAULT_FRONTEND_PORT) -> tuple[int, socketserver.TCPServer]:
+    port = _resolve_port(default_port)
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=directory)
+    server = _ThreadingServer(("127.0.0.1", port), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    print(f"Static web UI server listening on http://127.0.0.1:{port}")
+    return port, server
+
+
 if __name__ == "__main__":
-    # Defer heavy web app imports until script execution time.
+    backend_port = _resolve_port(DEFAULT_BACKEND_PORT)
+    frontend_port = _resolve_port(DEFAULT_FRONTEND_PORT)
+    webui_dir = os.path.normpath(DEFAULT_WEBUI_DIR)
+    static_port, _static_server = _start_static_server(webui_dir, frontend_port)
+
+    os.environ["ARVEE_CORS_ORIGINS"] = (
+        f"http://127.0.0.1:{static_port},http://localhost:{static_port}"
+    )
+    os.environ.setdefault("ARVEE_REQUIRE_USER_ID", "0")
+
     from backend_app import app, database
     from flask import redirect, request
 
-    session_id = seed_test_session(database)
-
-    port = _resolve_port(default_port=7860)
-    url = f"http://127.0.0.1:{port}?testSession={session_id}"
-    host_friendly_url = f"http://localhost:{port}?testSession={session_id}"
+    session_id = seed_test_session(database, user_id="anonymous")
+    backend_base_url = f"http://127.0.0.1:{backend_port}"
+    url = (
+        f"http://127.0.0.1:{static_port}/index.html?testSession={session_id}"
+        f"&apiBaseUrl={backend_base_url}"
+    )
+    host_friendly_url = (
+        f"http://localhost:{static_port}/index.html?testSession={session_id}"
+        f"&apiBaseUrl={backend_base_url}"
+    )
     print(f"Open this URL to auto-load seeded data: {host_friendly_url}")
     print(f"Container-local URL: {url}")
-    if port != 7860:
-        print(f"Port 7860 is busy; using fallback port {port}.")
+    if backend_port != DEFAULT_BACKEND_PORT:
+        print(f"Port {DEFAULT_BACKEND_PORT} is busy; using fallback port {backend_port}.")
 
     @app.before_request
     def _redirect_root_to_seeded_session():
@@ -168,6 +207,11 @@ if __name__ == "__main__":
             return None
         return redirect(f"/?testSession={session_id}")
 
+    debug_enabled = os.getenv("TEST_UI_DEBUG", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     auto_open_browser = os.getenv("TEST_UI_OPEN_BROWSER", "1").strip().lower() in {
         "1",
         "true",
@@ -176,9 +220,4 @@ if __name__ == "__main__":
     if auto_open_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
 
-    debug_enabled = os.getenv("TEST_UI_DEBUG", "0").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }
-    app.run(host="0.0.0.0", port=port, debug=debug_enabled, use_reloader=False)
+    app.run(host="0.0.0.0", port=backend_port, debug=debug_enabled, use_reloader=False)
