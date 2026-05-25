@@ -1,7 +1,8 @@
 import logging
 from typing import Any
+from enum import Enum
 
-from src.agents.agent_schema import AgentTool, RouterInput, RouterPlan
+from src.agents.agent_schema import Tools, RouterInput, RouterPlan
 from src.agents.agent_utils import (
     extract_first_json_object,
     normalize_aggregation_method,
@@ -13,6 +14,13 @@ from src.agents.query_cache import QueryCache
 from src.prompts.router_prompts import ROUTER_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
+
+
+class Suggestions(Enum):
+    FOOD_SPENDING = "how much did i spend on food?"
+    MOST_CATEGORY = "what's my top spending category?"
+    TOP_5 = "show my top 5 spending categories"
+    SPENDING_CHART = "chart my spending"
 
 
 class RouterAgent(LLMBase):
@@ -44,6 +52,87 @@ class RouterAgent(LLMBase):
         self._chat_history: list[dict[str, Any]] = []
         self._pending_plan: RouterPlan | None = None
 
+    @staticmethod
+    def check_suggestions(question: str) -> tuple[bool, str | None]:
+        """
+        Check if the question matches any of the predefined suggestions.
+        """
+        question_lower = question.lower()
+
+        for suggestion in Suggestions:
+            if question_lower == suggestion.value:
+                return True, suggestion.name
+
+        return False, None
+
+    @staticmethod
+    def _build_suggestion_plan(suggestion_name: str) -> RouterPlan:
+        """
+        Build a router plan for a suggested action.
+        """
+        if suggestion_name == Suggestions.FOOD_SPENDING.name:
+            plan = RouterPlan(
+                tool_name=Tools.SPENDING_BREAKDOWN,
+                tool_params={
+                    "category": "food",
+                    "this_month": False,
+                    "period": None,
+                    "aggregation_method": "sum",
+                    "top_n": 0,
+                    "include_chart": False,
+                    "chart_type": "bar",
+                },
+                needs_clarification=False,
+                confidence="high",
+            )
+        elif suggestion_name == Suggestions.MOST_CATEGORY.name:
+            plan = RouterPlan(
+                tool_name=Tools.SPENDING_BREAKDOWN,
+                tool_params={
+                    "category": "",
+                    "this_month": False,
+                    "period": None,
+                    "aggregation_method": "sum",
+                    "top_n": 1,
+                    "include_chart": False,
+                    "chart_type": "bar",
+                },
+                needs_clarification=False,
+                confidence="high",
+            )
+        elif suggestion_name == Suggestions.TOP_5.name:
+            plan = RouterPlan(
+                tool_name=Tools.SPENDING_BREAKDOWN,
+                tool_params={
+                    "category": "",
+                    "this_month": False,
+                    "period": None,
+                    "aggregation_method": "sum",
+                    "top_n": 5,
+                    "include_chart": False,
+                    "chart_type": "bar",
+                },
+                needs_clarification=False,
+                confidence="high",
+            )
+        elif suggestion_name == Suggestions.SPENDING_CHART.name:
+            plan = RouterPlan(
+                tool_name=Tools.SPENDING_BREAKDOWN,
+                tool_params={
+                    "category": "",
+                    "this_month": False,
+                    "period": None,
+                    "aggregation_method": "sum",
+                    "top_n": 0,
+                    "include_chart": True,
+                    "chart_type": "bar",
+                },
+                needs_clarification=False,
+                confidence="high",
+            )
+
+        return plan
+
     def ask(
         self,
         question: str,
@@ -73,25 +162,15 @@ class RouterAgent(LLMBase):
         cache = self._get_cache()
         data_hash = QueryCache.compute_data_hash(validated_rows)
 
+        suggestion_check, suggestion_name = RouterAgent.check_suggestions(question)
         # If we have a pending plan from a prior clarification, resolve it.
         if self._pending_plan is not None:
             plan = self._resolve_pending_plan(question)
-        elif question.strip().lower() in ("chart my spending",):
+
+        elif suggestion_check and suggestion_name is not None:
             # Deterministic shortcut: chart all validated transactions.
-            plan = RouterPlan(
-                tool_name=AgentTool.SPENDING_BREAKDOWN,
-                tool_params={
-                    "category": "",
-                    "this_month": False,
-                    "period": None,
-                    "aggregation_method": "sum",
-                    "top_n": 0,
-                    "include_chart": True,
-                    "chart_type": "bar",
-                },
-                needs_clarification=False,
-                confidence="high",
-            )
+            # Since this is a suggested action, we can take it at face value without needing clarification.
+            plan = RouterAgent._build_suggestion_plan(suggestion_name)
         else:
             plan = self.plan_with_schema(
                 RouterInput(
@@ -164,14 +243,20 @@ class RouterAgent(LLMBase):
         return result
 
     def _append_history(self, question: str, answer: str) -> None:
-        """Append a user/assistant turn and cap at ``_MAX_HISTORY`` entries."""
+        """
+        Append a user/assistant turn and cap at ``_MAX_HISTORY`` entries.
+        This ensures that the conversation history doesn't grow indefinitely.
+        """
         self._chat_history.append({"role": "user", "text": question})
         self._chat_history.append({"role": "assistant", "text": answer})
+
         if len(self._chat_history) > self._MAX_HISTORY * 2:
             self._chat_history = self._chat_history[-(self._MAX_HISTORY * 2) :]
 
     def _merge_external_history(self, external: list[dict[str, Any]]) -> None:
-        """Seed internal history from external source if internal is empty."""
+        """
+        Seed internal history from external source if internal is empty.
+        """
         if self._chat_history:
             return
         for turn in external[-(self._MAX_HISTORY * 2) :]:
@@ -195,7 +280,7 @@ class RouterAgent(LLMBase):
 
         # Case 1: Pie chart on comparison — user confirms bar graph.
         if (
-            plan.tool_name is AgentTool.COMPARE_SPENDING_PERIODS
+            plan.tool_name is Tools.COMPARE_SPENDING_PERIODS
             and plan.tool_params.get("chart_type") == "pie"
         ):
             if "bar" in answer or "yes" in answer or "sure" in answer:
@@ -264,13 +349,13 @@ class RouterAgent(LLMBase):
         """
         # Pie chart not supported for comparison.
         if (
-            plan.tool_name is AgentTool.COMPARE_SPENDING_PERIODS
+            plan.tool_name is Tools.COMPARE_SPENDING_PERIODS
             and plan.tool_params.get("chart_type") == "pie"
         ):
             return ["Yes, use a bar graph", "No chart"]
 
         # Missing periods — suggest common comparisons.
-        if plan.tool_name is AgentTool.COMPARE_SPENDING_PERIODS:
+        if plan.tool_name is Tools.COMPARE_SPENDING_PERIODS:
             return [
                 "This month vs last month",
                 "This month vs 2 months ago",
@@ -360,9 +445,9 @@ class RouterAgent(LLMBase):
         Returns:
             A validated RouterPlan constrained to supported tools and params.
         """
-        tool_name = AgentTool.from_value(
-            parsed.get("tool_name", AgentTool.SPENDING_BREAKDOWN.value),
-            default=AgentTool.SPENDING_BREAKDOWN,
+        tool_name = Tools.from_value(
+            parsed.get("tool_name", Tools.SPENDING_BREAKDOWN.value),
+            default=Tools.SPENDING_BREAKDOWN,
         )
 
         raw_params = parsed.get("tool_params", {})
@@ -390,7 +475,7 @@ class RouterAgent(LLMBase):
 
         if (
             not needs_clarification
-            and tool_name is AgentTool.COMPARE_SPENDING_PERIODS
+            and tool_name is Tools.COMPARE_SPENDING_PERIODS
             and normalized_params.get("chart_type") == "pie"
         ):
             needs_clarification = True
@@ -409,7 +494,7 @@ class RouterAgent(LLMBase):
 
     @staticmethod
     def _normalize_tool_params(
-        tool_name: AgentTool,
+        tool_name: Tools,
         tool_params: dict[str, Any],
     ) -> dict[str, Any]:
         """
@@ -428,7 +513,7 @@ class RouterAgent(LLMBase):
                 return value
             return normalize_period_token(value or default)
 
-        if tool_name is AgentTool.COMPARE_SPENDING_PERIODS:
+        if tool_name is Tools.COMPARE_SPENDING_PERIODS:
             raw_chart_type = (
                 str(tool_params.get("chart_type", "") or "").strip().lower()
             )
@@ -477,7 +562,7 @@ class RouterAgent(LLMBase):
 
     @staticmethod
     def _missing_required_params(
-        tool_name: AgentTool,
+        tool_name: Tools,
         tool_params: dict[str, Any],
     ) -> bool:
         """
@@ -490,7 +575,7 @@ class RouterAgent(LLMBase):
         Returns:
             True when required fields are missing, otherwise False.
         """
-        if tool_name is AgentTool.COMPARE_SPENDING_PERIODS:
+        if tool_name is Tools.COMPARE_SPENDING_PERIODS:
             period_1 = tool_params.get("period_1")
             period_2 = tool_params.get("period_2")
             period_1_missing = not period_1
@@ -508,7 +593,7 @@ class RouterAgent(LLMBase):
             A conservative RouterPlan that asks the user to clarify intent.
         """
         return RouterPlan(
-            tool_name=AgentTool.SPENDING_BREAKDOWN,
+            tool_name=Tools.SPENDING_BREAKDOWN,
             tool_params={
                 "category": "",
                 "this_month": False,

@@ -9,7 +9,7 @@ import threading
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 from queue import Queue
 from typing import Any
@@ -301,7 +301,7 @@ def _auth_serializer() -> URLSafeTimedSerializer:
 def _create_access_token(user_id: str) -> str:
     payload = {
         "sub": str(user_id).strip().lower(),
-        "iat": int(datetime.utcnow().timestamp()),
+        "iat": int(datetime.now(timezone.utc).timestamp()),
     }
     return _auth_serializer().dumps(payload)
 
@@ -1256,7 +1256,7 @@ def _run_validation_pipeline(
     user_id: str,
     transactions: list[Any],
     proofs: list[Any],
-    progress_callback: Any | None = None,
+    progress_callback: Any,
 ) -> dict[str, Any]:
     """Run validation and return the payload used by both JSON and SSE endpoints."""
     # Lazy import to avoid loading PDF/LLM parser stack during app startup.
@@ -1339,7 +1339,7 @@ def _run_validation_pipeline(
             ingestion_cost = _merge_ingestion_costs([txn_cost, proofs_cost])
 
             log_entry = {
-                "ts": pd.Timestamp.utcnow().isoformat(),
+                "ts": datetime.now(timezone.utc).isoformat(),
                 "sessionId": session_id,
                 "ingestion": ingestion_cost,
             }
@@ -1393,7 +1393,7 @@ def _run_validation_pipeline(
             log_file.write(
                 json.dumps(
                     {
-                        "ts": pd.Timestamp.utcnow().isoformat(),
+                        "ts": datetime.now(timezone.utc).isoformat(),
                         "sessionId": session_id,
                         "categorize": categorize_cost,
                     }
@@ -1453,7 +1453,7 @@ def _call_validation_pipeline(
     user_id: str,
     transactions: list[Any],
     proofs: list[Any],
-    progress_callback: Any | None = None,
+    progress_callback: Any = None,
 ) -> dict[str, Any]:
     """Call pipeline in a backward-compatible way for monkeypatched test stubs."""
     params = inspect.signature(_run_validation_pipeline).parameters
@@ -1465,13 +1465,8 @@ def _call_validation_pipeline(
             proofs=proofs,
             progress_callback=progress_callback,
         )
-
-    return _run_validation_pipeline(
-        session_id=session_id,
-        transactions=transactions,
-        proofs=proofs,
-        progress_callback=progress_callback,
-    )
+    else:
+        raise ValueError("user_id is missing!")
 
 
 @app.post("/api/validate")
@@ -1488,6 +1483,7 @@ def validate():
             user_id=user_id,
             transactions=transactions,
             proofs=proofs,
+            progress_callback=None,
         )
         return jsonify(payload)
     except ValueError as exc:
@@ -1619,11 +1615,11 @@ def chat_ask():
         )
         chat_history.extend(
             [
-                {"role": "user", "text": message, "ts": datetime.utcnow().isoformat()},
+                {"role": "user", "text": message, "ts": datetime.now(timezone.utc).isoformat()},
                 {
                     "role": "assistant",
                     "text": result.get("answer", ""),
-                    "ts": datetime.utcnow().isoformat(),
+                    "ts": datetime.now(timezone.utc).isoformat(),
                 },
             ]
         )
@@ -1790,12 +1786,12 @@ def chat_ask_stream():
                     {
                         "role": "user",
                         "text": message,
-                        "ts": datetime.utcnow().isoformat(),
+                        "ts": datetime.now(timezone.utc).isoformat(),
                     },
                     {
                         "role": "assistant",
                         "text": final_answer,
-                        "ts": datetime.utcnow().isoformat(),
+                        "ts": datetime.now(timezone.utc).isoformat(),
                     },
                 ]
             )

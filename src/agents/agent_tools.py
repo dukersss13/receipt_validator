@@ -4,7 +4,7 @@ from typing import Any
 
 import pandas as pd
 
-from src.agents.agent_schema import AgentTool
+from src.agents.agent_schema import Tools
 from src.agents.agent_utils import (
     MONTH_NAME_TO_NUMBER,
     category_matches,
@@ -33,36 +33,39 @@ class AgentTools:
         tool_params: dict[str, Any],
     ) -> dict[str, Any]:
         """Execute a supported tool by name and return structured output."""
-        selected_tool = AgentTool.from_value(tool_name)
+        selected_tool = Tools.from_value(tool_name)
         params = dict(tool_params or {})
 
-        if selected_tool is AgentTool.SPENDING_BREAKDOWN:
+        if selected_tool is Tools.SPENDING_BREAKDOWN:
             return self.execute_spending_breakdown(
-                category=str(params.get("category", "") or ""),
-                this_month=bool(params.get("this_month", False)),
-                aggregation_method=str(
-                    params.get("aggregation_method", "sum") or "sum"
-                ),
-                top_n=int(params.get("top_n", 0) or 0),
+                category=params.get("category", ""),
+                this_month=params.get("this_month", False),
+                aggregation_method=
+                    params.get("aggregation_method", "sum"),
+                top_n=params.get("top_n", 0),
                 period=params.get("period"),
                 include_chart=bool(params.get("include_chart", False)),
                 chart_type=str(params.get("chart_type", "bar") or "bar"),
             )
 
-        return self.execute_compare_spending_periods(
-            period_1=params.get("period_1", "this_month"),
-            period_2=params.get("period_2", "last_month"),
-            category=str(params.get("category", "") or ""),
-            aggregation_method=str(params.get("aggregation_method", "sum") or "sum"),
-            weekly_average=bool(params.get("weekly_average", False)),
-            include_chart=bool(params.get("include_chart", False)),
-        )
+        elif selected_tool is Tools.COMPARE_SPENDING_PERIODS:
+            return self.execute_compare_spending_periods(
+                period_1=params.get("period_1", "this_month"),
+                period_2=params.get("period_2", "last_month"),
+                category=params.get("category", ""),
+                aggregation_method=params.get("aggregation_method", "sum"),
+                weekly_average=params.get("weekly_average", False),
+                include_chart=params.get("include_chart", False),
+            )
+
+        return {"status": "unknown_tool"}
+
 
     @staticmethod
     def render_answer(tool_name: str, tool_output: dict[str, Any]) -> str:
         """Render deterministic answer text from a structured tool output."""
-        selected_tool = AgentTool.from_value(tool_name)
-        if selected_tool is AgentTool.COMPARE_SPENDING_PERIODS:
+        selected_tool = Tools.from_value(tool_name)
+        if selected_tool is Tools.COMPARE_SPENDING_PERIODS:
             return AgentTools._render_comparison_answer(tool_output)
         return AgentTools._render_spending_answer(tool_output)
 

@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any
 
 
-class AgentTool(str, Enum):
+class Tools(str, Enum):
     """Supported helper-agent tool identifiers."""
 
     SPENDING_BREAKDOWN = "spending_breakdown"
@@ -13,8 +13,8 @@ class AgentTool(str, Enum):
     def from_value(
         cls,
         value: Any,
-        default: "AgentTool | None" = None,
-    ) -> "AgentTool":
+        default: "Tools | None" = None,
+    ) -> "Tools":
         """Parse an arbitrary value into a supported AgentTool."""
         if isinstance(value, cls):
             return value
@@ -95,8 +95,7 @@ class RouterPlan:
         clarification_question: Concise question to ask when clarification is needed.
         confidence: Coarse confidence label for UI/telemetry usage.
     """
-
-    tool_name: AgentTool
+    tool_name: Tools
     tool_params: dict[str, Any]
     needs_clarification: bool = False
     clarification_question: str = ""
@@ -104,7 +103,7 @@ class RouterPlan:
 
     def __post_init__(self) -> None:
         """Coerce tool_name into enum value for type safety."""
-        self.tool_name = AgentTool.from_value(self.tool_name)
+        self.tool_name = Tools.from_value(self.tool_name)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable router plan dictionary."""
