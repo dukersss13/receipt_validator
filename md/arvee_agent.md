@@ -76,6 +76,7 @@ Returns top categories by sum or average using grouped aggregations across valid
 ### 3. Time-Scoped Analysis
 
 Supports time-period queries including "this month", "last month", "N months ago", and explicit `YYYY-MM` month references. Defaults to all available transactions when no timeframe is specified.
+
 <img width="483" height="697" alt="Screenshot 2026-05-08 at 11 03 26 AM" src="https://github.com/user-attachments/assets/e1a4d4bc-3308-4b8b-8f48-672bcd160c31" />
 
 
