@@ -3,27 +3,11 @@ from enum import Enum
 from typing import Any
 
 
-class Tools(str, Enum):
+class Tools(Enum):
     """Supported helper-agent tool identifiers."""
 
     SPENDING_BREAKDOWN = "spending_breakdown"
     COMPARE_SPENDING_PERIODS = "compare_spending_periods"
-
-    @classmethod
-    def from_value(
-        cls,
-        value: Any,
-        default: "Tools | None" = None,
-    ) -> "Tools":
-        """Parse an arbitrary value into a supported AgentTool."""
-        if isinstance(value, cls):
-            return value
-        token = str(value or "").strip().lower()
-        if token == cls.COMPARE_SPENDING_PERIODS.value:
-            return cls.COMPARE_SPENDING_PERIODS
-        if token == cls.SPENDING_BREAKDOWN.value:
-            return cls.SPENDING_BREAKDOWN
-        return default or cls.SPENDING_BREAKDOWN
 
 
 @dataclass(slots=True)

@@ -37,13 +37,12 @@ MONTH_NAME_TO_NUMBER: dict[str, int] = {
 def normalize_aggregation_method(aggregation_method: str) -> str:
     """Normalize aggregation aliases to ``sum`` or ``average``."""
     method = (aggregation_method or "sum").strip().lower()
-    if method in {"avg", "mean"}:
-        return "average"
-    if method in {"total"}:
-        return "sum"
-    if method in {"sum", "average"}:
-        return method
-    return "sum"
+    if method in {"avg", "mean", "average"}:
+        method = "average"
+    elif method in {"total", "sum"}:
+        method = "sum"
+
+    return method
 
 
 def normalize_period_token(period_token: Any) -> Any:

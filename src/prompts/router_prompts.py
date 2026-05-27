@@ -47,13 +47,11 @@ Supported period object patterns:
 
 Default behavior:
 - If timeframe is not specified and the question is single-period, use all transactions across all available time periods (set this_month=false and period=null/omitted).
-- If aggregation is not specified, use sum.
 - If top-N is not requested, use top_n=0.
 - Set include_chart=true when the user asks for a graph/chart/visual breakdown.
 - When include_chart=true and user mentions bar graph/bar chart, set chart_type="bar".
 - When include_chart=true and user mentions pie graph/pie chart, set chart_type="pie".
 - For compare_spending_periods, default chart_type to "grouped_bar" unless the user explicitly requests bar or pie.
-- For chart requests without explicit period comparison, prefer spending_breakdown.
 
 Return JSON object with fields:
 {

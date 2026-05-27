@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class Suggestions(Enum):
     FOOD_SPENDING = "how much did i spend on food?"
     MOST_CATEGORY = "what's my top spending category?"
-    TOP_5 = "show my top 5 spending categories"
+    TOP_5 = "show my top 5 categories"
     SPENDING_CHART = "chart my spending"
 
 
@@ -171,6 +171,7 @@ class RouterAgent(LLMBase):
             # Deterministic shortcut: chart all validated transactions.
             # Since this is a suggested action, we can take it at face value without needing clarification.
             plan = RouterAgent._build_suggestion_plan(suggestion_name)
+
         else:
             plan = self.plan_with_schema(
                 RouterInput(
@@ -211,10 +212,12 @@ class RouterAgent(LLMBase):
             return cached
 
         self.tools.set_validated_rows(validated_rows)
+
         tool_output = self.tools.execute_tool(
             tool_name=plan.tool_name.value,
             tool_params=plan.tool_params,
         )
+    
         result: dict[str, Any] = {
             "answer": AgentTools.render_answer(plan.tool_name.value, tool_output),
             "rowsScanned": len(validated_rows),
@@ -445,27 +448,28 @@ class RouterAgent(LLMBase):
         Returns:
             A validated RouterPlan constrained to supported tools and params.
         """
-        tool_name = Tools.from_value(
-            parsed.get("tool_name", Tools.SPENDING_BREAKDOWN.value),
-            default=Tools.SPENDING_BREAKDOWN,
-        )
+        tool_name = parsed.get("tool_name", None)
+        if tool_name == Tools.SPENDING_BREAKDOWN.value:
+            tool_name_enum = Tools.SPENDING_BREAKDOWN
+        elif tool_name == Tools.COMPARE_SPENDING_PERIODS.value:
+            tool_name_enum = Tools.COMPARE_SPENDING_PERIODS
+        else:
+            tool_name_enum = None
 
         raw_params = parsed.get("tool_params", {})
         if not isinstance(raw_params, dict):
             raw_params = {}
-        normalized_params = self._normalize_tool_params(tool_name, raw_params)
+        normalized_params = self._normalize_tool_params(tool_name_enum, raw_params)
 
         needs_clarification = bool(parsed.get("needs_clarification", False))
-        clarification_question = str(
-            parsed.get("clarification_question", "") or ""
-        ).strip()
+        clarification_question = str(parsed.get("clarification_question", ""))
 
-        confidence = str(parsed.get("confidence", "high") or "high").strip().lower()
+        confidence = str(parsed.get("confidence", "high"))
         if confidence not in {"high", "medium", "low"}:
             confidence = "medium"
 
         if not needs_clarification and self._missing_required_params(
-            tool_name, normalized_params
+            tool_name_enum, normalized_params
         ):
             needs_clarification = True
             clarification_question = clarification_question or (
@@ -475,7 +479,7 @@ class RouterAgent(LLMBase):
 
         if (
             not needs_clarification
-            and tool_name is Tools.COMPARE_SPENDING_PERIODS
+            and tool_name_enum is Tools.COMPARE_SPENDING_PERIODS
             and normalized_params.get("chart_type") == "pie"
         ):
             needs_clarification = True
@@ -545,17 +549,17 @@ class RouterAgent(LLMBase):
         normalized_period = normalize_period(period_value, default="this_month")
 
         return {
-            "category": str(tool_params.get("category", "") or "").strip(),
+            "category": str(tool_params.get("category", "")),
             "this_month": bool(tool_params.get("this_month", False)),
             "period": normalized_period if period_value is not None else None,
             "aggregation_method": normalize_aggregation_method(
                 str(tool_params.get("aggregation_method", "sum") or "sum")
             ),
-            "top_n": max(0, int(tool_params.get("top_n", 0) or 0)),
+            "top_n": max(0, int(tool_params.get("top_n", 0))),
             "include_chart": bool(tool_params.get("include_chart", False)),
             "chart_type": (
                 "pie"
-                if str(tool_params.get("chart_type", "") or "").strip().lower() == "pie"
+                if str(tool_params.get("chart_type", "")).strip().lower() == "pie"
                 else "bar"
             ),
         }

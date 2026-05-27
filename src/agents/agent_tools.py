@@ -44,8 +44,8 @@ class AgentTools:
                     params.get("aggregation_method", "sum"),
                 top_n=params.get("top_n", 0),
                 period=params.get("period"),
-                include_chart=bool(params.get("include_chart", False)),
-                chart_type=str(params.get("chart_type", "bar") or "bar"),
+                include_chart=params.get("include_chart", False),
+                chart_type=params.get("chart_type", "bar"),
             )
 
         elif selected_tool is Tools.COMPARE_SPENDING_PERIODS:
@@ -134,6 +134,34 @@ class AgentTools:
             f"delta: ${delta:,.2f} ({float(pct):.1f}%)."
         )
 
+    @staticmethod
+    def group_by_period(scoped: pd.DataFrame, period: str):
+        """Return a grouping function for a given period granularity."""
+        start, end, _ = AgentTools._resolve_period(
+                period, frame=scoped
+            )
+        scoped = AgentTools._slice_period(scoped, start, end)
+
+        return scoped
+
+    def group_by_category(self, scoped: pd.DataFrame, category: str) -> pd.DataFrame:
+        """
+        Group transactions by category.
+        """
+        scoped = scoped[
+                        scoped["Transaction Category"]
+                        .astype(str)
+                        .map(
+                            lambda candidate: category_matches(
+                                category,
+                                candidate, # pyright: ignore[reportArgumentType]
+                                min_ratio=self._category_fuzzy_min_ratio,
+                            )
+                        )
+                ]
+
+        return scoped
+
     def execute_spending_breakdown(
         self,
         category: str = "",
@@ -144,18 +172,19 @@ class AgentTools:
         include_chart: bool = False,
         chart_type: str = "bar",
     ) -> dict[str, Any]:
-        """Execute the spending_breakdown computation on current validated rows."""
+        """
+        Execute the spending_breakdown computation on current validated rows.
+        """
         frame = AgentTools._to_frame(self._validated_rows)
         if frame.empty:
             return {"status": "no_data"}
 
         scoped = frame.copy()
         requested_label: str | None = None
+
         if period is not None:
-            start, end, requested_label = AgentTools._resolve_period(
-                period, frame=frame
-            )
-            scoped = AgentTools._slice_period(scoped, start, end, category="")
+            scoped = AgentTools.group_by_period(scoped, period)
+
         elif this_month:
             now = pd.Timestamp(date.today())
             requested_label = "this month"
@@ -166,17 +195,7 @@ class AgentTools:
 
         category = str(category or "").strip()
         if category:
-            scoped = scoped[
-                scoped["Transaction Category"]
-                .astype(str)
-                .map(
-                    lambda candidate: category_matches(
-                        category,
-                        candidate,
-                        min_ratio=self._category_fuzzy_min_ratio,
-                    )
-                )
-            ]
+            scoped = self.group_by_category(scoped, category)
 
         if scoped.empty:
             timeframe_requested = bool(period is not None or this_month)
@@ -189,13 +208,12 @@ class AgentTools:
                 "timeframe_requested": timeframe_requested,
                 "timeframe_suggestions": (
                     AgentTools._build_timeframe_suggestions(
-                        frame, category, include_chart=include_chart
-                    )
+                        frame, category)
                     if timeframe_requested
                     else []
                 ),
             }
-
+        # TODO clean this up
         method = normalize_aggregation_method(aggregation_method)
         top_n_value = max(0, int(top_n or 0))
 
@@ -357,8 +375,7 @@ class AgentTools:
     @staticmethod
     def _build_timeframe_suggestions(
         frame: pd.DataFrame,
-        category: str = "",
-        include_chart: bool = False,
+        category: str = ""
     ) -> list[str]:
         """Suggest valid timeframe queries based on available data."""
         if frame.empty:
@@ -594,28 +611,15 @@ class AgentTools:
     def _slice_period(
         frame: pd.DataFrame,
         start: date,
-        end: date,
-        category: str,
+        end: date
     ) -> pd.DataFrame:
-        """Filter transactions by inclusive date range and optional category."""
+        """
+        Filter transactions by inclusive date range and optional category.
+        """
         scoped = frame[
             (frame["Transaction Date"].dt.date >= start)
             & (frame["Transaction Date"].dt.date <= end)
-        ].copy()
-
-        if category:
-            min_ratio = get_category_fuzzy_min_ratio()
-            scoped = scoped[
-                scoped["Transaction Category"]
-                .astype(str)
-                .map(
-                    lambda candidate: category_matches(
-                        category,
-                        candidate,
-                        min_ratio=min_ratio,
-                    )
-                )
-            ]
+        ]
 
         return scoped
 
