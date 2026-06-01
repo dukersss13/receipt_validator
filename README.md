@@ -44,7 +44,8 @@ The system consists of the following key components:
 6. **Architecture Diagram**
 
 The web UI system architecture diagram now lives in the separate frontend repository:
-[dukersss13/arvee_web_ui/docs/system_architecture.svg](https://github.com/dukersss13/arvee_web_ui/blob/main/docs/system_architecture.svg)
+<img width="1020" height="820" alt="image" src="https://github.com/user-attachments/assets/04bd9b64-1a87-4563-941b-55be241ce26c" />
+
 
 
 
