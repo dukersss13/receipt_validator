@@ -11,7 +11,7 @@ from src.agents.agent_utils import (
 from src.agents.agent_tools import AgentTools
 from src.agents.llm_base import LLMBase
 from src.agents.query_cache import QueryCache
-from src.prompts.router_prompts import ROUTER_SYSTEM_PROMPT
+from src.prompts.router_prompts import ROUTER_ANSWER_PROMPT, ROUTER_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +192,7 @@ class RouterAgent(LLMBase):
                 "rowsScanned": len(validated_rows),
                 "toolUsed": False,
                 "confidence": plan.confidence,
-                "toolName": plan.tool_name.value,
+                "toolName": plan.tool_name.value, # type: ignore
                 "toolParams": plan.tool_params,
                 "needsClarification": True,
                 "quickReplies": quick_replies,
@@ -205,7 +205,7 @@ class RouterAgent(LLMBase):
 
         # Check cache AFTER routing — keyed on tool + params + data, not query text.
         cached = cache.get(
-            plan.tool_name.value, plan.tool_params, data_hash, user_query=question
+            plan.tool_name.value, plan.tool_params, data_hash, user_query=question # type: ignore
         )
         if cached is not None:
             self._append_history(question, cached.get("answer", ""))
@@ -214,12 +214,12 @@ class RouterAgent(LLMBase):
         self.tools.set_validated_rows(validated_rows)
 
         tool_output = self.tools.execute_tool(
-            tool_name=plan.tool_name.value,
+            selected_tool=plan.tool_name, # type: ignore
             tool_params=plan.tool_params,
         )
     
         result: dict[str, Any] = {
-            "answer": AgentTools.render_answer(plan.tool_name.value, tool_output),
+            "answer": self._render_answer(question, tool_output),
             "rowsScanned": len(validated_rows),
             "toolUsed": True,
         }
@@ -235,15 +235,38 @@ class RouterAgent(LLMBase):
         if isinstance(tool_output, dict) and tool_output.get("top_categories"):
             result["top_categories"] = tool_output["top_categories"]
 
-        result["toolName"] = plan.tool_name.value
+        result["toolName"] = plan.tool_name.value # type: ignore
         result["toolParams"] = plan.tool_params
         result["needsClarification"] = False
         result["confidence"] = plan.confidence
 
-        cache.put(plan.tool_name.value, plan.tool_params, result, data_hash)
+        cache.put(plan.tool_name.value, plan.tool_params, result, data_hash) # type: ignore
         self._append_history(question, result.get("answer", ""))
 
         return result
+
+    def _render_answer(self, question: str, tool_output: dict[str, Any]) -> str:
+        """
+        Render a natural language answer from the structured tool output.
+        """
+        messages = [
+            {"role": "system", "content": ROUTER_ANSWER_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"Question:\n{question}\n\n"
+                    f"Tool Output:\n{tool_output}\n\n"
+                    "Return JSON only."
+                ),
+            },
+        ]
+
+        try:
+            response = self._model.invoke(messages)
+            return self._content_to_text(getattr(response, "content", "")).strip()
+        except Exception:
+            logger.exception("router_agent model invocation failed")
+            return ""
 
     def _append_history(self, question: str, answer: str) -> None:
         """
@@ -332,7 +355,7 @@ class RouterAgent(LLMBase):
         if (
             new_plan.tool_name == prior_plan.tool_name
             and not self._missing_required_params(
-                new_plan.tool_name, new_plan.tool_params
+                new_plan.tool_name, new_plan.tool_params # type: ignore
             )
         ):
             new_plan.needs_clarification = False
@@ -387,13 +410,7 @@ class RouterAgent(LLMBase):
             chat_history=payload.chat_history,
         )
 
-        parsed = extract_first_json_object(raw_text)
-        if not isinstance(parsed, dict):
-            logger.info(
-                "[Router] query=%r | parsed=None (fallback)",
-                payload.question,
-            )
-            return self._fallback_plan()
+        parsed: dict | None = extract_first_json_object(raw_text)
 
         logger.info(
             "[Router] query=%r | parsed=%r",
@@ -437,7 +454,7 @@ class RouterAgent(LLMBase):
             logger.exception("router_agent model invocation failed")
             return ""
 
-    def extract_router_plan(self, parsed: dict[str, Any]) -> RouterPlan:
+    def extract_router_plan(self, parsed: dict | None) -> RouterPlan:
         """Extract and normalize a RouterPlan from model output.
 
         Args:
@@ -448,18 +465,26 @@ class RouterAgent(LLMBase):
         Returns:
             A validated RouterPlan constrained to supported tools and params.
         """
+        if not parsed:
+            return RouterPlan(
+                tool_name=None,
+                tool_params={},
+                needs_clarification=True,
+                clarification_question="I'm sorry, I didn't understand that. Can you please rephrase your question?",
+                confidence="low",
+            )
+
         tool_name = parsed.get("tool_name", None)
         if tool_name == Tools.SPENDING_BREAKDOWN.value:
             tool_name_enum = Tools.SPENDING_BREAKDOWN
         elif tool_name == Tools.COMPARE_SPENDING_PERIODS.value:
             tool_name_enum = Tools.COMPARE_SPENDING_PERIODS
-        else:
-            tool_name_enum = None
 
         raw_params = parsed.get("tool_params", {})
         if not isinstance(raw_params, dict):
             raw_params = {}
-        normalized_params = self._normalize_tool_params(tool_name_enum, raw_params)
+        normalized_params = self._normalize_tool_params(tool_name=tool_name_enum, 
+                                                        tool_params=raw_params)
 
         needs_clarification = bool(parsed.get("needs_clarification", False))
         clarification_question = str(parsed.get("clarification_question", ""))
@@ -489,7 +514,7 @@ class RouterAgent(LLMBase):
             )
 
         return RouterPlan(
-            tool_name=tool_name,
+            tool_name=tool_name_enum,
             tool_params=normalized_params,
             needs_clarification=needs_clarification,
             clarification_question=clarification_question,
@@ -498,7 +523,7 @@ class RouterAgent(LLMBase):
 
     @staticmethod
     def _normalize_tool_params(
-        tool_name: Tools,
+        tool_name: Tools | None,
         tool_params: dict[str, Any],
     ) -> dict[str, Any]:
         """
@@ -511,7 +536,6 @@ class RouterAgent(LLMBase):
         Returns:
             A normalized parameter dictionary that matches tool expectations.
         """
-
         def normalize_period(value: Any, default: str) -> Any:
             if isinstance(value, dict):
                 return value
@@ -587,26 +611,3 @@ class RouterAgent(LLMBase):
             return period_1_missing or period_2_missing
 
         return False
-
-    @staticmethod
-    def _fallback_plan() -> RouterPlan:
-        """
-        Return a safe fallback route when parsing fails.
-
-        Returns:
-            A conservative RouterPlan that asks the user to clarify intent.
-        """
-        return RouterPlan(
-            tool_name=Tools.SPENDING_BREAKDOWN,
-            tool_params={
-                "category": "",
-                "this_month": False,
-                "aggregation_method": "sum",
-                "top_n": 0,
-            },
-            needs_clarification=True,
-            clarification_question=(
-                "I can help with spending analysis. Do you want a total for this month, or a comparison with another period?"
-            ),
-            confidence="low",
-        )

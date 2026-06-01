@@ -29,11 +29,10 @@ class AgentTools:
 
     def execute_tool(
         self,
-        tool_name: str,
+        selected_tool: Tools,
         tool_params: dict[str, Any],
     ) -> dict[str, Any]:
         """Execute a supported tool by name and return structured output."""
-        selected_tool = Tools.from_value(tool_name)
         params = dict(tool_params or {})
 
         if selected_tool is Tools.SPENDING_BREAKDOWN:
@@ -59,80 +58,6 @@ class AgentTools:
             )
 
         return {"status": "unknown_tool"}
-
-
-    @staticmethod
-    def render_answer(tool_name: str, tool_output: dict[str, Any]) -> str:
-        """Render deterministic answer text from a structured tool output."""
-        selected_tool = Tools.from_value(tool_name)
-        if selected_tool is Tools.COMPARE_SPENDING_PERIODS:
-            return AgentTools._render_comparison_answer(tool_output)
-        return AgentTools._render_spending_answer(tool_output)
-
-    @staticmethod
-    def _render_spending_answer(tool_output: dict[str, Any]) -> str:
-        status = str(tool_output.get("status", "") or "").strip().lower()
-        if status == "no_data":
-            return "No validated transactions are available yet."
-        if status == "no_results":
-            return "I could not find any transactions for that timeframe."
-
-        has_chart = isinstance(tool_output.get("chart"), dict)
-        result_type = str(tool_output.get("type", "") or "").strip().lower()
-
-        if has_chart:
-            return "Here is your spending chart and breakdown table."
-
-        if result_type == "top_categories":
-            results = tool_output.get("results") or []
-            if isinstance(results, list) and results:
-                first = results[0]
-                category = str(first.get("category", "") or "").strip() or "Other"
-                value = float(first.get("value", 0.0) or 0.0)
-                return (
-                    f"Top category is {category} at ${value:,.2f}. "
-                    f"Returned {len(results)} ranked categories."
-                )
-            return "No ranked categories were found for that request."
-
-        value = float(tool_output.get("value", 0.0) or 0.0)
-        if result_type == "average":
-            return f"Average spending is ${value:,.2f}."
-        return f"Total spending is ${value:,.2f}."
-
-    @staticmethod
-    def _render_comparison_answer(tool_output: dict[str, Any]) -> str:
-        status = str(tool_output.get("status", "") or "").strip().lower()
-        if status == "no_data":
-            return "No validated transactions are available yet."
-        if status == "insufficient_data":
-            period_1 = str(tool_output.get("period_1", "period 1") or "period 1")
-            period_2 = str(tool_output.get("period_2", "period 2") or "period 2")
-            return f"There is not enough data to compare {period_1} and {period_2}."
-
-        period_1 = tool_output.get("period_1") or {}
-        period_2 = tool_output.get("period_2") or {}
-        label_1 = str(period_1.get("label", "period 1") or "period 1")
-        label_2 = str(period_2.get("label", "period 2") or "period 2")
-        value_1 = float(period_1.get("value", 0.0) or 0.0)
-        value_2 = float(period_2.get("value", 0.0) or 0.0)
-        delta = float(tool_output.get("delta", 0.0) or 0.0)
-        pct = tool_output.get("percent_change")
-
-        has_chart = isinstance(tool_output.get("chart"), dict)
-        if has_chart:
-            return f"Here is your period comparison chart for {label_1} vs {label_2}."
-
-        if pct is None:
-            return (
-                f"{label_1}: ${value_1:,.2f}; {label_2}: ${value_2:,.2f}; "
-                f"delta: ${delta:,.2f}."
-            )
-
-        return (
-            f"{label_1}: ${value_1:,.2f}; {label_2}: ${value_2:,.2f}; "
-            f"delta: ${delta:,.2f} ({float(pct):.1f}%)."
-        )
 
     @staticmethod
     def group_by_period(scoped: pd.DataFrame, period: str):
@@ -162,6 +87,72 @@ class AgentTools:
 
         return scoped
 
+    @staticmethod
+    def _calculate_top_categories_df(scoped: pd.DataFrame, top_n: int, period: Any, 
+                                     category: str, method: str, this_month: bool,
+                                     include_chart: bool, chart_type: str) -> dict:
+        top_n_table = scoped.head(max(1, top_n))
+        top_categories_payload = [
+            {"category": str(cat), "value": round(float(val), 2)}
+            for cat, val in top_n_table.items()
+        ]
+        payload = {
+            "status": "ok",
+            "type": "top_categories",
+            "aggregation_method": method,
+            "this_month": bool(this_month),
+            "period": period,
+            "category_filter": category or None,
+            "top_n": int(max(1, top_n)),
+            "results": top_categories_payload
+        }
+
+        if include_chart:
+            payload["chart"] = AgentTools._build_spending_breakdown_chart(
+                scoped=scoped,
+                aggregation_method=method,
+                chart_type=chart_type,
+                title_prefix="Spending breakdown by category",
+            )
+
+        return payload
+
+    @staticmethod
+    def _aggregate_by_category(scoped: pd.DataFrame, method: str, 
+                               this_month: bool,
+                               period: Any, category: str, 
+                               include_chart: bool, chart_type: str) -> dict:
+        if method == "average":
+            payload = {
+                "status": "ok",
+                "type": "average",
+                "this_month": bool(this_month),
+                "period": period,
+                "category_filter": category or None,
+                "value": round(float(scoped["Transaction Total"].mean()), 2),
+            }
+
+        elif method == "sum":
+            total = float(scoped["Transaction Total"].sum())
+            payload = {
+                "status": "ok",
+                "type": "total",
+                "this_month": bool(this_month),
+            "period": period,
+            "category_filter": category or None,
+            "value": round(total, 2),
+        }
+
+        if include_chart:
+            payload["chart"] = AgentTools._build_spending_breakdown_chart(
+                scoped=scoped,
+                aggregation_method=method,
+                chart_type=chart_type,
+                title_prefix="Spending breakdown by category",
+            )
+
+        return payload
+
     def execute_spending_breakdown(
         self,
         category: str = "",
@@ -174,6 +165,9 @@ class AgentTools:
     ) -> dict[str, Any]:
         """
         Execute the spending_breakdown computation on current validated rows.
+        The function handles 3 main cases:
+            1. Spending breakdown by category, period, and aggregation method (sum/average).
+            2. Top N categories by spend for a given period and aggregation method.
         """
         frame = AgentTools._to_frame(self._validated_rows)
         if frame.empty:
@@ -213,80 +207,37 @@ class AgentTools:
                     else []
                 ),
             }
-        # TODO clean this up
         method = normalize_aggregation_method(aggregation_method)
-        top_n_value = max(0, int(top_n or 0))
 
-        all_grouped = (
+        all_grouped: pd.DataFrame = (
             scoped.groupby("Transaction Category", dropna=False)["Transaction Total"]
             .agg("mean" if method == "average" else "sum")
             .sort_values(ascending=False)
-        )
-        top_5 = all_grouped.head(5)
-        top_categories_table = [
-            {"category": str(cat), "value": round(float(val), 2)}
-            for cat, val in top_5.items()
-        ]
+        ) # type: ignore
 
-        if top_n_value > 0:
-            top = all_grouped.head(max(1, top_n_value))
-            payload = {
-                "status": "ok",
-                "type": "top_categories",
-                "aggregation_method": method,
-                "this_month": bool(this_month),
-                "period": period,
-                "category_filter": category or None,
-                "top_n": int(max(1, top_n_value)),
-                "results": [
-                    {"category": str(cat), "value": round(float(val), 2)}
-                    for cat, val in top.items()
-                ],
-                "top_categories": top_categories_table,
-            }
-            if include_chart:
-                payload["chart"] = AgentTools._build_spending_breakdown_chart(
-                    scoped=scoped,
-                    aggregation_method=method,
-                    chart_type=chart_type,
-                    title_prefix="Top spending categories",
-                )
-            return payload
-
-        if method == "average":
-            payload = {
-                "status": "ok",
-                "type": "average",
-                "this_month": bool(this_month),
-                "period": period,
-                "category_filter": category or None,
-                "value": round(float(scoped["Transaction Total"].mean()), 2),
-            }
-            if include_chart:
-                payload["chart"] = AgentTools._build_spending_breakdown_chart(
-                    scoped=scoped,
-                    aggregation_method=method,
-                    chart_type=chart_type,
-                    title_prefix="Average spend by category",
-                )
-            return payload
-
-        total = float(scoped["Transaction Total"].sum())
-        payload = {
-            "status": "ok",
-            "type": "total",
-            "this_month": bool(this_month),
-            "period": period,
-            "category_filter": category or None,
-            "value": round(total, 2),
-        }
-        if include_chart:
-            payload["chart"] = AgentTools._build_spending_breakdown_chart(
-                scoped=scoped,
-                aggregation_method=method,
-                chart_type=chart_type,
-                title_prefix="Spending breakdown by category",
+        if top_n > 0 and not all_grouped.empty:
+            payload = AgentTools._calculate_top_categories_df(
+                scoped=all_grouped,
+                top_n=top_n,
+                period=period,
+                category=category,
+                method=method,
+                this_month=this_month,
+                include_chart=include_chart,
+                chart_type=chart_type
             )
+
+        elif category and method and not all_grouped.empty:
+            payload = AgentTools._aggregate_by_category(
+                scoped=scoped,
+                method=method,
+                this_month=this_month,
+                period=period,
+                category=category,
+                include_chart=include_chart,
+                chart_type=chart_type,
+            )
+        
         return payload
 
     def execute_compare_spending_periods(
@@ -314,8 +265,8 @@ class AgentTools:
             frame=frame,
         )
 
-        scoped_1 = AgentTools._slice_period(frame, start_1, end_1, category)
-        scoped_2 = AgentTools._slice_period(frame, start_2, end_2, category)
+        scoped_1 = AgentTools._slice_period(frame, start_1, end_1)
+        scoped_2 = AgentTools._slice_period(frame, start_2, end_2)
 
         if scoped_1.empty or scoped_2.empty:
             return {

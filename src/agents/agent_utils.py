@@ -79,7 +79,7 @@ def normalize_period_token(period_token: Any) -> Any:
     return "this_month"
 
 
-def extract_first_json_object(raw_text: str) -> dict[str, Any] | None:
+def extract_first_json_object(raw_text: str) -> dict | None:
     """Extract the first valid JSON object from free-form model output text."""
     if not raw_text:
         return None

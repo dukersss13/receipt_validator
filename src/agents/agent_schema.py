@@ -5,7 +5,6 @@ from typing import Any
 
 class Tools(Enum):
     """Supported helper-agent tool identifiers."""
-
     SPENDING_BREAKDOWN = "spending_breakdown"
     COMPARE_SPENDING_PERIODS = "compare_spending_periods"
 
@@ -79,20 +78,16 @@ class RouterPlan:
         clarification_question: Concise question to ask when clarification is needed.
         confidence: Coarse confidence label for UI/telemetry usage.
     """
-    tool_name: Tools
+    tool_name: Tools | None
     tool_params: dict[str, Any]
     needs_clarification: bool = False
     clarification_question: str = ""
     confidence: str = "high"
 
-    def __post_init__(self) -> None:
-        """Coerce tool_name into enum value for type safety."""
-        self.tool_name = Tools.from_value(self.tool_name)
-
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable router plan dictionary."""
         return {
-            "toolName": self.tool_name.value,
+            "toolName": self.tool_name.value if self.tool_name else None,
             "toolParams": self.tool_params,
             "needsClarification": self.needs_clarification,
             "clarificationQuestion": self.clarification_question,
