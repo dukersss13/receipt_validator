@@ -442,7 +442,7 @@ class RouterAgent(LLMBase):
                 "content": (
                     f"Question:\n{question}\n\n"
                     f"Recent chat context:\n{chr(10).join(history_lines) if history_lines else '(none)'}\n\n"
-                    "Return JSON only."
+                     "Return JSON only."
                 ),
             },
         ]

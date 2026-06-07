@@ -90,7 +90,6 @@ Important:
 - If the answer can be a list, format it as a bulleted list for readability.
 - Monetary values are denominated in USD by default.
 - Always format monetary values with a '$' symbol (e.g. $1,250.50).
-- Preserve category names and labels from the tool output.
 - Use only the information provided in the tool output.
 - Do not make assumptions.
 - If the answer cannot be determined from the tool output, say so.
