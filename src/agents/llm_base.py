@@ -1,4 +1,6 @@
 import os
+import json
+import re
 from functools import lru_cache
 from typing import Any, Iterator
 
@@ -138,36 +140,15 @@ class LLMBase:
             return None
 
     @staticmethod
-    def _content_to_text(content: Any) -> str:
+    def parse_llm_json(response: str) -> dict:
         """
-        Normalize model output content into plain text.
-
-        Args:
-            content: Content payload from model output.
-
-        Returns:
-            A plain-text representation of the content.
+        Convert an LLM response containing a JSON code block
+        into a Python dictionary.
         """
-        if isinstance(content, str):
-            return content
+        # Remove ```json and ``` wrappers
+        cleaned = re.sub(r"^```json\s*|\s*```$", "", response.strip(), flags=re.DOTALL)
 
-        if isinstance(content, list):
-            chunks: list[str] = []
-            for item in content:
-                if isinstance(item, str):
-                    chunks.append(item)
-                elif isinstance(item, dict):
-                    text = item.get("text")
-                    if isinstance(text, str):
-                        chunks.append(text)
-            return "".join(chunks)
-
-        if isinstance(content, dict):
-            text = content.get("text")
-            return text if isinstance(text, str) else ""
-
-        text_attr = getattr(content, "text", None)
-        return text_attr if isinstance(text_attr, str) else ""
+        return json.loads(cleaned)
 
     @staticmethod
     def _normalize_chat_history(

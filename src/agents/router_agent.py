@@ -218,8 +218,15 @@ class RouterAgent(LLMBase):
             tool_params=plan.tool_params,
         )
     
+        # If the tool produced a chart, avoid an extra LLM render pass
+        # and return a concise, deterministic assistant text instead.
+        if isinstance(tool_output, dict) and tool_output.get("chart") is not None:
+            answer_text = "Here you go!"
+        else:
+            answer_text = self._render_answer(question, tool_output)
+
         result: dict[str, Any] = {
-            "answer": self._render_answer(question, tool_output),
+            "answer": answer_text,
             "rowsScanned": len(validated_rows),
             "toolUsed": True,
         }
@@ -263,10 +270,18 @@ class RouterAgent(LLMBase):
 
         try:
             response = self._model.invoke(messages)
-            return self._content_to_text(getattr(response, "content", "")).strip()
+            return response.content # type: ignore
         except Exception:
             logger.exception("router_agent model invocation failed")
             return ""
+
+    @staticmethod
+    def _format_currency(value: Any) -> str:
+        try:
+            return f"${float(value):,.2f}"
+        except Exception:
+            return str(value or "")
+
 
     def _append_history(self, question: str, answer: str) -> None:
         """
@@ -405,25 +420,23 @@ class RouterAgent(LLMBase):
         Returns:
             A normalized and validated RouterPlan.
         """
-        raw_text = self._invoke_router_model(
+        parsed_results = self._invoke_router_model(
             question=payload.question,
             chat_history=payload.chat_history,
         )
 
-        parsed: dict | None = extract_first_json_object(raw_text)
-
         logger.info(
             "[Router] query=%r | parsed=%r",
             payload.question,
-            parsed,
+            parsed_results,
         )
-        return self.extract_router_plan(parsed)
+        return self.extract_router_plan(parsed_results)
 
     def _invoke_router_model(
         self,
         question: str,
         chat_history: list[dict[str, Any]] | None,
-    ) -> str:
+    ) -> dict:
         """
         Invoke the router model and return plain text output.
 
@@ -449,12 +462,12 @@ class RouterAgent(LLMBase):
 
         try:
             response = self._model.invoke(messages)
-            return self._content_to_text(getattr(response, "content", "")).strip()
+            return self.parse_llm_json(getattr(response, "content", "")) # type: ignore
         except Exception:
             logger.exception("router_agent model invocation failed")
-            return ""
+            return {}
 
-    def extract_router_plan(self, parsed: dict | None) -> RouterPlan:
+    def extract_router_plan(self, parsed: dict) -> RouterPlan:
         """Extract and normalize a RouterPlan from model output.
 
         Args:

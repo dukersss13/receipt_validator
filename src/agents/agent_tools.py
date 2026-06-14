@@ -360,7 +360,9 @@ class AgentTools:
         period_token: Any,
         frame: pd.DataFrame | None = None,
     ) -> tuple[date, date, str]:
-        """Resolve a user period token into a concrete date range."""
+        """
+        Resolve a user period token into a concrete date range.
+        """
         today = date.today()
 
         if isinstance(period_token, dict):
@@ -437,7 +439,9 @@ class AgentTools:
         period_spec: dict[str, Any],
         frame: pd.DataFrame | None = None,
     ) -> tuple[date, date, str]:
-        """Resolve a structured period specification to concrete start/end dates."""
+        """
+        Resolve a structured period specification to concrete start/end dates.
+        """
         today = date.today()
         kind = str(period_spec.get("kind", "")).strip().lower()
         unit = str(period_spec.get("unit", "month") or "month").strip().lower()
@@ -643,14 +647,12 @@ class AgentTools:
             v1 = values_1[i]
             v2 = values_2[i]
             delta = round(v1 - v2, 2)
-            pct = round((delta / v2) * 100.0, 1) if v2 != 0 else None
             table_rows.append(
                 {
                     "category": cat,
                     "period_1": v1,
                     "period_2": v2,
-                    "delta": delta,
-                    "percent_change": pct,
+                    "delta": delta
                 }
             )
 
@@ -664,7 +666,7 @@ class AgentTools:
                 {"name": label_2, "values": values_2},
             ],
             "table": {
-                "columns": ["Category", label_1, label_2, "Delta ($)", "Change (%)"],
+                "columns": ["Category", label_1.title(), label_2.title(), "Delta ($)"],
                 "rows": table_rows,
             },
         }
